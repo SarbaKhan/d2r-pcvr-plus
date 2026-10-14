@@ -21,7 +21,7 @@ class PlusSetupTests(unittest.TestCase):
         for store in ('steam', 'battlenet'):
             for headset in setup_native.HEADSETS:
                 with self.subTest(store=store, headset=headset), tempfile.TemporaryDirectory() as temp:
-                    app, game, client, saves, profile, values = self.fixture(Path(temp), store)
+                    app, game, client, saves, profile, values = self.fixture(Path(temp).resolve(), store)
                     runtime = client / 'steamapps/common/SteamVR/steamxr_win64.json'
                     with patch.object(setup_windows, 'verify_release', return_value={'sha256': {'bin/CascLib.dll': 'fixture'}}), patch.object(launch_windows, 'vdxr_manifest', return_value=runtime):
                         result = setup_native.validate_choices({**values, 'headset': headset, 'connections': 'steamvr,vdxr,flat'}, app)
@@ -30,7 +30,7 @@ class PlusSetupTests(unittest.TestCase):
     def test_flat_selection_needs_no_installed_vr_runtime(self):
         for store in ('steam', 'battlenet'):
             with self.subTest(store=store), tempfile.TemporaryDirectory() as temp:
-                app, game, client, saves, profile, values = self.fixture(Path(temp), store)
+                app, game, client, saves, profile, values = self.fixture(Path(temp).resolve(), store)
                 (client / 'steamapps/common/SteamVR/steamxr_win64.json').unlink()
                 with patch.object(setup_windows, 'verify_release', return_value={'sha256': {'bin/CascLib.dll': 'fixture'}}), patch.object(launch_windows, 'vdxr_manifest', side_effect=AssertionError('Flat must not inspect VDXR')):
                     result = setup_native.validate_choices({**values, 'connections': 'flat', 'steamvr': ''}, app)
@@ -39,7 +39,7 @@ class PlusSetupTests(unittest.TestCase):
     def test_three_shortcuts_are_repeatable_and_removable_without_unrelated_changes(self):
         for store in ('steam', 'battlenet'):
             with self.subTest(store=store), tempfile.TemporaryDirectory() as temp:
-                app, game, client, saves, profile, values = self.fixture(Path(temp), store)
+                app, game, client, saves, profile, values = self.fixture(Path(temp).resolve(), store)
                 routing = {} if store == 'steam' else dict(store=store, python=app / '.runtime/python/python.exe', wrapper=app / 'steamvr/launch_windows.py', runtime=client / 'steamapps/common/SteamVR/steamxr_win64.json')
                 other = {'appname': 'Unrelated game', 'LaunchOptions': 'keep this', 'tags': {'0': 'favorite'}}
                 original = steam_config.encode_binary({'shortcuts': {'0': other}})
@@ -60,7 +60,7 @@ class PlusSetupTests(unittest.TestCase):
 
     def test_flat_steam_wrapper_ignores_default_vr_runtime_and_routes_to_flat(self):
         with tempfile.TemporaryDirectory(prefix='Plus accents é ') as temp:
-            game = Path(temp)
+            game = Path(temp).resolve()
             with patch.object(launch_plus, 'main', return_value=0) as flat, patch.object(launch_windows, 'launch_environment', side_effect=AssertionError('No XR for Flat')), patch.object(launch_windows, 'launch_from_desktop', side_effect=AssertionError('No VR handoff')):
                 self.assertEqual(launch_windows.main(['--frame-openxr-runtime=missing.json', str(game / 'D2R.exe'), '--frame-flat']), 0)
             self.assertEqual(flat.call_args.args[0], ['--game', str(game.resolve()), '--mode', 'flat', '--store', 'steam'])

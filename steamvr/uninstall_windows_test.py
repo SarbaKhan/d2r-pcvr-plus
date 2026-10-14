@@ -38,7 +38,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_upgrades_across_release_folders_restore_originals_and_keep_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             game, saves = root / 'game', root / 'saves'
             stock = self.write(game / 'D2R.exe', b'original game, updated since install')
             character = self.write(saves / 'Friend.d2s', b'latest progress')
@@ -76,7 +76,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_missing_original_backup_blocks_removal_and_can_be_relocated(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             game = root / 'game'
             current = self.write(game / uninstall.PLUGIN, b'current')
             first = self.snapshot(root / 'moved/20260101', game, [str(uninstall.PLUGIN)], {}, root / 'saves', True)
@@ -93,7 +93,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_legacy_backups_ignore_other_game_and_select_latest_fresh_install(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             game, saves = root / 'game', root / 'saves'
             old = self.snapshot(root / 'backups/20260101', game, [str(uninstall.PLUGIN)], {}, saves, True)
             self.snapshot(root / 'backups/20260201', root / 'other game', [str(uninstall.PLUGIN)], {}, saves, True)
@@ -102,7 +102,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_restore_rejects_original_game_paths_traversal_and_directory_targets(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             game = root / 'game'
             original = self.write(game / 'D2R.exe', b'original')
             for name in ('D2R.exe', '../outside.txt', 'C:\\outside.txt', 'Settings.json'):
@@ -116,7 +116,7 @@ class UninstallTests(unittest.TestCase):
     def test_steam_cleanup_keeps_other_edition_and_unrelated_configuration(self):
         for store in ('steam', 'battlenet'):
             with self.subTest(store=store), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
+                root = Path(tmp).resolve()
                 game, other = root / 'game', root / 'other game'
                 profile = root / 'userdata/123'
                 wrapper = '"C:\\Mods\\python.exe" "C:\\Mods\\steamvr\\launch_windows.py" %command%'
@@ -152,7 +152,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_partial_failure_rolls_back_removed_files_and_config(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             removed = self.write(root / 'plugin.dll', b'installed mod')
             config = self.write(root / 'localconfig.vdf', b'current config')
             with patch.object(uninstall.os, 'replace', side_effect=PermissionError('blocked')):
@@ -165,7 +165,7 @@ class UninstallTests(unittest.TestCase):
     def test_external_change_or_running_game_prevents_commit(self):
         for race in ('file', 'game'):
             with self.subTest(race=race), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
+                root = Path(tmp).resolve()
                 target = self.write(root / 'plugin.dll', b'current')
                 calls = 0
                 def check():
@@ -182,7 +182,7 @@ class UninstallTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows removal wizard')
     def test_wizard_uses_steam_final_flush_and_keeps_unrelated_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             game = root / 'game'
             self.write(game / 'D2R.exe', b'original')
             self.write(game / 'Data/.build.config', b'fixture')
@@ -206,7 +206,7 @@ class UninstallTests(unittest.TestCase):
     def test_wizard_cancel_changes_nothing_and_both_editions_remove_safely(self):
         for store, cancel in (('steam', True), ('steam', False), ('battlenet', False)):
             with self.subTest(store=store, cancel=cancel), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
+                root = Path(tmp).resolve()
                 game, saves = root / 'game', root / 'saves'
                 stock = self.write(game / 'D2R.exe', b'newer game build is allowed during removal')
                 self.write(game / ('Data/.build.config' if store == 'steam' else '.build.info'), b'fixture')

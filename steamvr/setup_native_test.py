@@ -27,6 +27,8 @@ class NativeSetupTests(unittest.TestCase):
         return path
 
     def fixture(self, root, store='steam'):
+        # Windows TEMP may use RUNNER~1 while the backend resolves runneradmin.
+        root = root.resolve()
         app, game, client, saves = [root / name for name in ('helper', 'Game-' + store, 'Steam', 'Saved Games')]
         app.mkdir(exist_ok=True)
         self.put(client / 'steam.exe')
@@ -83,7 +85,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_clean_game_always_outputs_empty_backup_folder(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             result = self.probe(root, app, game, client, saves)
             self.assertEqual(result['backup_required'], '0')
@@ -91,7 +93,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_finds_complete_legacy_chain_from_steam_wrapper_with_unicode_and_spaces(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             game = self.steam_game(game, client)
             helper = root / 'old extracted 日本語 with spaces'
@@ -115,7 +117,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_probe_finds_source_preview_and_managed_development_backup_roots(self):
         for location in ('source-preview', 'managed-development'):
             with self.subTest(location=location), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 app, game, client, saves, profile, values = self.fixture(root)
                 source = root / 'downloaded installer'
                 folder = (source / 'd2r-pcvr-preview/setup-backups/game' if location == 'source-preview'
@@ -128,7 +130,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_explicit_snapshot_hint_includes_later_upgrades_and_beats_other_candidates(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             folder = root / 'chosen backup'
             original = self.snapshot(folder / '20260101', game, saves)
@@ -154,7 +156,7 @@ class NativeSetupTests(unittest.TestCase):
         cases += [('malformed-' + str(index), value) for index, value in enumerate(malformed)]
         for label, value in cases:
             with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 app, game, client, saves, profile, values = self.fixture(root)
                 source = root / 'valid fallback'
                 self.snapshot(source / 'setup-backups/game/20260101', game, saves)
@@ -176,7 +178,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_probe_ignores_corrupt_candidates_and_rejects_distinct_valid_chains(self):
         for corrupt in (True, False):
             with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 app, game, client, saves, profile, values = self.fixture(root)
                 game = self.steam_game(game, client)
                 source, old_helper = root / 'source', root / 'old helper'
@@ -199,7 +201,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_deduplicates_same_chain_discovered_by_source_and_launch_routing(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             game = self.steam_game(game, client)
             helper = root / 'old helper'
@@ -212,7 +214,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_recovers_original_without_losing_a_recorded_upgrade_in_another_folder(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             game = self.steam_game(game, client)
             helper = root / 'original helper'
@@ -235,7 +237,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_steam_wrapper_for_another_game_copy_is_not_used(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             self.steam_game(game, client)
             other = root / 'another Steam copy'
@@ -250,7 +252,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_battlenet_shortcut_discovery_requires_matching_icon_game_and_wrapper(self):
         for mismatch in ('none', 'icon', 'game', 'wrapper', 'truncated'):
             with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 app, game, client, saves, profile, values = self.fixture(root, 'battlenet')
                 helper = root / 'old Battle.net 日本語 helper'
                 folder = helper / 'setup-backups/game'
@@ -275,7 +277,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_adopted_backups_are_automatically_remembered_by_receipt_in_new_helper(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             source = root / 'old helper'
             folder = source / 'build-frame/backups'
@@ -296,7 +298,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_managed_receipts_keep_two_game_copies_and_same_named_snapshots_separate(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             other = root / 'another game copy'
             for index, target in enumerate((game, other)):
@@ -325,7 +327,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_selection_validates_both_editions_profiles_and_headset_connections(self):
         for store in ('steam', 'battlenet'):
             with self.subTest(store=store), tempfile.TemporaryDirectory() as directory:
-                app, game, client, saves, profile, values = self.fixture(Path(directory), store)
+                app, game, client, saves, profile, values = self.fixture(Path(directory).resolve(), store)
                 with patch.object(setup, 'verify_release', return_value={'sha256': {'bin/CascLib.dll': 'fixture'}}):
                     selected = native.validate_choices(values, app)
                     self.assertEqual(selected['store'], store)
@@ -345,7 +347,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_rejects_wrong_game_build_and_missing_battlenet_payload_before_writes(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory), 'battlenet')
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve(), 'battlenet')
             with patch.object(setup, 'verify_release', return_value={'sha256': {}}):
                 with self.assertRaisesRegex(ValueError, 'does not include Battle.net'):
                     native.validate_choices(values, app)
@@ -357,7 +359,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_utf8_and_utf16_choices_preserve_unicode_and_spaces(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'choices.ini'
+            path = Path(directory).resolve() / 'choices.ini'
             text = '[setup]\ngame=C:\\Games\\Diablo 日本語\nheadset=Quest 3\n'
             for encoding in ('utf-8-sig', 'utf-16'):
                 path.write_text(text, encoding=encoding)
@@ -365,7 +367,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_zip_backup_migration_survives_removal_of_original_folder_and_preserves_progress(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             old = self.snapshot(root / 'old-zip/setup-backups/game/20260101', game, saves)
             self.put(game / uninstall.PLUGIN, b'old mod')
@@ -388,8 +390,8 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_corrupt_or_missing_imported_backup_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
-            old = self.snapshot(Path(directory) / 'zip/backups/20260101', game, saves)
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
+            old = self.snapshot(Path(directory).resolve() / 'zip/backups/20260101', game, saves)
             record = {'game': str(game), 'snapshots': [str(old)]}
             install.write_record(game, record)
             with patch.object(setup, 'require_closed'):
@@ -406,7 +408,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_failed_install_restores_game_and_preserves_external_steam_edit(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Steam Frame',
                 connections=['steamvr'], steam=client, game=game, profile=profile, saves=saves,
                 runtime=client / 'steamapps/common/SteamVR/steamxr_win64.json', mode=1)
@@ -428,7 +430,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_removal_combines_both_editions_and_keeps_other_shortcuts(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             other = root / 'battlenet'
             self.put(other / 'D2R.exe', b'updated game version allowed during removal')
@@ -461,7 +463,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_running_process_blocks_removal_without_any_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
             with patch.object(setup, 'require_closed', side_effect=ValueError('Steam running')):
                 with self.assertRaisesRegex(ValueError, 'Steam running'):
                     native.remove_managed(app)
@@ -469,7 +471,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_preflight_rejects_missing_original_backup_before_helper_writes(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
             self.put(game / uninstall.PLUGIN, b'installed mod')
             install.write_record(game, {'game': str(game), 'snapshots': [str(app / 'missing')]})
             with patch.object(setup, 'verify_release', return_value={'sha256': {}}):
@@ -479,7 +481,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_failed_install_after_steam_commit_restores_original_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
             localconfig, shortcuts = profile / 'config/localconfig.vdf', profile / 'config/shortcuts.vdf'
             original = localconfig.read_bytes()
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Steam Frame',
@@ -503,7 +505,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_repeated_repair_preserves_calibration_and_keeps_one_managed_entry(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
             calibration = self.put(game / 'd2rloader/plugins/d2r_vr.ini', b'calibrated player')
             values['mode'] = 'repair'
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Steam Frame',
@@ -530,7 +532,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_shared_execution_configures_real_fixture_steam_and_removes_cleanly(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             app, game, client, saves, profile, values = self.fixture(root)
             runtime_python = app / '.runtime/python/python.exe'
             def install_files(command, helper_root, **kwargs):
@@ -558,7 +560,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_hidden_battlenet_child_error_survives_rollback_with_saves_and_config_kept(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory), 'battlenet')
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve(), 'battlenet')
             original_settings = (saves / 'Settings.json').read_bytes()
             original_config = (profile / 'config/localconfig.vdf').read_bytes()
             selection = dict(manifest={}, store='battlenet', version='3.3.93847', headset='Quest 3',
@@ -606,7 +608,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_checksum_hashes_reach_wizard_and_log_without_game_changes(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
             before = {path: path.read_bytes() for folder in (game, saves, profile)
                       for path in folder.rglob('*') if path.is_file()}
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Quest 3',
@@ -634,7 +636,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_imports_original_legacy_backup_with_or_without_newer_receipt(self):
         for receipt in (False, True):
             with self.subTest(receipt=receipt), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 app, game, client, saves, profile, values = self.fixture(root)
                 folder = root / 'old-zip/backups'
                 original = self.snapshot(folder / '20260101', game, saves)

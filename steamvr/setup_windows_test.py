@@ -22,7 +22,7 @@ LOCAL = '"UserLocalConfigStore"\r\n{\r\n// untouched comment\r\n"friends" { "Per
 class SteamSetupTests(unittest.TestCase):
     def test_release_integrity_rejects_changed_file_and_escaping_path(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             names = ('bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
                      'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
                      'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
@@ -94,7 +94,7 @@ class SteamSetupTests(unittest.TestCase):
 
     def test_transaction_backup_and_absent_shortcuts(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             profile, directory = self.fixture(root)
             backup = config.configure(profile, root, root, 'new', ['vdxr'], root / 'backups', lambda: None)
             self.assertEqual((backup / 'localconfig.vdf').read_bytes(), LOCAL.encode())
@@ -105,7 +105,7 @@ class SteamSetupTests(unittest.TestCase):
 
     def test_second_file_write_failure_rolls_back_first(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             profile, directory = self.fixture(root)
             old_shortcuts = config.encode_binary({'shortcuts': {}})
             (directory / 'shortcuts.vdf').write_bytes(old_shortcuts)
@@ -126,7 +126,7 @@ class SteamSetupTests(unittest.TestCase):
     def test_steam_reopening_or_external_change_prevents_commit(self):
         for race in ('steam', 'config'):
             with self.subTest(race=race), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 profile, directory = self.fixture(root)
                 calls = 0
                 def check():
@@ -144,7 +144,7 @@ class SteamSetupTests(unittest.TestCase):
 
     def test_discovery_uses_separate_libraries_and_limits_manifest_path(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             steam = root / 'Steam'
             library = root / 'Second library'
             (steam / 'steamapps').mkdir(parents=True)
@@ -161,7 +161,7 @@ class SteamSetupTests(unittest.TestCase):
     def test_wizard_quest_vdxr_shortcuts_only_and_frame_install_routing(self):
         for quest, battlenet_in_package in ((True, False), (False, False), (True, True), (False, True)):
             with self.subTest(quest=quest, battlenet_in_package=battlenet_in_package), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 steam = root / 'steam'
                 game = root / 'game'
                 saves = root / 'saves'
@@ -215,7 +215,7 @@ class InstallerOutputTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows hidden-process pipe inheritance')
     def test_hidden_child_failure_reaches_wizard_output_and_persistent_log(self):
         with tempfile.TemporaryDirectory(prefix='setup with spaces ') as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             parent = textwrap.dedent('''
                 import sys
                 from pathlib import Path
@@ -256,7 +256,7 @@ class InstallerOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.dict(os.environ, {'PYTHONIOENCODING': 'ascii', 'D2R_SETUP_FIXTURE': 'retained'}), \
                 contextlib.redirect_stdout(io.StringIO()) as output:
-            root = Path(directory)
+            root = Path(directory).resolve()
             before = dict(os.environ)
             child = ('import os,sys; print("Ready \\u65e5\\u672c"); '
                      'print(os.environ["D2R_SETUP_FIXTURE"]); '
@@ -271,7 +271,7 @@ class InstallerOutputTests(unittest.TestCase):
 
     def test_child_exit_without_output_still_reports_code_and_log(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             with self.assertRaisesRegex(ValueError, 'exit code 7.*no diagnostic output.*setup-install.log'):
                 setup.run_installer([sys.executable, '-c', 'raise SystemExit(7)'], root, hide_console=True)
             self.assertIn('Installer exit code: 7', (root / 'setup-install.log').read_text())

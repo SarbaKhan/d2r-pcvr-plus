@@ -32,7 +32,7 @@ class BattleNetTests(unittest.TestCase):
 
     def test_store_version_and_experimental_gates(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             bnet = self.game(root)
             stock = self.game(root, 'steam', '3.3.93787')
             self.assertEqual(game_install.validate_game(stock), ('steam', '3.3.93787'))
@@ -47,7 +47,7 @@ class BattleNetTests(unittest.TestCase):
 
     def test_asset_reader_selection_and_cache_invalidation(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             bnet = self.game(root)
             stock = self.game(root, 'steam', '3.3.93787')
             before = game_assets.build_hash(bnet)
@@ -63,7 +63,7 @@ class BattleNetTests(unittest.TestCase):
 
     def test_explicit_battlenet_launch_strips_wrapper_flags_and_steam_ids(self):
         with tempfile.TemporaryDirectory(prefix='mod with spaces ') as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             bnet = self.game(root)
             runtime = root / 'Steam VR/steamxr_win64.json'
             runtime.parent.mkdir()
@@ -85,7 +85,7 @@ class BattleNetTests(unittest.TestCase):
 
     def test_shortcuts_coexist_and_preserve_steam_launch_options(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             bnet = self.game(root)
             config = root / 'userdata/123/config'
             config.mkdir(parents=True)
@@ -125,7 +125,7 @@ class BattleNetTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows setup wizard')
     def test_battlenet_wizard_installs_and_creates_vdxr_shortcut_only(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             game = self.game(root)
             config = root / 'steam/userdata/123/config'
             config.mkdir(parents=True)
