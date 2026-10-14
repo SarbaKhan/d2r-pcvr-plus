@@ -80,3 +80,27 @@ et l'absence de régression. La CI ne lance pas D2R et ne prouve pas la stabilit
 Voir le protocole détaillé dans `PCVR-PLUS.md`. Aucun fichier propriétaire de Blizzard
 n'est fourni. Les licences et attributions se trouvent dans `LICENSE`, `THIRD_PARTY.md`,
 `licenses/` et `deps/python/LICENSE.txt`.
+
+## Clavier Flat et contrôleurs Quest
+
+Le profil livré utilise désormais QWERTY (`flat_layout=WASD`). Une mise à jour
+conserve le profil déjà installé : pour passer une installation AZERTY en QWERTY,
+fermer le jeu et modifier uniquement `flat_layout=WASD` dans la section `[input]`
+de `d2rloader/plugins/d2r_pcvr_plus_flat.ini`. Si des touches personnalisées
+`flat_forward`, `flat_left`, `flat_back` ou `flat_right` sont présentes, elles
+priment sur la disposition : les régler respectivement sur W, A, S et D.
+Aucune nouvelle DLL ni réinstallation n'est nécessaire pour ce changement.
+
+Les contrôleurs VR sont associés automatiquement au profil actif communiqué par
+OpenXR. Le code suggère déjà le profil Oculus Touch utilisé par le Quest 2 :
+A/B à droite, X/Y à gauche, avec un clic de stick distinct pour chaque main.
+Le réglage en jeu « Headset / controller labels » → « Quest / Touch » corrige
+uniquement les libellés; il ne remappe pas les entrées et ne répare pas un bouton
+non détecté. Ne pas remplacer le profil VR existant par le modèle du paquet.
+
+Pour diagnostiquer des commandes absentes, préciser la liaison (Link, Air Link,
+Virtual Desktop ou Steam Link), le runtime OpenXR réellement utilisé et si les
+boutons fonctionnent dans les menus ou seulement pas en jeu. Joindre
+`d2rloader/logs/d2r-vr-frame.log` après une session concernée et préciser les
+actions obtenues et attendues pour chaque clic de stick. Les fichiers de gestion
+des profils et commandes VR restent identiques à la base PCVR retenue.

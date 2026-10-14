@@ -126,7 +126,7 @@ class PlusTests(unittest.TestCase):
     def test_shipped_flat_profile(self):
         config=configparser.ConfigParser(interpolation=None,strict=False,allow_no_value=True)
         config.read_string('[global]\n'+(Path(__file__).parents[1]/'d2r_pcvr_plus_flat.ini').read_text())
-        for section,key,value in [('mode','platform','0'),('stereo','afr','0'),('input','flat_layout','ZQSD'),('gameplay','motion_controls','0')]:
+        for section,key,value in [('mode','platform','0'),('stereo','afr','0'),('input','flat_layout','WASD'),('gameplay','motion_controls','0')]:
             self.assertEqual(config[section][key],value)
 
 if __name__ == '__main__': unittest.main()

@@ -29,7 +29,7 @@ Plan appliqué : sélectionner la plateforme avant les hooks, figer cette sélec
 
 - Une seule DLL `d2rl-vrcam.dll` pour Flat et VR.
 - F1 : caméra isométrique et clics classiques du jeu. F2 : troisième personne avec souris. F3 : première personne avec souris. F12 parcourt ces trois vues en Flat.
-- F2/F3 : marche ZQSD par défaut ; WASD ou quatre lettres A–Z configurables, diagonales normalisées dans le code existant. F1 conserve le déplacement classique par clic.
+- F2/F3 : marche WASD par défaut ; ZQSD ou quatre lettres A–Z configurables, diagonales normalisées dans le code existant. F1 conserve le déplacement classique par clic.
 - Clic gauche : attaque sur ennemi, interaction sur objet/PNJ/porte ; clic dans le vide traité comme attaque sur place si le hook de clic est compatible. Clic droit : compétence secondaire native. Affecter les compétences dans le jeu.
 - F9 : libère/reprend le pointeur. Menus, inventaire et chat gardent les entrées natives. Le changement F1/F2/F3 est prévu en jeu, pas pendant la saisie d'un texte.
 - Flat : pas d'enregistrement du transport OpenXR, pas de pont BodyWalk, pas de paire stéréo ni de hooks d'interface/combat physique VR. La DLL n'importe pas statiquement de chargeur OpenXR.
@@ -84,7 +84,7 @@ Dans `d2rloader/plugins/d2r_pcvr_plus_flat.ini` :
 
 ```ini
 [input]
-flat_layout=ZQSD
+flat_layout=WASD
 ; Pour QWERTY : flat_layout=WASD
 ; Facultatif : quatre lettres distinctes, insensibles à la casse.
 ; flat_forward=Z
