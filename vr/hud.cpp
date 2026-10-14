@@ -66,7 +66,6 @@
 #include "../steamvr/native_lock.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/active_keys.h"
-#include "../steamvr/native_hud.h"
 
 #include "game_hud_shared.h"
 
@@ -84,8 +83,6 @@ void (*g_log)(const char*) = nullptr;
 void Log(const char* s) { if (g_log) g_log(s); }
 
 std::atomic<int> g_hide{0};   // 0 nothing, 1 the toolbar, 2 everything
-std::atomic<bool> g_nativeGameplay{false}; // latched for each native OpenXR eye, reset after the pair
-std::atomic<bool> g_nativeSession{false}; // panel visibility spans menus, eye gaps and loading
 std::atomic<float> g_uiScale{1.0f};
 std::atomic<bool> g_menu{false};   // the main menu, or a panel (inventory, trade...) open: nothing is hidden then   // the game's interface size, 0.5..1
 std::atomic<uint64_t> g_layer{0};   // the interface's resource, learnt from its clear
@@ -105,9 +102,7 @@ std::atomic<float> g_mapOffX{0.0f}, g_mapOffY{0.0f};   // [hud_floor] map_x / ma
 bool MapOffset() { return std::abs(g_mapOffX.load()) > 0.0005f || std::abs(g_mapOffY.load()) > 0.0005f; }
 bool MapZoomed() { return std::abs(g_mapZoom.load() - 1.0f) > 0.005f || g_mapMoved.load() || MapOffset(); }
 // What is taken out of the picture now: for FlatVR in first person, to be drawn back at another size otherwise.
-framevr::nativehud::Policy HudPolicy() {
-    return framevr::nativehud::Resolve(g_nativeGameplay.load(),g_menu.load(),g_classic.load(),g_picReady.load(),BarZoomed(),g_hide.load());
-}
+int HideNow() { return g_classic.load() ? (g_picReady.load() && BarZoomed() ? 1 : 0) : g_hide.load(); }
 int MapNow() { return g_menuMap.load()?1:g_classic.load() ? (g_picReady.load() && MapZoomed() ? 1 : 0) : g_mapMode.load(); }
 // MapNow at this frame's layer clear: the map goes to our target, or not, for the whole frame.
 std::atomic<int> g_frameMap{0};
@@ -380,7 +375,7 @@ bool CopyLayer(command_list* cl, resource layer, uint32_t w, uint32_t h) {
 }
 
 // The interface of this frame is drawn and the toolbar not yet emptied: copy both pieces out.
-void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, framevr::nativehud::Policy policy) {
+void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, int hide) {
     ++g_frames;
     device* dev = cl->get_device();
     DrainRetired(dev);
@@ -388,7 +383,7 @@ void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, framevr::
     bool bar = false, map = false;
     const rect barBox = ToolbarRect(w, h);
     rect mapBox{};
-    if (policy.copyToolbar) bar = CopyOut(cl, layer, barBox, kBar);
+    if (hide >= 1 && !menu) bar = CopyOut(cl, layer, barBox, kBar);
     const bool drawn = g_mapDrawn;
     g_mapDrawn = false;
     // the parts the labels' plane leaves flat: the toolbar's strip, and the map's box while it is drawn
@@ -410,7 +405,7 @@ void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, framevr::
     mapCaptured=map&&g_menuMap.load()&&!menu;
     // From above and behind: back into the picture, grown from the toolbar's
     // bottom middle and from the map's own corner (left or right, by its middle).
-    g_pic.on[kBar] = policy.redrawToolbar && bar && g_share[kBar].srv.handle;
+    g_pic.on[kBar] = classic && bar && g_share[kBar].srv.handle;
     g_pic.on[kMap] = classic && map && g_share[kMap].srv.handle;
     g_pic.at = GetTickCount64();
     if (g_pic.on[kBar]) {
@@ -513,14 +508,14 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
                 }
             }
         }
-        const auto policy = HudPolicy();
+        const int hideNow = HideNow();
         {
             const auto& d = layerDescription;
-            Publish(cl, layerResource, d.texture.width, d.texture.height, policy);
+            Publish(cl, layerResource, d.texture.width, d.texture.height, hideNow);
         }
-        if (policy.hide == 2) {
+        if (const int hide = g_menu.load() ? 0 : hideNow; hide == 2) {
             cl->clear_render_target_view(layerRtv, kEmpty);
-        } else if (policy.ClearToolbar(g_pic.on[kBar])) {
+        } else if (hide == 1 && (!g_classic.load() || g_pic.on[kBar])) {   // drawn back from a copy: only if there is one
             const auto& d = layerDescription;
             const rect bar = ToolbarRect(d.texture.width, d.texture.height);   // the map stays (MapRect: kept for FlatVR)
             cl->clear_render_target_view(layerRtv, kEmpty, 1, &bar);
@@ -566,10 +561,6 @@ void UiFrame(bool active,bool workspace,int eye){
     framevr::uiworld::SetActive(active);
 #endif
 }
-void NativeSession(bool active){g_nativeSession.store(active);}
-void NativeGameplay(bool active){g_nativeGameplay.store(active);}
-void EndNativeEye(){g_nativeGameplay=false;}
-bool NativeToolbarHidden(){return g_nativeSession.load();}
 uint64_t UiTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
     std::lock_guard lock(g_lock);
     if(!uiActive.load()||!uiCaptured||!g_lab.tex.handle)return 0;
@@ -625,7 +616,6 @@ void SetPictureReady(bool ready) { g_picReady.store(ready); }
 // (uv l, t, r, b) and from which view. Off once no interface came for a while.
 bool PictureNow(int i, float box[4], uint64_t* srv) {
     if (i < 0 || i >= kShares) return false;
-    if (i == kBar && g_nativeSession.load()) return false;
     std::lock_guard g(g_lock);
     *srv = g_share[i].srv.handle;
     const bool on = g_pic.on[i] && g_classic.load() && GetTickCount64() - g_pic.at < 250;

@@ -4,16 +4,10 @@
 
 namespace framevr::panels {
 inline constexpr char TabbedMenu[]="UISwitcher";
-// Shops bypass UISwitcher but occupy the same upper widescreen content band.
-// Keep this independent of opacity: waypoint and dialogue layouts differ.
-inline bool UpperBand(std::string_view name) {
-    return name==TabbedMenu||name.starts_with("Vendor")||
-        name.starts_with("Trade")||name.starts_with("Gamble");
-}
-// These management and waypoint canvases share one opaque image against black in XR.
+// These full management canvases share one opaque image against black in XR.
 // VendorPanelLayout also hosts NPC gambling; keep speech/quest panels spatial.
 inline bool OpaqueBackground(std::string_view name) {
-    return name==TabbedMenu||name.starts_with("Waypoint")||name.starts_with("Vendor")||
+    return name==TabbedMenu||name.starts_with("Vendor")||
         name.starts_with("Trade")||name.starts_with("Gamble")||
         name.starts_with("Bank")||name.starts_with("Stash")||
         name.starts_with("PlayerInventory")||name.starts_with("HoradricCube")||
@@ -35,29 +29,9 @@ inline bool Modal(std::string_view name) {
 // comparison tooltips, dragged icons and confirmation dialogs. Empty pixels
 // use the canvas's background policy. Do not recrop when hovering: that would
 // move the target.
-constexpr float Width=1.9f,Distance=.55f,MainDistance=.70f;
-struct Size {float width,height;};
-struct Placement {math::Vec position;math::Quat orientation;};
-inline Placement AtEyeLevel(math::Vec head,math::Quat look,float distance) {
-    const auto yaw=math::Yaw(math::Heading(look));
-    return {head+math::Rotate(yaw,{0,0,-distance}),yaw};
-}
-// Fit the entire native canvas inside the original widescreen-sized workspace.
-// Square/portrait eye targets must not turn menus into head-height billboards.
-// Uniform scaling preserves artwork and every native pixel (including tooltips).
-// The compositor and laser must use the same dimensions.
-inline Size Fit(unsigned width,unsigned height,float maxWidth=Width) {
-    const float maxHeight=maxWidth*9.f/16.f;
-    if(!width||!height)return {maxWidth,maxHeight};
-    const float aspect=float(width)/height;
-    if(aspect<16.f/9.f)return {maxHeight*aspect,maxHeight};
-    return {maxWidth,maxWidth/aspect};
-}
-// UISwitcher and merchant panes occupy the upper widescreen band of a taller canvas.
-// Center that band on the placement anchor, retaining the lower canvas for
-// HUD hints, tooltips and drags. Other native layouts use the canvas center.
-inline float UpperBandOffset(Size canvas) {
-    return -.5f*std::max(0.f,canvas.height-canvas.width*9.f/16.f);
+constexpr float Width=1.9f,Distance=1.25f;
+inline float Height(unsigned width,unsigned height) {
+    return width&&height?Width*float(height)/width:1.06875f;
 }
 
 // Require a fresh press on the surface; never drop a drag just because a ray

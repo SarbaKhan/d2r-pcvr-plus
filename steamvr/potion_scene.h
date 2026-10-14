@@ -13,7 +13,7 @@ inline Scene MakeScene(const interaction::Input& in,const interaction::Output& o
         s.items[s.count++]={out.belt[i],b.Next().code,false,i==out.nearBelt};
     }
     if(out.bottleHand>=0&&out.bottleHand<2&&out.bottleItem.handle) {
-        auto p=in.hand[out.bottleHand];p.p=Center(p.p,p.q);p.q=HeldRotation(p.q);
+        auto p=in.hand[out.bottleHand];p.p=Center(p.p,p.q);
         s.items[s.count++]={p,out.bottleItem.code,out.bottleEmpty,false};
     }
     return s;

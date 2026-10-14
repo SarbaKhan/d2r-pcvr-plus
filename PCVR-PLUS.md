@@ -3,7 +3,9 @@
 **État : compilation Windows vérifiée ; jouabilité et absence de régression VR à valider sur matériel réel.**
 Cette branche reste en validation. L'utilisateur a identifié les freezes et corruptions signalés comme un problème de son PC, désormais résolu, et non de D2R VR. À sa demande, les lanceurs n'effectuent plus de backups de personnages et laissent le jeu gérer ses sauvegardes natives.
 
-La base reste [bearstonem/d2r-pcvr](https://github.com/bearstonem/d2r-pcvr), commit `6abf4e52c13fae5eea11aa5defd7618645d706e9`.
+La base reste [bearstonem/d2r-pcvr](https://github.com/bearstonem/d2r-pcvr), runtime publié `918bd5ef5895f258d23acd789f0eafae44278e1c`, identifié par le `release-manifest.json` du setup **v0.3.12-windows-preview**. Le commit du setup (`2c9513a`) est distinct de celui de sa DLL.
+
+Correction VR : la première base Plus (`6abf4e5`) était un développement plus récent et changeait déjà les commandes, les distances et le rendu des dialogues. Les sources natives sont maintenant restaurées depuis le runtime publié ; seules les adaptations Flat de `vr/vrcam.cpp`, le CMake et les helpers Flat sont ajoutés. `steamvr/vr_baseline.json` et son test vérifient les sources natives inchangées. Les commandes QuickCast, le menu principal à 1,4 m, les panneaux à 1,25 m et le chemin des dialogues proviennent de cette version. La configuration VR installée reste prioritaire et préservée.
 Le dépôt de référence [natpoh/diablo2-vr-port](https://github.com/natpoh/diablo2-vr-port) a été examiné au commit `4b6284c0766c089139693a504333b9a19201cdd2`.
 Aucun nouveau code de cette référence n'a été transplanté : PCVR possède déjà les caméras Flat et la plupart des commandes nécessaires.
 
@@ -18,7 +20,7 @@ Aucun nouveau code de cette référence n'a été transplanté : PCVR possède d
 | Commandes | `gamecmd.cpp` injecte les commandes du pont sur le thread UI | Garder les modifications PCVR (notamment potions VR). Ne pas lire les commandes/actions/poses BodyWalk en Flat. |
 | Hooks | Signatures et adresses dépendantes du build du jeu | Conserver les gardes PCVR. Pas de remplacement d'adresses à l'aveugle. Le repli Flat vers une manette virtuelle est supprimé. |
 | Démarrage | Sélection de plateforme dans l'INI | Le transport PCVR s'enregistrait sans condition et pouvait tenter OpenXR même en Flat. Plus empêche cet enregistrement en Flat. |
-| Sauvegardes | Données du jeu, hors caméras | Aucune écriture de personnages ajoutée au plugin. Lanceur avec copies complètes vérifiées avant chaque session. Pas de redirection non documentée. |
+| Sauvegardes | Données du jeu, hors caméras | Aucune écriture de personnages ajoutée au plugin. Aucune copie ni redirection de personnages ; emplacement natif du jeu. |
 
 Le CMake à utiliser est **`steamvr/CMakeLists.txt`**. Celui de la racine construit aussi des éléments historiques ; ce n'est pas la cible PCVR actuelle.
 La référence comporte des changements importants supplémentaires (notamment ses propres intégrations OpenXR et modules `cleanroom/heft`) : ils ne sont pas importés.

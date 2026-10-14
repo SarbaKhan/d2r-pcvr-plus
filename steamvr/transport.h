@@ -19,9 +19,6 @@ void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,in
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
 bool SpellSelected();
-bool LeftHandAiming();
-bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes
-bool NativeSkillCasting(); // any active trigger/quick cast; retain native locomotion input
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
 bool GameplayRay(float origin[3],float direction[3]);
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample);
@@ -32,8 +29,6 @@ bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update
 bool TakeBowShot(bowflight::Shot& shot);
-bool TakeSpellShot(int hand,bowflight::Shot& shot);
-bool SpellHeld(const bowflight::Shot& shot);
 bool BowPreviewPose(bowflight::Shot& pose,bool& visible);
 bowflight::Gate BowGate();
 void SetBowWorldEpoch(uint32_t epoch);
@@ -45,7 +40,7 @@ struct FrameTiming {
     uint32_t pipelines=0;bool gpuValid=false;
 };
 FrameTiming LastTiming();
-void Shutdown(bool preserveResolution=false);
+void Shutdown();
 void BeginPair();
 void BeginEye(int eye);
 // Diagnostic only: F8 saves the next complete gameplay pair via ReShade.
@@ -56,8 +51,7 @@ void Recenter();
 bool TakeWorldRecenter();
 bool Active();
 bool SpatialMenu();
-// mapNorth is the unmodified native camera's horizontal heading (map-up).
 bool View(float out[16], const float hero[3], float eyeHeight,
-          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth);
+          float userEyeHeight, float bodyHeading, float recenterYaw, int eye);
 bool Projection(float out[16], float nearWorld, int eye);
 }

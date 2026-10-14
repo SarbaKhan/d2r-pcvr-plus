@@ -283,23 +283,14 @@ texture2D SkyCap6Tex < source = D2R_SKYCAP_SNOW; > { Width = 1024; Height = 1024
 sampler2D SkyCap6Smp { Texture = SkyCap6Tex; AddressU = WRAP; AddressV = WRAP; };
 
 texture2D FogColorTex : COLOR;
-// Private depth channel adapted from natpoh/diablo2-vr-port 4b6284c (MIT, BodyWalkVR).
-texture2D FogDepthTex : D2RVR_DEPTH;
-texture2D FogDepthRsTex : DEPTH;
+texture2D FogDepthTex : DEPTH;
 sampler2D FogColorSmp { Texture = FogColorTex; };
 sampler2D FogDepthSmp { Texture = FogDepthTex; MinFilter = POINT; MagFilter = POINT; };
-sampler2D FogDepthRsSmp { Texture = FogDepthRsTex; MinFilter = POINT; MagFilter = POINT; };
-uniform bool OwnDepth < hidden = true; > = false;
 // The part of the depth buffer the game draws the scene into (vrcam, from the game's
 // viewport): 1 without an upscaler; DLSS draws at 0.5 - 0.67 of the screen into the top
 // left of a screen-size buffer, so every read of the depth goes through DepthAt (2026-10-08).
 uniform float2 DepthScale < hidden = true; > = float2(1.0, 1.0);
-float4 DepthAt(float2 duv) {
-    const float4 c = float4(duv * DepthScale, 0, 0);
-    return OwnDepth ? tex2Dlod(FogDepthSmp, c) : tex2Dlod(FogDepthRsSmp, c);
-}
-// under 16: no depth bound
-int DepthWidth() { return OwnDepth ? tex2Dsize(FogDepthSmp, 0).x : tex2Dsize(FogDepthRsSmp, 0).x; }
+float4 DepthAt(float2 duv) { return tex2Dlod(FogDepthSmp, float4(duv * DepthScale, 0, 0)); }
 
 void VS_Fullscreen(in uint id : SV_VertexID, out float4 pos : SV_Position, out float2 uv : TEXCOORD)
 {
@@ -1049,7 +1040,7 @@ sampler2D VoidFogTmpSmp { Texture = VoidFogTmpTex; AddressU = CLAMP; AddressV = 
 
 float PS_VoidFog(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 {
-    if (!FogOn || DepthWidth() < 16) return 0.0;
+    if (!FogOn || tex2Dsize(FogDepthSmp, 0).x < 16) return 0.0;
     const float2 duv = UpsideDown ? float2(uv.x, 1.0 - uv.y) : uv;
     const float down = UpsideDown ? -BUFFER_RCP_HEIGHT : BUFFER_RCP_HEIGHT;
     const float2 hit = FirstDepthBelowAt(duv, down);
@@ -1278,7 +1269,7 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
     // dark speck of the ground. ReShade then binds a tiny empty texture, not a
     // screen-sized buffer. (Probing for empty depth low on the screen was wrong:
     // looking up, the sky is down there too, and the sky went out.)
-    if (DepthWidth() < 16) return colour;
+    if (tex2Dsize(FogDepthSmp, 0).x < 16) return colour;
 
     // The pixel's four neighbours. Where the drawn distance ends, the far
     // ground has single empty pixels (depth 0): each was taken for the void,
@@ -1759,7 +1750,7 @@ bool OutsideTable(float2 uv, float d, int eye)
 float3 TableKey(float2 uv, int eye)
 {
     const float3 c = tex2D(FogColorSmp, uv).rgb;
-    if (!TableKeyOn || DepthWidth() < 16) return c;
+    if (!TableKeyOn || tex2Dsize(FogDepthSmp, 0).x < 16) return c;
     // The toolbar and the map drawn back (PS_GameHud, [hud_floor]) are never the void,
     // wherever bar_x / bar_y put them - over the room or past the board's edge: kept,
     // their dark lifted like the game's so the headset's key does not cut them.

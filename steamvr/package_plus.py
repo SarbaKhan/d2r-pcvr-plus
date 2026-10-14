@@ -22,6 +22,7 @@ def build(root, dll, runtime, output):
     (stage / 'steamvr').mkdir()
     for name in ('launch_plus.py', 'launch_windows.py', 'game_install.py', 'process_guard.py', 'portable_plus.py'):
         shutil.copy2(root / 'steamvr' / name, stage / 'steamvr' / name)
+    shutil.copy2(root / 'steamvr/vr_baseline.json', stage / 'vr-baseline.json')
     (stage / 'payload').mkdir()
     shutil.copy2(dll, stage / 'payload/d2rl-vrcam.dll')
     shutil.copy2(root / 'd2r_pcvr_plus_flat.ini', stage / 'payload/d2r_pcvr_plus_flat.ini')

@@ -6,6 +6,22 @@ et Python 3.12.10 x64 embarqué avec sa bibliothèque standard et sa licence.
 Aucune installation de Python, aucun compilateur et aucun téléchargement au premier
 lancement ne sont nécessaires. Conserver le dossier extrait entier.
 
+## Correction de la référence VR
+
+Cette DLL reprend les sources du runtime `918bd5e` livré par le setup 0.3.12 :
+commandes originales, distances des menus et rendu des dialogues PNJ. Le mode Flat
+et les trois lanceurs restent disponibles. `vr-baseline.json` identifie cette base ;
+`payload-sha256.json` identifie la nouvelle DLL Plus compilée.
+
+Si une mise à jour Plus précédente est enregistrée, fermer le jeu et utiliser
+`Rollback.cmd` avant `Update.cmd` avec ce nouveau paquet. Conserver vos profils.
+La correction nécessite bien le remplacement de la DLL, pas seulement des lanceurs.
+
+À valider sur Quest 2, séparément sous SteamVR et VDXR : A/B/X/Y et clics des sticks
+comparés au mod original, distance du menu principal et de l’inventaire, visibilité
+et sélection des options de plusieurs PNJ, puis retour en Flat F1/F2/F3. Les tests
+automatisés ne valident pas le rendu au casque ni les entrées matérielles.
+
 ## Installation de la mise à jour
 
 1. Fermer D2R et ses lanceurs. Extraire `D2R-PCVR-Plus-Windows.zip` dans un dossier

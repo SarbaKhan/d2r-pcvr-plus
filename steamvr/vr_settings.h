@@ -3,15 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include "controller_labels.h"
-#include "hand_vitals.h"
-#include "vr_resolution.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD };
+enum class Page { Controls, VR, Video };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, Count };
+           EyeHeight, ArmSpan, BodyCalibration, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -23,8 +20,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Motion combat", "Physical melee, bow and javelin; spell wheel and belt interactions", L"gameplay",L"motion_controls",0,0,1,1},
     {"Seated belt position", "Raises the belt for seated reach", L"interactions",L"seated",0,0,1,1},
     {"Dominant hand", "Grip over either shoulder switches weapon sets", L"interactions",L"dominant_hand",0,0,1,1},
-    {"Snap turn angle", "Degrees per flick; used when smooth turning is off", L"turn",L"snap",30,15,180,15},
-    {"Smooth turn speed", "Degrees per second; used when smooth turning is on", L"turn",L"speed",120,10,720,30},
+    {"Turning", "Zero selects smooth turning; other values are snap angles", L"turn",L"snap",0,0,180,15},
+    {"Smooth turn speed", "Degrees per second; used when turning is set to Smooth", L"turn",L"speed",120,10,720,30},
     {"Belt drop below eyes", "Standing mode only; smaller values raise the belt", L"interactions",L"waist_below_eyes",.65f,.30f,.95f,.05f},
     {"Belt forward reach", "Distance forward from the estimated torso", L"interactions",L"belt_forward",.26f,.03f,.5f,.025f},
     {"Foveated rendering", "Reduce peripheral shading; missing gaze uses full quality", L"render",L"fixed_foveation",1,0,2,1},
@@ -36,33 +33,15 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
     {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
     {"Body calibration", "Saved body calibration version", L"calibration",L"version",0,0,1,1},
-    {"Weapon skill gestures", "Compatible trigger skills power shield bash and bow release", L"gameplay",L"skill_gestures",1,0,1,1},
-    {"Wrist minimap", "Show above wrist health and mana; the wheel MAP tab stays available", L"interactions",L"wrist_map",1,0,1,1},
-    {"Wrist compass", "Left wrist bearings; N follows the top of the minimap", L"interactions",L"wrist_compass",1,0,1,1},
-    {"Headset / controller labels", "Automatic uses the active controllers; override if labels do not match", L"interactions",L"controller_labels",0,0,4,1},
-    {"Weapon skill indicators", "Show skill icons and names beside both weapons", L"interactions",L"weapon_skill_indicators",0,0,1,1},
-    {"Planar spell aiming", "Keep straight projectiles level; Off allows aiming up/down", L"gameplay",L"planar_spell_aim",1,0,1,1},
-    {"Health / mana location", "Wrist, palm-up, either gesture, or hidden", L"interactions",L"vitals_location",0,0,3,1},
-    {"Low health / mana alerts", "Brief popup and vibration when resources are low", L"interactions",L"critical_alerts",0,0,1,1},
-    {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",0,0,6,1},
-    {"Minimap / compass location", "Together on wrist, palm-up, either gesture, or hidden", L"interactions",L"navigation_location",0,0,3,1},
-    {"Smooth turning", "Continuous right-stick turning; Off uses snap turning", L"turn",L"smooth",0,0,1,1},
-    {"Ordinary mob bars", "Weak mobs' health and names; bosses and elites stay visible", L"hud",L"ordinary_mob_bars",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
 inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
-// Existing profiles used snap=0 for smooth turning. An explicit toggle takes
-// precedence; keep a usable angle so turning smooth off restores snap turning.
-inline bool SmoothTurning(float snap,float smooth){return smooth<0?snap==0:Normalize(SmoothTurn,smooth)>.5f;}
-inline float SnapDegrees(float snap){return snap==0?Definitions[Snap].defaultValue:Normalize(Snap,snap);}
-inline float EffectiveSnapAngle(float snap,float smooth){return SmoothTurning(snap,smooth)?0.f:SnapDegrees(snap);}
 inline uint32_t Changed(const Values& a,const Values& b){uint32_t mask=0;for(int i=0;i<Count;++i)if(std::fabs(a[i]-b[i])>.0001f)mask|=1u<<i;return mask;}
 inline bool Conflict(const Values& current,const Values& base,uint32_t mask){return (Changed(current,base)&mask)!=0;}
 enum class Result { None, Saving, Saved, Failed, Conflict };
@@ -73,44 +52,24 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=4;
-constexpr Rect Tabs[TabCount]={{40,114,285,60},{345,114,285,60},{650,114,285,60},{955,114,285,60}};
+constexpr Rect Tabs[3]={{40,114,386,60},{447,114,386,60},{854,114,386,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
-constexpr int RowY=242,RowStep=62;
-constexpr Rect ControllerBox{865,181,375,44};
-constexpr Rect WeaponIndicatorsBox{942,720,221,52},PlanarSpellAimBox{942,786,221,52};
-inline Rect ControllerOption(int option){return {865,225+option*58,375,58};}
+constexpr int RowY=246,RowStep=82;
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?10:page==Page::Video?7:page==Page::HUD?3:0;}
-inline Key RowKey(Page page,int row){
-    constexpr Key hud[]={VitalsLocation,CriticalAlerts,NavigationLocation};
-    if(page==Page::HUD)return hud[row];
-    if(page==Page::Video&&row==6)return RenderResolution;
-    constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
-    return page==Page::VR?vrRows[row]:Key(Foveation+row);
-}
-enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu };
+inline int RowCount(Page page){return page==Page::VR?7:page==Page::Video?6:0;}
+inline Key RowKey(Page page,int row){return Key((page==Page::Video?7:0)+row);}
+enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
-inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
+inline Hit HitTest(Page page,float u,float v){
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return {};
     const float x=u*Width,y=v*Height;
-    if(page==Page::VR){
-        if(ControllerBox.Contains(x,y))return {Kind::ControllerMenu};
-        if(controllerMenu){
-            for(int i=0;i<int(controllers::Choice::Count);++i)
-                if(ControllerOption(i).Contains(x,y))return {Kind::ControllerChoice,i};
-            return {Kind::DismissMenu}; // Never click through the dropdown.
-        }
-    }
-    for(int i=0;i<TabCount;++i)if(Tabs[i].Contains(x,y))return {Kind::Tab,i};
+    for(int i=0;i<3;++i)if(Tabs[i].Contains(x,y))return {Kind::Tab,i};
     if(Apply.Contains(x,y))return {Kind::Apply};
     if(Close.Contains(x,y))return {Kind::Close};
     if(Recenter.Contains(x,y))return {Kind::Recenter};
     if(Calibrate.Contains(x,y))return {Kind::Calibrate};
-    if(page==Page::Controls&&WeaponIndicatorsBox.Contains(x,y))return {Kind::Change,WeaponSkillIndicators,1};
-    if(page==Page::Controls&&PlanarSpellAimBox.Contains(x,y))return {Kind::Change,PlanarSpellAim,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};
@@ -123,16 +82,15 @@ class Model {
     Values base=Defaults(),draft=base;
     uint64_t serial=0,pending=0;
 public:
-    bool open=false,ready=false,controllerMenu=false;
+    bool open=false,ready=false;
     Page page=Page::Controls;
     Result result=Result::None;
     uint64_t revision=0;
     const Values& Get()const{return draft;}
     bool Dirty()const{return Changed(base,draft)!=0;}
     bool Busy()const{return pending!=0;}
-    void Open(const Snapshot& s){open=true;controllerMenu=false;page=Page::Controls;base=draft=s.values;ready=s.ready;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
-    void Close(){open=false;controllerMenu=false;++revision;}
-    bool DismissControllerMenu(){if(!controllerMenu)return false;controllerMenu=false;++revision;return true;}
+    void Open(const Snapshot& s){open=true;page=Page::Controls;base=draft=s.values;ready=s.ready;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
+    void Close(){open=false;++revision;}
     void Observe(const Snapshot& s){
         if(!open)return;
         if(pending){
@@ -148,13 +106,8 @@ public:
     Request Click(Hit hit){
         if(!open)return {};
         if(hit.kind==Kind::Close){Close();return {};}
-        if(hit.kind==Kind::DismissMenu){DismissControllerMenu();return {};}
-        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<TabCount){controllerMenu=false;page=Page(hit.index);++revision;return {};}
+        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<3){page=Page(hit.index);++revision;return {};}
         if(!ready||Busy())return {};
-        if(hit.kind==Kind::ControllerMenu&&page==Page::VR){controllerMenu=!controllerMenu;++revision;return {};}
-        if(hit.kind==Kind::ControllerChoice&&page==Page::VR&&controllerMenu&&hit.index>=0&&hit.index<int(controllers::Choice::Count)){
-            draft[ControllerLabels]=float(hit.index);controllerMenu=false;result=Result::None;++revision;return {};
-        }
         if(hit.kind==Kind::Change&&hit.index>=0&&hit.index<Count){
             const auto key=Key(hit.index);const auto& d=Definitions[key];
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;

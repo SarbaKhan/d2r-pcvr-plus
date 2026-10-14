@@ -22,22 +22,6 @@ public:
     }
 };
 
-// Item hover ends immediately on a ray miss, drag, or ownership change. It
-// must not inherit the longer protection kept for queued mouse releases.
-class ItemTooltipHover {
-    InputModeLease lease;
-public:
-    void Update(uint64_t now,bool active,bool hit,bool dragging) {
-        if(active&&hit&&!dragging)lease.Refresh(now);else lease.Clear();
-    }
-    bool Active(uint64_t now) const { return lease.Active(now); }
-};
-template<class Callback> int ItemCompareKey(bool hover,bool compareCaller,int key,Callback native) {
-    // VK_SHIFT, only at the native equipped-item comparison query. Never
-    // synthesize a keyboard event: Shift also buys stacks and moves items.
-    return hover&&compareCaller&&key==0x10?1:native(key);
-}
-
 // Physical bows/javelins and direct walking do not send native pad buttons.
 // Starting through the laser can therefore leave the game in KB/M mode, where
 // controller interaction targets are not updated. Request the native layout

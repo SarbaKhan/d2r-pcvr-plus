@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <intrin.h>
 #include <atomic>
 #include <cstring>
 #include "panel_input.h"
@@ -10,7 +9,6 @@
 namespace panelinput {
 namespace {
 framevr::panels::InputModeLease lease;
-framevr::panels::ItemTooltipHover itemHover;
 framevr::panels::WorldInputMode worldInput;
 using Activity=bool(*)(void*);
 using Request=bool(*)(int);
@@ -29,46 +27,6 @@ std::atomic<bool> ready{false},reported{false};
 std::atomic<bool> pointerFocus{false};
 thread_local bool pointerContext=false;
 thread_local bool bindingContext=false;
-
-// 3.3.93787 inventory item tooltip producer, shared by player/vendor grids.
-// Its controller query supplies the delayed flag in the queued tooltip style
-// (rbp+0x114). TooltipsPanel waits 1000 ms only when that flag is set. Override
-// this one query, leaving the rest of the native layout/controller state alone.
-constexpr uint64_t TooltipDelayRva=0x2c3dca;
-constexpr uint8_t TooltipDelaySig[]={0xe8,0x41,0x40,0xdb,0xff,0x4c,0x8d,0x44,0x24,0x20,0x88,0x85,0x14,0x01,0x00,0x00};
-// Native comparison already checks widget eligibility, equipped slots, empty
-// text and suppression before querying Shift. Keep those decisions intact.
-constexpr uint64_t TooltipCompareRva=0x2c3f07;
-constexpr uint8_t TooltipCompareSig[]={0xb9,0x10,0x00,0x00,0x00,0xe8,0xef,0x61,0xf4,0x00,0x85,0xc0,0x75,0x08,
-    0x38,0x87,0x32,0x06,0x00,0x00,0x74,0x72};
-constexpr uint64_t KeyRva=0x120a100;
-constexpr uint8_t KeySig[]={0x48,0x83,0xec,0x28,0xff,0x15,0x86,0x6e,0xaa,0x00,0xc1,0xe8,0x0f,0x83,0xe0,0x01,0x48,0x83,0xc4,0x28,0xc3};
-using Key=int(*)(int);
-Key originalKey=nullptr;
-std::atomic<bool> tooltipsReady{false};
-uintptr_t tooltipDelayReturn=0,tooltipCompareReturn=0;
-
-bool ItemHoverActive() {
-    return tooltipsReady.load(std::memory_order_acquire)&&!bindingContext&&itemHover.Active(GetTickCount64());
-}
-int OnKey(int key) {
-    const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
-    return framevr::panels::ItemCompareKey(ItemHoverActive(),caller==tooltipCompareReturn,key,
-        [](int k){return originalKey(k);});
-}
-void InstallTooltips() {
-    if(tooltipsReady.load())return;
-    // Optional feature: unsupported tooltip code must not disable laser input.
-    if(!d2rsig::Check(TooltipDelayRva,TooltipDelaySig,sizeof TooltipDelaySig)||
-       !d2rsig::Check(TooltipCompareRva,TooltipCompareSig,sizeof TooltipCompareSig)||
-       !d2rsig::Check(KeyRva,KeySig,sizeof KeySig))return;
-    tooltipDelayReturn=d2rsig::Addr(TooltipDelayRva)+5;
-    tooltipCompareReturn=d2rsig::Addr(TooltipCompareRva)+10;
-    if(d2rsig::Hook(KeyRva,KeySig,sizeof KeySig,reinterpret_cast<void*>(&OnKey),reinterpret_cast<void**>(&originalKey))) {
-        tooltipsReady.store(true,std::memory_order_release);
-        framevr::logging::Write("Frame panels: immediate laser item tooltips and native equipped-item comparison installed");
-    }
-}
 
 // 3.3.93787: the input-event preflight requests KB/M then clears every pad's
 // state. Returning false means "no layout transition pending", so dispatch
@@ -107,12 +65,7 @@ constexpr uint8_t MoveSig[]={0x40,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0xf9,0xe8,0
 constexpr uint8_t ButtonSig[]={0x48,0x89,0x74,0x24,0x20,0x55,0x48,0x8d,0xac,0x24,0xe0,0xfd,0xff,0xff,0x48,0x81,0xec,0x20,0x03,0x00,0x00};
 
 bool Owns(){return ready.load(std::memory_order_acquire)&&lease.Active(GetTickCount64());}
-bool ControllerMode(){
-    if(bindingContext)return true;
-    if(pointerContext)return false;
-    if(ItemHoverActive()&&reinterpret_cast<uintptr_t>(_ReturnAddress())==tooltipDelayReturn)return false;
-    return isController();
-}
+bool ControllerMode(){return bindingContext?true:pointerContext?false:isController();}
 bool CursorSnap(){return framevr::panels::CursorSnapAllowed(pointerContext,bindingContext)&&originalCursorSnap();}
 template<int I> bool OnPointer(void* event) {
     return framevr::panels::RoutePointer(Owns(),pointerContext,[&]{return originalPointer[I](event);});
@@ -146,8 +99,7 @@ bool OnRequest(int method) {
 }
 }
 void OwnPointer(){pointerFocus=true;lease.Refresh(GetTickCount64());}
-void UseController(){pointerFocus=false;ItemHover(false);}
-void ItemHover(bool active,bool hit,bool dragging){itemHover.Update(GetTickCount64(),active,hit,dragging);}
+void UseController(){pointerFocus=false;}
 void WorldInput(bool active){worldInput.Update(GetTickCount64(),active);}
 void MaintainWorldController(bool player,bool menu){
     if(!ready.load(std::memory_order_acquire))return;
@@ -174,7 +126,7 @@ bool ControllerReady(){
     return false;
 }
 void Install() {
-    if(ready.load()){InstallTooltips();return;}
+    if(ready.load())return;
     if((!controllerIn&&!d2rsig::Check(ControllerRva,ControllerSig,sizeof ControllerSig))||
        !d2rsig::Check(ActivityRequestRva,ActivityRequestSig,sizeof ActivityRequestSig))return;
     // Validate every entry point before changing any of them. Partial installs
@@ -199,6 +151,6 @@ void Install() {
             reinterpret_cast<void*>(pointerHooks[i]),reinterpret_cast<void**>(&originalPointer[i]));
         complete&=pointerIn[i];
     }
-    if(complete){ready.store(true,std::memory_order_release);framevr::logging::Write("Frame panels: controller layout retained; exact laser focus without controller cursor snapping and event consumption installed");InstallTooltips();}
+    if(complete){ready.store(true,std::memory_order_release);framevr::logging::Write("Frame panels: controller layout retained; exact laser focus without controller cursor snapping and event consumption installed");}
 }
 }

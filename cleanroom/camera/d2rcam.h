@@ -48,8 +48,6 @@ void SetCallbacks(ViewFn view, ProjFn proj);
 // Native stereo labels: project the game's original unit anchors with the
 // current scene matrices, bypassing inline reconstruction of a flat frustum.
 void SetStereoLabels(bool on);
-// Show ordinary monsters' health/name plates in native VR (default false).
-void SetOrdinaryMobBars(bool show);
 // Trial: paint the monster health panel after current-eye tooltip updates.
 void SetMonsterDrawOrder(bool on);
 // Main rendering thread only; -1 outside paired gameplay.

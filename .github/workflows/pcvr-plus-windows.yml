@@ -20,7 +20,7 @@ jobs:
       - name: Run CPU-only Windows fixtures
         shell: powershell
         run: |
-          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|spell-cast|bow-flight)-test$'
+          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|bow-flight|quick-cast|spell-aim|native-panels|interaction|journal|vr-settings|vr-settings-store|body-calibration|body-tracking)-test$'
           if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
       - name: Run Flat/VR launcher fixtures
         shell: powershell
@@ -29,6 +29,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Plus launcher fixtures failed' }
           & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_windows_test.py
           if ($LASTEXITCODE -ne 0) { throw 'Upstream launcher fixtures failed' }
+      - name: Verify shipped VR source baseline
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p vr_baseline_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'VR source baseline changed' }
       - name: Run reversible updater fixtures
         shell: powershell
         run: |

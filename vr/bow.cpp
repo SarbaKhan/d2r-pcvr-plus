@@ -5,12 +5,10 @@
 #include <array>
 #include <atomic>
 #include <mutex>
-#include <span>
 #include <cstdio>
 #include <cstring>
 #include "bow.h"
 #include "bow_signatures.h"
-#include "spells.h"
 #include "melee.h"
 #include "combat.h"
 #include "projectiles.h"
@@ -46,18 +44,11 @@ struct Arrow {
     uintptr_t game=0,server=0,client=0,room=0;
     uint32_t serverId=0,clientId=0;
     VisualBinding visualBinding{};
-    bool visualDone=false,creating=false,reserved=false;
+    bool visualDone=false,creating=false;
     uint64_t renderAt=0;
     std::array<float,16> rendered{},previous{};
 };
-// Two level-capped Charged Bolt volleys can each keep 24 missiles alive for
-// 77 ticks, with a seven-tick fastest cast. Leave room for concurrent bolts
-// and client cleanup without cutting a paid volley short.
-std::array<Arrow,768> arrows{};
-std::atomic<size_t> usedSlots{0};
-// Rendering visits many unrelated entities. Scan only allocated records, not
-// the maximum volley capacity, and shrink that range as native units retire.
-auto UsedArrows(){return std::span<Arrow>(arrows.data(),usedSlots.load(std::memory_order_relaxed));}
+std::array<Arrow,32> arrows{};
 struct Preview {
     Shot pose{};
     bool active=false,visible=false;
@@ -73,7 +64,6 @@ std::atomic<uint64_t> previewReadyAt{0};
 uint64_t previewAttemptAt=0;
 Gate current{};uintptr_t clientHero=0;
 Once once;
-Once spellOnce[2];
 std::array<Shot,4> pending{};size_t pendingCount=0;
 framevr::CallbackTicket gameCallback,uiCallback;
 uint64_t maintenanceAt=0;
@@ -83,11 +73,7 @@ std::atomic<unsigned> boundMeshes{0},ignoredEntities{0};
 std::atomic<unsigned> positionMismatch{0};
 std::atomic<unsigned> previewCreated{0},previewRefused{0},uiRecovered{0};
 std::atomic<unsigned> gameRecovered{0};
-struct Launch {
-    Shot shot{};uintptr_t game=0,player=0;int slot=-1;
-    unsigned created=0,count=0;
-    std::array<int,24> slots{};
-};
+struct Launch {Shot shot{};uintptr_t game=0,player=0;int slot=-1;bool created=false;};
 thread_local Launch launch;
 thread_local int creatingVisual=-1;
 thread_local uint64_t visualSession=0,visualSequence=0;
@@ -116,8 +102,7 @@ bool Live(const Shot& s) {
         s.equipment==(gamestate::HandsKey()^(gamestate::WeaponSet()<<30));
 }
 bool Same(const Arrow& a,const Arrow& b) {
-    return a.flight.shot.session==b.flight.shot.session&&a.flight.shot.sequence==b.flight.shot.sequence&&
-        a.flight.shot.member==b.flight.shot.member;
+    return a.flight.shot.session==b.flight.shot.session&&a.flight.shot.sequence==b.flight.shot.sequence;
 }
 void Recount();
 void Store(size_t slot,const Arrow& a) {
@@ -129,10 +114,7 @@ void Store(size_t slot,const Arrow& a) {
 }
 void Recount() { // mutex held
     unsigned r=preview.binding.Bound()?1:0,s=0,c=0;
-    auto size=usedSlots.load(std::memory_order_relaxed);
-    while(size&&!arrows[size-1].flight.alive&&!arrows[size-1].client&&!arrows[size-1].creating&&!arrows[size-1].reserved)--size;
-    usedSlots.store(size,std::memory_order_relaxed);
-    for(const auto& a:UsedArrows()){if(a.visualBinding.Bound())++r;if(a.flight.alive)++s;if(a.client)++c;}
+    for(const auto& a:arrows){if(a.visualBinding.Bound())++r;if(a.flight.alive)++s;if(a.client)++c;}
     renderCount=r;serverCount=s;clientCount=c;
     previewClient=preview.client!=0;
 }
@@ -140,14 +122,6 @@ int End(size_t slot,Arrow& a,uintptr_t game,uintptr_t unit) {
     a.flight.alive=false;a.flight.updatedAt=GetTickCount64();Store(slot,a);
     reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t,int)>(d2rsig::Addr(HitRva))(game,unit,0,1);
     return 2;
-}
-bool MoveSpell(Arrow& a,Vec point) {
-    if(a.flight.shot.kind!=Kind::Spell)return true;
-    const auto grid=GridPoint(a.flight.shot,point)*a.flight.shot.unitsPerMetre;
-    const int x=int(grid.x*.5f),y=int(grid.z*.5f);
-    const auto room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(a.room,x,y);
-    if(!room||!spellvr::Position(a.game,a.server,room,x,y))return false;
-    a.room=room;return true;
 }
 bool Body(uintptr_t unit,uint32_t classId,const Shot& shot,Vec& bottom,Vec& top,float& radius) {
     uint8_t bank=0,fields[16]{};Vec p{};
@@ -165,7 +139,7 @@ int Collision(uintptr_t game,uintptr_t unit) {
     if(!Read(unit,header))return originalCollision(game,unit);
     {
         std::lock_guard lock(mutex);
-        for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].server==unit&&arrows[i].serverId==header[2]&&
+        for(size_t i=0;i<arrows.size();++i)if(arrows[i].server==unit&&arrows[i].serverId==header[2]&&
             arrows[i].game==game&&arrows[i].flight.shot.session==current.session){slot=i;a=arrows[i];break;}
     }
     if(slot==arrows.size())return originalCollision(game,unit);
@@ -175,21 +149,12 @@ int Collision(uintptr_t game,uintptr_t unit) {
     uintptr_t localGame=0,player=0;
     if(!melee::LocalServer(localGame,player)||localGame!=game)return End(slot,a,game,unit);
     combat::ObserveLocalPlayer(player);
-    if(a.flight.NativePath()) {
-        // Native update retains Charged Bolt's wandering, lifetime, grid
-        // collision and damage. Only its visible position is followed here.
-        const int result=originalCollision(game,unit);
-        Vec position{};
-        if(Position(unit,position))a.flight.NativePosition(position,GetTickCount64());
-        if(result==2)a.flight.alive=false;
-        Store(slot,a);return result;
-    }
     const int remaining=reinterpret_cast<int(*)(uintptr_t)>(d2rsig::Addr(FrameGetRva))(unit)-1;
     reinterpret_cast<void(*)(uintptr_t,int)>(d2rsig::Addr(FrameSetRva))(unit,remaining);
     if(remaining<=0){++expired;return End(slot,a,game,unit);}
     uintptr_t path=0;int velocity=0;
     if(!Read(unit+0x38,path)||!Read(path+0xa0,velocity))return End(slot,a,game,unit);
-    a.flight.speed=FlightSpeed(a.flight.shot,velocity);
+    a.flight.speed=Speed(velocity,a.flight.shot.draw);
     const float distance=a.flight.distance,step=a.flight.speed*.04f;
     const Vec from=distance==0?a.flight.shot.origin:Tip(a.flight.shot,distance),to=Tip(a.flight.shot,distance+step);
     const float length=ProjectileLength(a.flight.shot);
@@ -247,7 +212,6 @@ int Collision(uintptr_t game,uintptr_t unit) {
         // A preceding hit/proc can kill or remove another candidate.
         if(melee::ServerUnit(game,1,t.id)!=t.unit||!Read(t.unit+0xc,mode)||mode==0||mode==12)continue;
         if(!a.flight.Remember(t.id))return End(slot,a,game,unit);
-        if(!MoveSpell(a,from+(to-from)*t.fraction))return End(slot,a,game,unit);
         // Native missile owns weapon damage, costs, criticals, leech, procs,
         // immunities and pierce. It does not get a second ground-grid hit.
         const int result=reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t,int)>(d2rsig::Addr(HitRva))(game,unit,t.unit,0);
@@ -258,14 +222,13 @@ int Collision(uintptr_t game,uintptr_t unit) {
         }
     }
     a.flight.distance=advance(stop);a.flight.updatedAt=GetTickCount64();
-    if(!MoveSpell(a,from+(to-from)*std::max(0.f,stop-(stop<1?.0001f:0.f))))return End(slot,a,game,unit);
     if(stop<1){++walls;return End(slot,a,game,unit);}
     Store(slot,a);return 1;
 }
 uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,int extra,
                 int offsetX,int offsetY,int targetX,int targetY,int ammo) {
     if(launch.slot>=0&&launch.game==game&&launch.player==player) {
-        if(missile!=int(MissileId(launch.shot)))return 0; // before native costs
+        if(missile!=int(launch.shot.kind))return 0; // before native ammo use
         Vec p{};if(!Position(player,p))return 0;
         const auto& shot=launch.shot;
         const Vec tip=GridPoint(shot,Tip(shot,0))*shot.unitsPerMetre;
@@ -289,7 +252,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     // those records by authoritative id lookup, never by a wall-clock timeout
     // which would confuse an ordinary paused game with a destroyed projectile.
     uintptr_t checkGame=0,checkPlayer=0;
-    if(melee::LocalServer(checkGame,checkPlayer))for(size_t j=0;j<usedSlots.load(std::memory_order_relaxed);++j) {
+    if(melee::LocalServer(checkGame,checkPlayer))for(size_t j=0;j<arrows.size();++j) {
         Arrow a;{std::lock_guard lock(mutex);a=arrows[j];}
         if(a.flight.alive&&a.game==checkGame&&a.flight.shot.session==gamestate::LocalPlayer()&&
            melee::ServerUnit(checkGame,3,a.serverId)!=a.server) {
@@ -297,7 +260,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         }
     }
     for(size_t i=0;i<n;++i) {
-        auto shot=batch[i];
+        const auto& shot=batch[i];
         if(!Live(shot)){++stale;continue;}
         uintptr_t game=0,player=0;Vec p{};uint32_t mode=0;
         if(!melee::LocalServer(game,player)||!Read(player+0xc,mode)||mode==0||mode==17||mode==5||mode==6||
@@ -307,43 +270,21 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         }
         int level=1;
         const bool javelin=shot.kind==Kind::Javelin;
-        const bool spell=shot.kind==Kind::Spell;
-        if(spell&&!spellvr::Prepare(shot,game,player))continue;
-        if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN:
+        if(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN:
            (!reinterpret_cast<int(*)(uintptr_t)>(d2rsig::Addr(IsBowRva))(player)||
-            reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=0))) {++refused;continue;}
-        Launch next;next.shot=shot;next.game=game;next.player=player;
-        const unsigned required=spell?framevr::spellcast::LaunchCapacity(shot.skill):1;
+            reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=0)) {++refused;continue;}
+        int slot=-1;
         {
             std::lock_guard lock(mutex);
-            for(size_t j=0;j<arrows.size()&&next.count<required;++j)
-                if(!arrows[j].flight.alive&&!arrows[j].client&&!arrows[j].creating&&!arrows[j].reserved)next.slots[next.count++]=int(j);
-            if(next.count==required) {
-                next.slot=next.slots[0];
-                for(unsigned j=0;j<next.count;++j) {
-                    auto& a=arrows[next.slots[j]];a={};a.reserved=true;a.flight.shot=shot;a.flight.shot.member=int(j);
-                }
-                usedSlots.store(std::max(usedSlots.load(std::memory_order_relaxed),size_t(next.slots[next.count-1]+1)),std::memory_order_relaxed);
-            }
+            for(size_t j=0;j<arrows.size();++j)if(!arrows[j].flight.alive&&!arrows[j].client&&!arrows[j].creating){slot=int(j);arrows[j]={};arrows[j].flight.shot=shot;break;}
         }
-        if(next.slot<0){++refused;continue;}
+        if(slot<0){++refused;continue;}
         combat::ObserveLocalPlayer(player);
-        const auto saved=launch;launch=next;
+        const auto saved=launch;launch={shot,game,player,slot,false};
         // Native basic attack -> Shoot checks and consumes arrows once. There
         // is deliberately no controller A press or second client-side attack.
-        if(spell) {
-            spellvr::Cast(shot,game,player);
-            if(launch.created)spellvr::Fired(shot,game,player);
-        } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
+        reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
         if(!launch.created)++refused;
-        {
-            std::lock_guard lock(mutex);
-            for(unsigned j=0;j<next.count;++j) {
-                auto& a=arrows[next.slots[j]];
-                if(a.flight.shot.session==shot.session&&a.flight.shot.sequence==shot.sequence)a.reserved=false;
-            }
-            Recount();
-        }
         launch=saved;
     }
 }
@@ -353,10 +294,9 @@ void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint
     const auto d=framevr::math::Normalized(Vec{shot.direction.x,0,shot.direction.z});
     int tx=x+int(d.x*60),ty=y+int(d.z*60);if(tx==x&&ty==y)++ty;
     Param(params,0,uint32_t(0x21));Param(params,8,hero);Param(params,0x10,hero);
-    Param(params,0x20,MissileId(shot));
+    Param(params,0x20,uint32_t(shot.kind));
     Param(params,0x24,x);Param(params,0x28,y);Param(params,0x2c,tx);Param(params,0x30,ty);
-    Param(params,0x3c,shot.kind==Kind::Spell?shot.skill:0);
-    Param(params,0x40,shot.kind==Kind::Spell?shot.level:1);
+    Param(params,0x40,int(1));
 }
 void PresentPreview(uintptr_t hero,uint64_t session) {
     Preview snapshot;
@@ -403,7 +343,7 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
     const bool validHero=combat::LocalPlayerId(id)&&Read(hero,h)&&h[0]==0&&h[2]==id;
     PresentPreview(validHero?hero:0,session);
     if(!enabled.load()||!validHero)return;
-    for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
+    for(size_t i=0;i<arrows.size();++i) {
         Arrow a;
         {
             std::lock_guard lock(mutex);a=arrows[i];
@@ -413,15 +353,13 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
         // Only values cross game -> UI. No server owner/path/target pointer is
         // supplied to the client allocator, and its id is allocated normally.
         std::array<uint8_t,0x98> params{};
-        auto visualShot=a.flight.shot;
-        if(a.flight.NativePath())visualShot.origin=a.flight.Point();
-        VisualParams(visualShot,a.flight.distance,hero,params);
+        VisualParams(a.flight.shot,a.flight.distance,hero,params);
         const auto saved=creatingVisual;const auto savedSession=visualSession,savedSequence=visualSequence;
         creatingVisual=int(i);visualSession=a.flight.shot.session;visualSequence=a.flight.shot.sequence;
         const auto client=projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
         creatingVisual=saved;visualSession=savedSession;visualSequence=savedSequence;
         uint32_t header[3]{};
-        const bool validClient=client&&Read(client,header)&&header[0]==3&&header[1]==MissileId(a.flight.shot);
+        const bool validClient=client&&Read(client,header)&&header[0]==3&&header[1]==uint32_t(a.flight.shot.kind);
         bool orphan=false;
         {
             std::lock_guard lock(mutex);
@@ -437,23 +375,21 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
 void ClientTick(uintptr_t unit,float dt) {
     if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)){originalClientTick(unit,dt);return;}
     uint32_t header[3]{};size_t slot=arrows.size();bool alive=false;
-    bool held=false,spellEnd=false;Flight ended;
-    if(Read(unit,header)&&header[0]==3) {
+    bool held=false;
+    if(Read(unit,header)&&header[0]==3&&BasicMissile(header[1])) {
         std::lock_guard lock(mutex);
         if(preview.client==unit&&preview.clientId==header[2]) {
             held=true;alive=preview.pose.session==current.session&&enabled.load();
             if(!alive){preview.client=0;preview.binding.Clear();previewReadyAt=0;Recount();}
         }
-        for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
+        for(size_t i=0;i<arrows.size();++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
             slot=i;alive=arrows[i].flight.alive&&arrows[i].flight.shot.session==current.session&&enabled.load();
-            spellEnd=!alive&&arrows[i].flight.shot.kind==Kind::Spell&&arrows[i].flight.shot.session==current.session&&enabled.load();
-            if(spellEnd)ended=arrows[i].flight;
             if(!alive){arrows[i].client=0;arrows[i].visualBinding.Clear();Recount();}break;
         }
     }
     if(held){if(!alive)originalClientKill(unit);return;}
     if(slot==arrows.size()){originalClientTick(unit,dt);return;}
-    if(!alive&&(!spellEnd||!spellvr::FinishVisual(unit,ended)))originalClientKill(unit);
+    if(!alive)originalClientKill(unit);
     // Server owns lifetime/collision; the HD transform owns full 3D movement.
     // Running native client prediction here would resurrect flat-grid hits.
 }
@@ -462,7 +398,7 @@ void ClientKill(uintptr_t unit) {
     {
         std::lock_guard lock(mutex);
         if(preview.client==unit){preview.client=0;preview.binding.Clear();previewReadyAt=0;}
-        for(auto& a:UsedArrows())if(a.client==unit){a.client=0;a.visualBinding.Clear();}
+        for(auto& a:arrows)if(a.client==unit){a.client=0;a.visualBinding.Clear();}
         Recount();
     }
     originalClientKill(unit);
@@ -483,13 +419,9 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
             }
             matrix=preview.rendered;previous=preview.previous;found=held=true;heldActive=preview.active;
         }
-        for(auto& a:UsedArrows())if(!held&&a.visualBinding.Matches(entity)&&a.flight.shot.session==current.session) {
+        for(auto& a:arrows)if(!held&&a.visualBinding.Matches(entity)&&a.flight.shot.session==current.session) {
             if(a.renderAt!=at||a.rendered[15]!=1) {
-                a.previous=a.rendered;
-                if(a.flight.shot.kind==Kind::Spell) {
-                    if(!Read(out,a.rendered))continue;
-                    SpellMatrix(a.flight,at,a.rendered.data());
-                } else ArrowMatrix(a.flight,at,a.rendered.data());
+                a.previous=a.rendered;ArrowMatrix(a.flight,at,a.rendered.data());
                 if(a.previous[15]!=1)a.previous=a.rendered;
                 a.renderAt=at;
             }
@@ -516,7 +448,6 @@ bool PreviewReady() {
     const auto at=previewReadyAt.load();
     return enabled.load()&&at&&GetTickCount64()-at<150;
 }
-bool SpellReady(){return enabled.load()&&ready.load()&&spellvr::Ready();}
 void Update(const Gate& gate,uintptr_t hero) {
     bool visible=false;
     Shot pose;const bool held=gate.active&&enabled.load()&&framevr::BowPreviewPose(pose,visible)&&Allowed(pose,gate,GetTickCount64());
@@ -524,8 +455,7 @@ void Update(const Gate& gate,uintptr_t hero) {
     {
         std::lock_guard lock(mutex);
         if(current.session!=gate.session) {
-            for(auto& a:UsedArrows())a={};
-            usedSlots=0;preview={};previewReadyAt=0;previewAttemptAt=0;
+            arrows={};preview={};previewReadyAt=0;previewAttemptAt=0;
             pendingCount=0;gameCallback.Cancel();uiCallback.Cancel();Recount();
         }
         current=gate;clientHero=hero;
@@ -536,13 +466,13 @@ void Update(const Gate& gate,uintptr_t hero) {
         if(uiCallback.Expired(now,500)){uiCallback.Cancel();++uiRecovered;}
         const bool needsPreview=(!enabled.load()&&preview.client)||(held&&visible&&!preview.client&&now-previewAttemptAt>=500);
         bool needsVisual=false;
-        if(ready.load())for(const auto& a:UsedArrows())if(a.flight.alive&&!a.visualDone){needsVisual=true;break;}
+        if(ready.load())for(const auto& a:arrows)if(a.flight.alive&&!a.visualDone){needsVisual=true;break;}
         if(ready.load()&&(needsPreview||needsVisual)) {
             uiToken=uiCallback.Start(now);
             if(uiToken&&needsPreview)previewAttemptAt=now;
         }
         if(ready.load()&&now-maintenanceAt>=100)
-            for(const auto& a:UsedArrows())if(a.flight.alive){gameToken=gameCallback.Start(now);if(gameToken)maintenanceAt=now;break;}
+            for(const auto& a:arrows)if(a.flight.alive){gameToken=gameCallback.Start(now);if(gameToken)maintenanceAt=now;break;}
     }
     if(uiToken&&threads->runOnUiThread(context,&Present,reinterpret_cast<void*>(uiToken))!=D2RL::Threads::Result::Success) {
         std::lock_guard lock(mutex);uiCallback.Claim(uiToken);
@@ -555,12 +485,7 @@ void Submit(const Shot& shot) {
     uintptr_t token=0;
     {
         std::lock_guard lock(mutex);
-        if(shot.kind==Kind::Spell&&(shot.hand<0||shot.hand>1))return;
-        auto& dedupe=shot.kind==Kind::Spell?spellOnce[shot.hand]:once;
-        if(!ready.load()||!enabled.load()||!dedupe.Take(shot,current,GetTickCount64())){++stale;return;}
-        // Held spell input is a latest-pose request, never a backlog of casts.
-        if(shot.kind==Kind::Spell)for(size_t i=0;i<pendingCount;++i)
-            if(pending[i].kind==Kind::Spell&&pending[i].hand==shot.hand){pending[i]=shot;return;}
+        if(!ready.load()||!enabled.load()||!once.Take(shot,current,GetTickCount64())){++stale;return;}
         if(pendingCount==pending.size()){++refused;return;}
         pending[pendingCount++]=shot;++submitted;
         token=gameCallback.Start(GetTickCount64());
@@ -570,87 +495,39 @@ void Submit(const Shot& shot) {
     }
 }
 void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
-    if(launch.slot<0||launch.created>=launch.count||launch.game!=game)return;
+    if(launch.slot<0||launch.created||launch.game!=game)return;
     uintptr_t owner=0,path=0;uint32_t h[3]{};int velocity=0;
-    if(!Read(params+8,owner)||owner!=launch.player||!Read(unit,h)||h[0]!=3||h[1]!=MissileId(launch.shot)||
+    if(!Read(params+8,owner)||owner!=launch.player||!Read(unit,h)||h[0]!=3||h[1]!=uint32_t(launch.shot.kind)||
        !Read(unit+0x38,path)||!Read(path+0xa0,velocity))return;
     Arrow a;a.game=game;a.server=unit;a.serverId=h[2];a.flight.shot=launch.shot;
-    a.flight.shot.member=int(launch.created);
-    a.flight.speed=FlightSpeed(launch.shot,velocity);a.flight.alive=true;a.flight.updatedAt=GetTickCount64();
-    if(a.flight.NativePath()) {
-        Vec start{};if(!Position(unit,start))return;
-        a.flight.BeginNativePath(start,a.flight.updatedAt);
-    }
+    a.flight.speed=Speed(velocity,launch.shot.draw);a.flight.alive=true;a.flight.updatedAt=GetTickCount64();
     a.room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(unit);
-    {
-        std::lock_guard lock(mutex);
-        auto& reserved=arrows[launch.slots[launch.created]];
-        if(current.session!=a.flight.shot.session||!reserved.reserved||!Same(reserved,a))return;
-        reserved=a;Recount();
-    }
-    ++launch.created;++spawned;
+    {std::lock_guard lock(mutex);arrows[launch.slot]=a;Recount();}
+    launch.created=true;++spawned;
     lastLatency=unsigned(GetTickCount64()-launch.shot.at);lastSpeedCm=unsigned(a.flight.speed*100);
 }
-bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y) {
-    if(launch.slot<0||launch.game!=game||launch.player!=player||
-       launch.shot.kind!=Kind::Spell||!framevr::spellcast::NativePath(launch.shot.skill)||!x||!y)return false;
-    const auto p=GridPoint(launch.shot,launch.shot.origin)*launch.shot.unitsPerMetre;
-    const auto d=launch.shot.direction;
-    *x=std::clamp(int(p.x*.5f+d.x*40),1,65534);
-    *y=std::clamp(int(p.z*.5f+d.z*40),1,65534);
-    return true;
-}
-int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted) {
-    if(launch.slot<0||launch.game!=game||launch.shot.kind!=Kind::Spell||
-       !framevr::spellcast::NativePath(launch.shot.skill))return 0;
-    uintptr_t owner=0;int missile=-1,skill=-1;
-    if(!Read(params+8,owner)||owner!=launch.player||!Read(params+0x20,missile)||
-       missile!=launch.shot.missile||!Read(params+0x3c,skill)||skill!=launch.shot.skill)return 0;
-    if(launch.created>=launch.count||!Read(params,adjusted))return -1;
-    const auto p=GridPoint(launch.shot,launch.shot.origin)*launch.shot.unitsPerMetre;
-    const int x=int(p.x*.5f),y=int(p.z*.5f);
-    int tx=0,ty=0;
-    if(x<1||x>65534||y<1||y>65534||!SpellTarget(game,owner,&tx,&ty))return -1;
-    Param(adjusted,0x24,x);Param(adjusted,0x28,y);Param(adjusted,0x2c,tx);Param(adjusted,0x30,ty);
-    return 1; // preserve native init selector/ordinal, count, level and owner
-}
-bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
+bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint) {
     uint32_t header[3]{};
-    if(!Read(unit,header)||header[0]!=3)return false;
+    if(!Read(unit,header)||header[0]!=3||!BasicMissile(header[1]))return false;
     std::lock_guard lock(mutex);
     if(header[1]==0&&preview.pose.session==current.session&&((preview.active&&previewCreatingSession&&previewCreatingSession==current.session)||
        (preview.client==unit&&preview.clientId==header[2]))) {
         if(!preview.binding.Bind(entity,hasReleasePoint))return false;
         preview.client=unit;preview.clientId=header[2];Recount();return true;
     }
-    for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
+    for(size_t i=0;i<arrows.size();++i) {
         auto& a=arrows[i];
-        if(header[1]==MissileId(a.flight.shot)&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&((a.client==unit&&a.clientId==header[2])||
+        if(header[1]==uint32_t(a.flight.shot.kind)&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&((a.client==unit&&a.clientId==header[2])||
             (creatingVisual==int(i)&&a.flight.shot.session==visualSession&&a.flight.shot.sequence==visualSequence))) {
             const bool wasBound=a.visualBinding.Bound();
-            const bool bound=a.flight.shot.kind==Kind::Spell?a.visualBinding.BindRoot(entity,isRoot):a.visualBinding.Bind(entity,hasReleasePoint);
-            // Descendant release components still need removal even though
-            // only the root owns the spell transform.
-            if(!bound){++ignoredEntities;return a.flight.shot.kind==Kind::Spell;}
+            if(!a.visualBinding.Bind(entity,hasReleasePoint)){++ignoredEntities;return false;}
             if(!wasBound)++boundMeshes;
             a.client=unit;a.clientId=header[2];Recount();return true;
         }
     }
     return false;
 }
-bool OwnsVisual(uintptr_t unit) {
-    uint32_t h[3]{};if(!Read(unit,h)||h[0]!=3)return false;
-    std::lock_guard lock(mutex);
-    for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
-        const auto& a=arrows[i];
-        if(a.flight.shot.kind==Kind::Spell&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
-           h[1]==MissileId(a.flight.shot)&&((a.client==unit&&a.clientId==h[2])||
-           (creatingVisual==int(i)&&a.flight.shot.sequence==visualSequence&&a.flight.shot.session==visualSession)))return true;
-    }
-    return false;
-}
 void Install() {
-    if(enabled.load())spellvr::Install();
     if(ready.load()||!enabled.load()||!context||!threads||!threads->runOnGameThread||!threads->runOnUiThread||!projectiles::Ready())return;
     if(!checked) {
 #define CHECK(name) if(!d2rsig::Check(name##Rva,name##Sig,sizeof name##Sig))return
@@ -671,7 +548,6 @@ void Install() {
         framevr::logging::Write("Frame physical projectiles: tracked native-arrow preview and frozen 6DoF arrow/javelin flight; terrain-correct grid/room queries; mesh-only transforms; native basic attack/throw costs");
 }
 void Report() {
-    spellvr::Report();
     const auto s=submitted.exchange(0),n=spawned.exchange(0),v=visuals.exchange(0),x=stale.exchange(0),r=refused.exchange(0);
     const auto c=contacts.exchange(0),w=walls.exchange(0),e=expired.exchange(0);
     const auto b=boundMeshes.exchange(0),i=ignoredEntities.exchange(0);

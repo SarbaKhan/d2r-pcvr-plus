@@ -58,8 +58,6 @@ add_executable(gameplay-test gameplay_test.cpp)
 add_executable(weapon-skills-test weapon_skills_test.cpp)
 target_link_libraries(weapon-skills-test PRIVATE minhook)
 add_executable(quick-cast-test quick_cast_test.cpp)
-add_executable(hand-controls-test hand_controls_test.cpp)
-add_executable(skill-pad-test skill_pad_test.cpp)
 add_executable(spell-aim-test spell_aim_test.cpp)
 add_executable(bow-pose-test bow_pose_test.cpp)
 add_executable(body-tracking-test body_tracking_test.cpp)
@@ -84,28 +82,9 @@ target_link_libraries(openxr-probe PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(melee-contact-test melee_contact_test.cpp)
 add_executable(world-coordinates-test world_coordinates_test.cpp)
 add_executable(bow-flight-test bow_flight_test.cpp)
-target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/spells.cpp)
-add_executable(spell-cast-test spell_cast_test.cpp)
 
 add_executable(interaction-test interaction_test.cpp)
 add_executable(wrist-hud-test wrist_hud_test.cpp)
-add_executable(native-hud-test native_hud_test.cpp)
-target_sources(d2rl-vrcam PRIVATE render_resolution.cpp)
-target_sources(d2rl-vrcam PRIVATE scene_depth.cpp)
-target_sources(d2rl-vrcam PRIVATE light_bounds.cpp)
-add_executable(light-bounds-test light_bounds_test.cpp)
-target_link_libraries(light-bounds-test PRIVATE d3d11 d3dcompiler framevr-runtime)
-add_executable(scene-depth-test scene_depth_test.cpp)
-add_executable(game-device-only-test game_device_only_test.cpp)
-target_include_directories(scene-depth-test PRIVATE ${ROOT}/external/reshade/include)
-target_include_directories(game-device-only-test PRIVATE ${ROOT}/external/reshade/include)
-target_link_libraries(scene-depth-test PRIVATE framevr-runtime)
-target_link_libraries(game-device-only-test PRIVATE framevr-runtime)
-add_executable(render-resolution-test render_resolution_test.cpp)
-target_link_libraries(render-resolution-test PRIVATE user32 framevr-runtime)
-add_executable(render-pointer-test render_pointer_test.cpp render_resolution.cpp)
-target_include_directories(render-pointer-test PRIVATE ${ROOT}/external/reshade/include)
-target_link_libraries(render-pointer-test PRIVATE minhook user32 framevr-runtime)
 add_executable(controller-bindings-test controller_bindings_test.cpp)
 target_link_libraries(interaction-test PRIVATE framevr-runtime)
 
@@ -122,7 +101,6 @@ target_include_directories(interaction-preview PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(interaction-preview PRIVATE user32 gdi32 framevr-runtime)
 
 add_executable(vr-settings-test vr_settings_test.cpp)
-add_executable(controller-labels-test controller_labels_test.cpp)
 add_executable(vr-settings-store-test vr_settings_store_test.cpp ${ROOT}/vr/settings_menu.cpp)
 target_link_libraries(vr-settings-store-test PRIVATE framevr-runtime)
 add_executable(vr-settings-preview vr_settings_preview.cpp vr_settings_ui.cpp)
@@ -130,7 +108,6 @@ target_link_libraries(vr-settings-preview PRIVATE user32 gdi32 framevr-runtime)
 
 add_executable(math-test math_test.cpp)
 add_executable(deferred-draw-test deferred_draw_test.cpp)
-add_executable(monster-bars-test monster_bars_test.cpp)
 add_executable(gaze-test gaze_test.cpp)
 add_executable(window-focus-test window_focus_test.cpp)
 add_executable(callback-ticket-test callback_ticket_test.cpp)
@@ -139,14 +116,12 @@ target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
-add_test(NAME light-bounds-test COMMAND light-bounds-test)
-set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS flat-controls-test memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
-    gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
+    gameplay-test weapon-skills-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
-    combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test spell-cast-test
-    interaction-test wrist-hud-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
-    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
+    combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test
+    interaction-test wrist-hud-test controller-bindings-test journal-test native-panels-test
+    vr-settings-test vr-settings-store-test math-test deferred-draw-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
     target_compile_options(${test_target} PRIVATE /UNDEBUG)
@@ -166,5 +141,3 @@ add_test(NAME swapchain-color-test COMMAND swapchain-color-test)
 set_tests_properties(swapchain-color-test PROPERTIES TIMEOUT 40)
 add_test(NAME interaction-weapon-skills-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/weapon-skills-preview.png" --weapon-skills-check)
 add_test(NAME interaction-map-tab-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/map-tab-preview.png" --map-check)
-add_test(NAME interaction-hand-wheels-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/hand-wheels-preview.png" --hands-check)
-add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/wrist-compass-preview.png" --compass-check)

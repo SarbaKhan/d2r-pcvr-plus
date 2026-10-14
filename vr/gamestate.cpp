@@ -37,12 +37,10 @@
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
 #include "../steamvr/callback_ticket.h"
-#include "../steamvr/native_hud.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
 #include "panel_input.h"
-#include "render_resolution.h"
 #endif
 
 using namespace D2RL;
@@ -58,42 +56,6 @@ const ThreadService* g_threads = nullptr;
 // (OpenPanel / ClosePanel 'AutoMap', the same messages its own key sends), and
 // set by sending those messages ourselves (SetAutoMap) - no key, no button.
 const WidgetService* g_widgets = nullptr;
-framevr::nativehud::VisibilityOverride g_toolbarVisibility;
-#ifdef D2RVR_NATIVE_OPENXR
-// UI-thread-only refreshes; native menu handlers may rebuild/show HUDPanel.
-framevr::CallbackTicket g_toolbarTicket;
-bool g_toolbarUpdating=false;
-void MaintainToolbar(const PluginContext* ctx) {
-    if(g_toolbarUpdating||!g_widgets||!g_widgets->findPanel||!g_widgets->setWidgetVisible)return;
-    const bool hide=hud::NativeToolbarHidden();
-    if(!hide&&!g_toolbarVisibility.hidden)return;
-    g_toolbarUpdating=true;
-    Widgets::WidgetHandle toolbar=0;
-    const bool found=g_widgets->findPanel(ctx,"HUDPanel",&toolbar)==Widgets::Result::Success&&toolbar;
-    const bool previous=g_toolbarVisibility.hidden;
-    g_toolbarVisibility.Update(hide,found,[&](bool visible){
-        return g_widgets->setWidgetVisible(ctx,toolbar,visible)==Widgets::Result::Success;
-    });
-    if(previous!=g_toolbarVisibility.hidden)framevr::logging::Write(g_toolbarVisibility.hidden?
-        "Frame HUD: native HUDPanel hidden for VR session":"Frame HUD: native HUDPanel visibility released");
-    g_toolbarUpdating=false;
-}
-void __cdecl RefreshToolbar(const PluginContext* ctx,void* token) noexcept {
-    if(g_toolbarTicket.Claim(reinterpret_cast<uintptr_t>(token))){MaintainToolbar(ctx);ReadNpcChoicesRect();}
-}
-void RefreshToolbarAfterMessage(const PluginContext* ctx) {
-    if(g_toolbarUpdating)return;
-    MaintainToolbar(ctx);
-    if(!hud::NativeToolbarHidden()||!g_threads||!g_threads->runOnUiThread)return;
-    // Also run after the native message handler, not only before it. Coalesce
-    // bursts of panel messages; retry if the loader discards queued work.
-    const auto now=GetTickCount64();
-    if(g_toolbarTicket.Expired(now,1000))g_toolbarTicket.Cancel();
-    const auto token=g_toolbarTicket.Start(now);
-    if(token&&g_threads->runOnUiThread(ctx,&RefreshToolbar,reinterpret_cast<void*>(token))!=Threads::Result::Success)
-        g_toolbarTicket.Claim(token);
-}
-#endif
 std::atomic<int> g_autoMap{0};
 std::atomic<uint64_t> g_menuMapAt{0};
 framevr::wrist::MapLease g_menuMapLease;
@@ -111,11 +73,6 @@ std::atomic<uint32_t> g_menu{0};
 std::atomic<uint32_t> g_menuEpoch{0};
 std::atomic<bool> g_journalOnly{false};
 std::atomic<bool> g_opaqueMenu{false};
-std::atomic<bool> g_upperBandMenu{false};
-std::atomic<bool> g_npcChoices{false};
-std::mutex npcChoicesMutex;
-int32_t npcChoicesRect[4]{};
-uint64_t npcChoicesAt=0;
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -355,7 +312,6 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     g_player.store(havePlayer ? player : 0);
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
-    MaintainToolbar(ctx);
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
     const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
@@ -483,7 +439,6 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     interactionstate::Capture();
 #endif
     ReadJournalRect();
-    ReadNpcChoicesRect();
 }
 
 std::set<std::string> g_panels;   // open panels, UI thread only
@@ -504,7 +459,7 @@ bool Has(const char* s, const char* part) {
     return false;
 }
 
-SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, const SharedEvents::UiMessageEvent* e, void*) noexcept {
+SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const SharedEvents::UiMessageEvent* e, void*) noexcept {
     if (!e) return SharedEvents::UiMessageAction::Continue;
     const char* target = e->target ? e->target : "";
     const char* command = e->command ? e->command : "";
@@ -523,8 +478,6 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) g_panels.erase(text);
         else if (!strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panels.clear();
         g_autoMap.store(g_panels.count("AutoMap") ? 1 : 0);
-        g_upperBandMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
-            [](const auto& name){return framevr::panels::UpperBand(name);}));
         g_opaqueMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
             [](const auto& name){return framevr::panels::OpaqueBackground(name);}));
         bool menu = false;
@@ -534,8 +487,6 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         int menus=0;bool quest=false;
         for(const auto& name:g_panels)if(IsMenuPanel(name)){++menus;quest=name.find("QuestLog")!=std::string::npos;}
         g_journalOnly=menus==1&&quest;
-        const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
-        if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
         if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
             std::string list;
@@ -543,15 +494,6 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
             char b[300]; snprintf(b, sizeof b, "gamestate: menu %s (open: %.200s)", menu ? "OPEN" : "closed", list.c_str()); Log(b);
         }
     }
-#ifdef D2RVR_NATIVE_OPENXR
-    // Native AcceptChanges is observed even when the output dimensions stay
-    // unchanged. Do not listen to ResolutionChanged here: our own WM_SIZE
-    // recovery emits that event and would schedule another resize forever.
-    if(!strcmp(target,"OptionsPanelMessage")&&!strcmp(command,"AcceptChanges"))
-        framevr::resolution::OptionsApplied();
-    if(!strcmp(target,"PanelManager")||!strcmp(target,"HUDPanel")||
-       (!strcmp(target,"SystemMessage")&&!strcmp(command,"ResolutionChanged")))RefreshToolbarAfterMessage(ctx);
-#endif
     if (g_state) {
         strncpy_s(g_state->lastUi, key.c_str(), _TRUNCATE);
         Publish();
@@ -696,34 +638,6 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
 
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
-bool UpperBandMenuOpen(){return g_upperBandMenu.load();}
-bool NpcChoicesOnly(){return g_npcChoices.load();}
-void ReadNpcChoicesRect() {
-    if(!g_npcChoices.load()||!g_widgets||!g_widgets->getWidgetRect||!g_widgets->findPanel)return;
-    Widgets::WidgetHandle panel=0,border=0;Widgets::Rect root{},box{};
-    if(g_widgets->findPanel(g_ctx,"NpcDialogPanel",&panel)!=Widgets::Result::Success||
-       g_widgets->getWidgetRect(g_ctx,panel,&root)!=Widgets::Result::Success)return;
-    box=root;
-    // DialogBorder includes the title, all available choices and the outline;
-    // the panel also contains a full-screen click catcher which is not content.
-    if(g_widgets->findWidget&&g_widgets->findWidget(g_ctx,panel,"DialogBorder",&border)==Widgets::Result::Success) {
-        Widgets::Rect child{};
-        if(g_widgets->getWidgetRect(g_ctx,border,&child)==Widgets::Result::Success&&child.width>0&&child.height>0)
-            box={root.x+child.x,root.y+child.y,child.width,child.height};
-    }
-    if(box.width<16||box.height<16||box.width>3840||box.height>2160||
-       box.x<0||box.y<0||box.x>8192||box.y>8192)return;
-    std::lock_guard lock(npcChoicesMutex);
-    if(!npcChoicesAt||npcChoicesRect[2]!=box.width||npcChoicesRect[3]!=box.height) {
-        char b[180];snprintf(b,sizeof b,"Frame NPC choices: native bounds %d,%d %dx%d",box.x,box.y,box.width,box.height);Log(b);
-    }
-    npcChoicesRect[0]=box.x;npcChoicesRect[1]=box.y;npcChoicesRect[2]=box.width;npcChoicesRect[3]=box.height;npcChoicesAt=GetTickCount64();
-}
-bool NpcChoicesRect(int32_t out[4]) {
-    std::lock_guard lock(npcChoicesMutex);
-    if(!g_npcChoices.load()||!npcChoicesAt||GetTickCount64()-npcChoicesAt>650)return false;
-    std::copy_n(npcChoicesRect,4,out);return true;
-}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};

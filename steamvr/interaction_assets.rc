@@ -1,4 +1,3 @@
 // Embed generated artwork so the plugin and preview need no loose files.
 D2RVR_WRIST_VITALS RCDATA "assets/wrist-vitals.png"
 D2RVR_WHEEL_FRAME RCDATA "assets/wheel-frame.png"
-D2RVR_HAND_WHEEL_FRAME RCDATA "assets/hand-wheel-frame.png"
