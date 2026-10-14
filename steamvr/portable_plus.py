@@ -2,18 +2,24 @@
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import sys
 import uuid
-from launch_plus import digest, main as launch
+from launch_plus import main as launch
 from process_guard import require_game_closed
 
 ROOT = Path(__file__).resolve().parent.parent
 DLL = 'd2rl-vrcam.dll'
 FLAT = 'd2r_pcvr_plus_flat.ini'
+
+
+def digest(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
 def atomic_copy(source, target):
@@ -105,15 +111,9 @@ def rollback(game):
 
 def configure():
     settings = {}
-    for key, prompt in [('game', 'Existing D2R game folder'), ('saves', 'Actual saves folder containing Settings.json'), ('backups', 'Separate permanent save-backup folder')]:
-        settings[key] = str(Path(input(prompt + ': ').strip().strip('"')).resolve())
+    settings['game'] = str(Path(input('Existing D2R game folder: ').strip().strip('"')).resolve())
     if not (Path(settings['game']) / 'D2RLoader.exe').is_file():
         raise ValueError('D2RLoader.exe not found')
-    if not (Path(settings['saves']) / 'Settings.json').is_file():
-        raise ValueError('Settings.json not found')
-    saves, backups = Path(settings['saves']), Path(settings['backups'])
-    if saves.is_relative_to(backups) or backups.is_relative_to(saves):
-        raise ValueError('Save and backup folders must not overlap')
     settings['store'] = input('Store (steam/battlenet) [steam]: ').strip() or 'steam'
     if settings['store'] not in ('steam', 'battlenet'):
         raise ValueError('Invalid store')
@@ -159,7 +159,7 @@ def main(arguments=None):
         (update if args.action == 'update' else rollback)(game)
         return 0
     arguments = ['--mode', args.action, '--game', str(game)]
-    for key in ('saves', 'backups', 'store'):
+    for key in ('store',):
         if key in settings:
             arguments += ['--' + key, settings[key]]
     if args.action == 'vr':

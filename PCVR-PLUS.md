@@ -23,7 +23,7 @@ Aucun nouveau code de cette référence n'a été transplanté : PCVR possède d
 Le CMake à utiliser est **`steamvr/CMakeLists.txt`**. Celui de la racine construit aussi des éléments historiques ; ce n'est pas la cible PCVR actuelle.
 La référence comporte des changements importants supplémentaires (notamment ses propres intégrations OpenXR et modules `cleanroom/heft`) : ils ne sont pas importés.
 
-Plan appliqué : sélectionner la plateforme avant les hooks, figer cette sélection jusqu'au redémarrage, séparer les profils, isoler les entrées Flat, ajouter les sauvegardes, compiler et tester. La validation visuelle et fonctionnelle est la dernière étape encore ouverte.
+Plan appliqué : sélectionner la plateforme avant les hooks, figer cette sélection jusqu'au redémarrage, séparer les profils, isoler les entrées Flat, compiler et tester. La validation visuelle et fonctionnelle est la dernière étape encore ouverte.
 
 ## Ce que contient la candidate
 
@@ -54,29 +54,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1
 
 Sortie : `build-frame/windows-native/d2rl-vrcam.dll`. Les outils et SDK restent ceux épinglés par PCVR : LLVM-MinGW 20260616, PluginSDK `717f727a0ec52912d1558764345f8fa3453a2bd6`, OpenXR-SDK `57af7fc61f9f2d492580cb28aab6d0ea59d8d417`. Le SDK OpenXR sert à compiler la partie VR ; aucun runtime actif n'est nécessaire pour lancer Flat.
 
-La CI `PCVR Plus Windows candidate` compile sur Windows et exécute le sous-ensemble CPU/launchers. Les tests GPU, interface et casque restent séparés ; un résultat CI vert ne valide pas la jouabilité.
+La CI `PCVR Plus Windows portable` compile sur Windows et exécute le sous-ensemble CPU/launchers. Les tests GPU, interface et casque restent séparés ; un résultat CI vert ne valide pas la jouabilité.
 
 ## Installation dans une installation PCVR existante
 
-1. Quitter D2R/D2RLoader. Conserver une copie indépendante de tout le dossier de sauvegardes, y compris les coffres partagés. Pour cette candidate, utiliser un personnage de test hors ligne.
+1. Quitter D2R/D2RLoader. Pour cette candidate, utiliser un personnage de test hors ligne.
 2. Conserver le dossier source Plus : il contient les lanceurs et leurs modules Python. Exécuter la préparation des outils ci-dessus si `deps/python/python.exe` n'existe pas.
 3. Garder l'installation PCVR fonctionnelle et ses fichiers ReShade/D2RLoader. Une installation neuve suit d'abord [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md). Ne pas réutiliser les fichiers de D2R VR dans cette installation.
 4. Copier l'ancienne `d2rloader/plugins/d2rl-vrcam.dll` dans un dossier de retour arrière **hors du dossier plugins**. Ne pas y laisser deux DLL du plugin.
 5. Remplacer cette DLL par celle compilée ici. Copier `d2r_pcvr_plus_flat.ini` à côté. Ne pas remplacer `d2r_vr.ini` : il conserve la configuration VR actuelle.
-6. Employer les lanceurs Plus ci-dessous pour bénéficier d'une copie des sauvegardes avant **chaque** session. Les raccourcis VR historiques fonctionnent encore, mais ne passent pas par cette nouvelle protection.
+6. Employer les lanceurs Plus ci-dessous. Flat et VR utilisent l'emplacement de sauvegarde normal du jeu, sans copie automatique ni redirection.
 
 Le lanceur vérifie les versions que PCVR annonce : Steam `3.3.93787`, Battle.net `3.3.93847` en aperçu expérimental. Ce contrôle ne garantit pas à lui seul que chaque hook Flat fonctionne avec Battle.net.
 
-Depuis le dossier source, adapter les trois chemins réels (les exemples ne sont pas des chemins détectés) :
+Depuis le dossier source, adapter le chemin du jeu (les exemples ne sont pas des chemins détectés) :
 
 ```powershell
-.\Launch-Flat-Plus.cmd --game "D:\Games\Diablo II Resurrected" --saves "C:\Users\Denis\Saved Games\Diablo II Resurrected" --backups "D:\Backups\D2R-PCVR-Plus"
-.\Launch-VR-Plus.cmd --game "D:\Games\Diablo II Resurrected" --saves "C:\Users\Denis\Saved Games\Diablo II Resurrected" --backups "D:\Backups\D2R-PCVR-Plus"
+.\Launch-Flat-Plus.cmd --game "D:\Games\Diablo II Resurrected"
+.\Launch-VR-Plus.cmd --game "D:\Games\Diablo II Resurrected"
 ```
 
 Steam doit être disponible pour l'édition Steam. Lancer Flat directement depuis Windows, sans passer par un raccourci « lancement VR » de Steam. Aucun lancement de SteamVR/BodyWalk n'est demandé par le lanceur Flat. Pour VDXR, ajouter `--vdxr` au lancement VR uniquement. Pour Battle.net, ajouter `--store battlenet --experimental-battlenet` ; tests hors ligne seulement.
-
-Le dossier passé à `--saves` doit être **le vrai dossier utilisé par le jeu**, éventuellement redirigé par Windows ; il doit contenir `Settings.json`. Aucun emplacement n'est deviné. Les backups ne peuvent pas être dans ce dossier, ni le contenir.
 
 Le lancement Flat passe `D2R_PCVR_PLUS_MODE=flat` uniquement au processus enfant. Sans cette variable, le lancement PCVR historique utilise son INI habituel. Changer de Flat à VR demande de fermer puis relancer le jeu ; F1–F3 ne changent que la vue Flat.
 
@@ -95,13 +93,15 @@ flat_layout=WASD
 
 Les doublons conservent les dernières touches valides ; une valeur autre qu'une lettre reprend la valeur du layout. Éviter les conflits avec les raccourcis du jeu. Les réglages sont relus en cours de session. Ne pas utiliser l'éditeur VR d'origine pour le profil Flat : éditer son INI.
 
-## Sauvegardes et retour arrière
+## Sauvegardes natives et retour arrière
 
-Avant le lancement : absence de D2R/D2RLoader vérifiée, verrou partagé entre les lanceurs Plus, copie de **tous** les fichiers et sous-dossiers, comparaison SHA-256 source/copie puis publication atomique du dossier snapshot. Une erreur, un disque plein, une source modifiée ou un lien redirigé dans l'arborescence bloque le lancement. L'ancien snapshot n'est jamais écrasé ou purgé automatiquement.
-
-C'est une **sauvegarde**, pas une isolation de personnages : Flat et VR continuent à voir le même dossier du jeu. La copie reflète l'état avant la session ; elle ne détecte pas un personnage déjà corrompu et ne récupère pas la progression postérieure au snapshot. Le verrou ne bloque pas un lancement externe (Steam ou autre mod) ni une synchronisation cloud : fermer les autres clients et ne pas lancer deux instances. Si Windows/le lanceur s'est arrêté brutalement, vérifier qu'aucun jeu ne tourne avant de retirer le fichier `.<nom du dossier>-pcvr-plus.lock` situé à côté du dossier de sauvegardes.
-
-Restauration manuelle : jeu et synchronisation fermés, conserver d'abord une copie séparée de l'état actuel, puis restaurer le jeu cohérent de fichiers depuis `snapshot/files` dans le vrai dossier. Restaurer ensemble personnages et coffres partagés concernés ; ne pas combiner au hasard plusieurs moments. `manifest.json` contient les hashes de contrôle. Le lanceur ne restaure ni ne supprime automatiquement de sauvegardes.
+Le jeu gère ses personnages et ses coffres dans son emplacement habituel. Le
+lanceur Plus ne lit pas ce dossier, ne le redirige pas et ne crée aucun snapshot
+ni verrou auprès des sauvegardes. Aucun chemin de sauvegarde n'est demandé.
+Les anciennes entrées `saves` et `backups` du configurateur portable sont ignorées;
+relancer `Configure.cmd` les retire du fichier de configuration. Les anciennes
+copies déjà créées restent sur le disque, sans être utilisées ni supprimées.
+Le contrôle de présence d'un processus D2R/D2RLoader reste actif au lancement.
 
 Retour à PCVR : jeu fermé, remettre la DLL conservée et utiliser le lanceur VR historique. Le profil VR n'a pas été remplacé. Le jeu desktop sans mod reste accessible via la procédure PCVR habituelle.
 
@@ -113,7 +113,7 @@ Sur l'environnement Linux de développement, compilation **croisée Windows x64 
 |---|---|
 | DLL Windows et exécutables de fixtures | Compilation et édition de liens réussies |
 | Table des imports DLL | Pas d'import OpenXR/BodyWalk/SteamVR ; uniquement bibliothèques système/CRT |
-| `launch_plus_test.py` | 14 tests réussis : sauvegardes, erreurs, concurrence, profils, routage Flat/VR |
+| `launch_plus_test.py` | 9 tests : profils, routage Flat/VR, runtime explicite et lancement sans dossier de sauvegardes |
 | `launch_windows_test.py` | 8 réussis, 3 ignorés car Windows requis |
 | `flat_controls_test.cpp` compilé et exécuté sur hôte | Réussi |
 | Six fixtures PCVR portables compilées et exécutées sur hôte | `math`, `gameplay`, `combat-rules`, `controller-bindings`, `spell-cast`, `bow-flight` : réussies |
@@ -131,10 +131,9 @@ Noter : hash de DLL, version du jeu, édition, GPU/pilote, classe, acte, résolu
 | Clics | Mêlée, arc et sorts : clic gauche sur ennemi et dans le vide ; clic droit compétence secondaire ; maintien/relâchement. Aucun déplacement inattendu quand le hook attaque est disponible. |
 | Interactions | Butin, portes, PNJ, waypoint et portail ; menus, inventaire, glisser-déposer, coffre partagé, marchand. Curseur libre, clics ne déclenchant pas d'action monde involontaire. |
 | Interruptions | Alt-Tab en marchant/attaquant, retour, chat Enter/Esc, F9, chargement/mort/changement d'acte ; aucun déplacement ou bouton bloqué. |
-| Persistance | Fermer normalement, constater le snapshot suivant, recharger personnage/coffres ; vérifier que `d2r_vr.ini` est inchangé après Flat. |
+| Persistance | Fermer normalement, recharger personnage/coffres depuis leur emplacement habituel ; vérifier que `d2r_vr.ini` est inchangé après Flat. |
 | Retour VR | Relancer avec casque ; stéréo, suivi tête/mains, déplacement physique, arc, mêlée, bouclier, sorts, potions, menus/lasers, recentrage et calibration comme avant. |
 | Endurance | Sessions Flat puis VR prolongées sur personnage de test, plusieurs actes/chargements/retours menu ; relever freezes, erreurs et stabilité des sauvegardes. |
-| Récupération | Sur copies de test uniquement : simuler manque d'espace et vérifier refus de lancement, puis restaurer un snapshot cohérent et recharger. |
 
 Aucun de ces essais matériels n'a été réalisé par l'agent. La version ne sera qualifiée de fonctionnelle/validée qu'après cette étape. TCP/IP puis Linux/Proton feront l'objet de travaux distincts.
 

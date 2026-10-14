@@ -9,20 +9,17 @@ lancement ne sont nécessaires. Conserver le dossier extrait entier.
 ## Installation de la mise à jour
 
 1. Fermer D2R et ses lanceurs. Extraire `D2R-PCVR-Plus-Windows.zip` dans un dossier
-   permanent accessible en écriture, distinct du dossier du jeu et des sauvegardes.
+   permanent accessible en écriture, distinct du dossier du jeu.
 2. Exécuter `Configure.cmd`. Indiquer le dossier contenant `D2R.exe` et
-   `D2RLoader.exe`, le dossier de sauvegardes réellement utilisé (contenant
-   `Settings.json`), puis un dossier permanent de sauvegardes de sécurité **séparé**.
+   `D2RLoader.exe`. Aucun dossier de personnages ou de backup n’est demandé.
    Choisir Steam ou Battle.net, puis le runtime VR : `steamvr`, `vdxr` ou
    `system`. Pour SteamVR, confirmer le chemin réel de `steamxr_win64.json`.
    Les chemins sont mémorisés dans `portable-settings.json` à côté des lanceurs.
 3. Exécuter `Update.cmd`. Il sauvegarde et vérifie l'ancienne DLL ainsi qu'une copie
    du profil VR dans `d2rloader/pcvr-plus-backups/<identifiant>/`, remplace la DLL
    et ajoute `d2r_pcvr_plus_flat.ini` seulement si ce fichier n'existe pas déjà.
-4. Utiliser `Launch-Flat-Plus.cmd` ou `Launch-VR-Plus.cmd`. Une copie vérifiée des
-   sauvegardes est créée avant chaque lancement. Un échec de sauvegarde bloque
-   le lancement. Les anciens raccourcis restent disponibles mais contournent
-   cette protection. Ne pas lancer le jeu simultanément par un autre raccourci.
+4. Utiliser `Launch-Flat-Plus.cmd` ou `Launch-VR-Plus.cmd`. Le jeu utilise son
+   emplacement de sauvegarde habituel, sans copie automatique ni redirection.
 
 D2RLoader, ReShade, OpenXR, les ressources du setup, `pcvr-install.json`, le profil
 VR actif `d2rloader/plugins/d2r_vr.ini`, les réglages Flat existants et les personnages
@@ -62,7 +59,7 @@ Sans configuration interactive :
 ```bat
 Update.cmd --game "D:\Games\Diablo II Resurrected"
 Rollback.cmd --game "D:\Games\Diablo II Resurrected"
-Launch-Flat-Plus.cmd --game "D:\Games\Diablo II Resurrected" --saves "D:\Saves\D2R" --backups "D:\Backups\D2R"
+Launch-Flat-Plus.cmd --game "D:\Games\Diablo II Resurrected"
 ```
 
 ## Validation et limites
@@ -112,7 +109,7 @@ Les raccourcis du setup passent par `steam.exe -applaunch 2536520 --frame-vr`
 (avec `--frame-vdxr` pour Virtual Desktop), puis par les options du jeu Steam.
 Ces options sélectionnent explicitement le manifeste SteamVR pour le premier
 raccourci. Le lanceur Plus appelle directement la même fonction de lancement
-Windows après la sauvegarde, mais ne lit pas les options Steam du jeu.
+Windows, mais ne lit pas les options Steam du jeu.
 
 Le configurateur propose désormais trois choix :
 
@@ -145,3 +142,19 @@ Test matériel : comparer le raccourci SteamVR du setup au lanceur Plus configur
 avec exactement le même manifeste, puis vérifier A/B/X/Y et les clics des sticks
 dans les menus et en jeu. La sélection explicite corrige une différence réelle
 de lancement; la résolution du problème de commandes Quest reste à confirmer.
+
+## Suppression des backups de personnages
+
+Le lanceur n’exige plus `Settings.json`, ne parcourt plus les sauvegardes et ne
+crée plus de copie ni de verrou à côté de leur dossier. Les options `--saves` et
+`--backups` sont supprimées. Dans un ancien `portable-settings.json`, ces deux
+champs sont ignorés; relancer `Configure.cmd` produit une configuration sans eux.
+Aucune migration de personnages n’est nécessaire : le lanceur précédent ne
+changeait déjà pas leur emplacement, il en créait seulement des copies. Les
+anciennes copies restent sur le disque, sans être supprimées automatiquement.
+
+Pour mettre à jour une installation Plus existante, remplacer seulement les
+fichiers `steamvr/launch_plus.py` et `steamvr/portable_plus.py` dans le dossier
+portable puis relancer `Configure.cmd`. Aucun changement de DLL n’est nécessaire.
+La copie de l’ancienne DLL et du profil VR effectuée par `Update.cmd` reste
+disponible pour le retour arrière; elle ne concerne pas les personnages.

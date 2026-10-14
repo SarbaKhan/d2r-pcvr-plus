@@ -1,5 +1,4 @@
 import configparser
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,12 +11,6 @@ class PlusTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.saves = self.root / 'Saved Games'
-        self.saves.mkdir()
-        (self.saves / 'Settings.json').write_text('{}')
-        (self.saves / 'hero.d2s').write_bytes(b'fixture character')
-        (self.saves / 'SharedStashSoftCoreV2.d2i').write_bytes(b'fixture stash')
-        self.backups = self.root / 'backups'
         self.game = self.root / 'game'
         self.plugins = self.game / 'd2rloader/plugins'
         self.plugins.mkdir(parents=True)
@@ -26,57 +19,6 @@ class PlusTests(unittest.TestCase):
         (self.plugins / 'd2rl-vrcam.dll').touch()
         (self.plugins / 'd2r_vr.ini').write_text('background_full_speed=1\n[mode]\nplatform=1\n')
         (self.plugins / 'd2r_pcvr_plus_flat.ini').write_text('[mode]\nplatform=0\n')
-
-    def test_snapshot_all_files_verified_and_never_overwrites(self):
-        (self.saves / 'nested').mkdir()
-        (self.saves / 'nested/hero.d2s').write_bytes(b'second fixture')
-        a = plus.snapshot(self.saves, self.backups, 'flat')
-        b = plus.snapshot(self.saves, self.backups, 'vr')
-        self.assertNotEqual(a,b)
-        manifest = json.loads((a / 'manifest.json').read_text())
-        self.assertEqual(len(manifest['sha256']), 4)
-        for name, sha in manifest['sha256'].items():
-            self.assertEqual(sha, plus.digest(self.saves / name))
-            self.assertEqual(sha, plus.digest(a / 'files' / name))
-
-    def test_rejects_nested_backup_paths(self):
-        for folder in (self.saves, self.saves / 'backup', self.root):
-            with self.assertRaises(ValueError): plus.snapshot(self.saves, folder, 'flat')
-
-    def test_missing_actual_save_folder(self):
-        (self.saves / 'Settings.json').unlink()
-        with self.assertRaises(ValueError): plus.snapshot(self.saves, self.backups, 'flat')
-
-    def test_rejects_symlink(self):
-        try:
-            (self.saves / 'redirect').symlink_to(self.root, target_is_directory=True)
-        except OSError as error:
-            self.skipTest(f'Symlink creation unavailable: {error}')
-        with self.assertRaises(ValueError): plus.snapshot(self.saves, self.backups, 'flat')
-
-    def test_disk_failure_keeps_originals(self):
-        with patch.object(plus.shutil, 'copy2', side_effect=OSError('disk full')):
-            with self.assertRaises(OSError): plus.snapshot(self.saves, self.backups, 'flat')
-        self.assertEqual((self.saves / 'hero.d2s').read_bytes(), b'fixture character')
-        self.assertEqual(list(self.backups.iterdir()), [])
-
-    def test_modified_source_aborts(self):
-        real_copy = plus.shutil.copy2
-        def changing(source,target):
-            result = real_copy(source,target)
-            source.write_bytes(b'changed concurrently')
-            return result
-        with patch.object(plus.shutil, 'copy2', side_effect=changing):
-            with self.assertRaises(ValueError): plus.snapshot(self.saves,self.backups,'flat')
-        self.assertEqual(list(self.backups.iterdir()), [])
-
-    def test_lock_shared_by_modes_and_released_after_exception(self):
-        with self.assertRaisesRegex(RuntimeError, 'fixture'):
-            with plus.launch_lock(self.saves):
-                with self.assertRaises(ValueError):
-                    with plus.launch_lock(self.saves): pass
-                raise RuntimeError('fixture')
-        with plus.launch_lock(self.saves): pass
 
     def test_profiles_untouched_and_environment_local(self):
         before = {p:p.read_bytes() for p in self.plugins.glob('*.ini')}
@@ -97,7 +39,7 @@ class PlusTests(unittest.TestCase):
         with self.assertRaises(ValueError): plus.prepare(self.game,'vr')
 
     def test_flat_launch_never_calls_vr_launcher(self):
-        args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),'--mode','flat']
+        args=['--game',str(self.game),'--mode','flat']
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
              patch('process_guard.require_game_closed'), patch('launch_windows.main') as vr, \
              patch.object(plus.subprocess,'run') as run:
@@ -105,28 +47,18 @@ class PlusTests(unittest.TestCase):
             self.assertEqual(plus.main(args),0)
             vr.assert_not_called()
             self.assertEqual(run.call_args.kwargs['env']['D2R_PCVR_PLUS_MODE'],'flat')
-            self.assertEqual(len(list(self.backups.iterdir())),1)
 
-    def test_snapshot_failure_prevents_any_launch(self):
-        args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),'--mode','flat']
-        with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
-             patch('process_guard.require_game_closed'), patch.object(plus,'snapshot',side_effect=OSError('disk full')), \
-             patch.object(plus.subprocess,'run') as run:
-            with self.assertRaises(OSError): plus.main(args)
-            run.assert_not_called()
-
-    def test_vr_launch_uses_original_route_after_backup(self):
-        args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),'--mode','vr','--vdxr']
+    def test_vr_launch_uses_original_route(self):
+        args=['--game',str(self.game),'--mode','vr','--vdxr']
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
              patch('process_guard.require_game_closed'), patch('launch_windows.main',return_value=7) as vr:
             self.assertEqual(plus.main(args),7)
             vr.assert_called_once_with(['--frame-vr','--frame-vdxr',str(self.game.resolve()/'D2R.exe')])
-            self.assertEqual(len(list(self.backups.iterdir())),1)
 
     def test_explicit_runtime_reaches_original_launcher(self):
         manifest=self.game/'Steam VR runtime.json'
         manifest.write_text('{}')
-        args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),
+        args=['--game',str(self.game),
               '--mode','vr','--openxr-runtime',str(manifest)]
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
              patch('process_guard.require_game_closed'), patch('launch_windows.main',return_value=0) as vr:
@@ -134,20 +66,31 @@ class PlusTests(unittest.TestCase):
             vr.assert_called_once_with(['--frame-vr','--frame-openxr-runtime='+str(manifest.resolve()),str(self.game.resolve()/'D2R.exe')])
             from launch_windows import launch_environment
             self.assertEqual(launch_environment(vr.call_args.args[0])['XR_RUNTIME_JSON'],str(manifest.resolve()))
-            self.assertEqual(len(list(self.backups.iterdir())),1)
 
-    def test_invalid_runtime_does_not_backup_or_launch(self):
-        base=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups)]
+    def test_invalid_runtime_does_not_launch(self):
+        base=['--game',str(self.game)]
         for flags in (['--mode','flat','--openxr-runtime','missing.json'],
                       ['--mode','vr','--openxr-runtime','missing.json'],
                       ['--mode','vr','--openxr-runtime','missing.json','--vdxr']):
             with self.subTest(flags=flags), patch.object(plus.sys,'platform','win32'), \
-                 patch.object(plus,'snapshot') as snapshot, patch('launch_windows.main') as vr, \
+                 patch('launch_windows.main') as vr, \
                  self.assertRaises(SystemExit):
                 try:
                     plus.main(base+flags)
                 finally:
-                    snapshot.assert_not_called();vr.assert_not_called()
+                    vr.assert_not_called()
+
+    def test_launch_needs_no_save_folder_and_does_not_write_files(self):
+        def contents():
+            return {str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        before=contents()
+        for mode in ('flat','vr'):
+            with self.subTest(mode=mode), patch.object(plus.sys,'platform','win32'), \
+                 patch('game_install.validate_game'), patch('process_guard.require_game_closed'), \
+                 patch('launch_windows.main',return_value=0), patch.object(plus.subprocess,'run') as run:
+                run.return_value.returncode=0
+                self.assertEqual(plus.main(['--game',str(self.game),'--mode',mode]),0)
+                self.assertEqual(contents(),before)
 
     def test_shipped_flat_profile(self):
         config=configparser.ConfigParser(interpolation=None,strict=False,allow_no_value=True)

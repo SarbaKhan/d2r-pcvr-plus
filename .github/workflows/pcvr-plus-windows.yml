@@ -22,7 +22,7 @@ jobs:
         run: |
           & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|spell-cast|bow-flight)-test$'
           if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
-      - name: Run launcher and save-backup fixtures
+      - name: Run Flat/VR launcher fixtures
         shell: powershell
         run: |
           & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_plus_test.py

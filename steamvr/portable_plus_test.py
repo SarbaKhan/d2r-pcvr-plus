@@ -136,17 +136,27 @@ class RuntimeRoutingTests(unittest.TestCase):
         args=self.run_launch({'vr_runtime':'system'})
         self.assertNotIn('--vdxr',args);self.assertNotIn('--openxr-runtime',args)
 
+    def test_old_save_settings_are_ignored_without_accessing_paths(self):
+        settings={'vr_runtime':'system','saves':'missing-save-directory','backups':'missing-backup-directory'}
+        for mode in ('flat','vr'):
+            args=self.run_launch(settings,mode)
+            self.assertNotIn('--saves',args)
+            self.assertNotIn('--backups',args)
+            self.assertNotIn(settings['saves'],args)
+            self.assertNotIn(settings['backups'],args)
+
     def test_configure_saves_explicit_steamvr_choice(self):
         (self.root/'D2RLoader.exe').write_bytes(b'fixture')
-        saves=self.root/'saves';saves.mkdir();(saves/'Settings.json').write_text('{}')
         manifest=self.root/'runtime.json';manifest.write_text('{}')
-        answers=[str(self.root),str(saves),str(self.root/'backups'),'steam','steamvr',str(manifest)]
+        answers=[str(self.root),'steam','steamvr',str(manifest)]
         with patch.object(portable,'ROOT',self.root), patch('builtins.input',side_effect=answers):
             portable.configure()
         settings=json.loads(self.settings.read_text())
         self.assertEqual(settings['vr_runtime'],'steamvr')
         self.assertEqual(settings['openxr_runtime'],str(manifest.resolve()))
         self.assertFalse(settings['vdxr'])
+        self.assertNotIn('saves',settings)
+        self.assertNotIn('backups',settings)
 
 
 if __name__ == '__main__':
