@@ -51,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/setup_windows_tools.
 powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1
 .\deps\python\python.exe -m unittest discover -s steamvr -p launch_plus_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p launch_windows_test.py
-.\deps\cmake-4.4.4-windows-x86_64\bin\ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|spell-cast|bow-flight)-test$'
+.\deps\cmake-4.4.4-windows-x86_64\bin\ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|bow-flight|quick-cast|spell-aim|native-panels|interaction|journal|vr-settings|vr-settings-store|body-calibration|body-tracking)-test$'
 ```
 
 Sortie : `build-frame/windows-native/d2rl-vrcam.dll`. Les outils et SDK restent ceux épinglés par PCVR : LLVM-MinGW 20260616, PluginSDK `717f727a0ec52912d1558764345f8fa3453a2bd6`, OpenXR-SDK `57af7fc61f9f2d492580cb28aab6d0ea59d8d417`. Le SDK OpenXR sert à compiler la partie VR ; aucun runtime actif n'est nécessaire pour lancer Flat.
@@ -109,17 +109,20 @@ Retour à PCVR : jeu fermé, remettre la DLL conservée et utiliser le lanceur V
 
 ## Résultats automatisés de cette livraison
 
-Sur l'environnement Linux de développement, compilation **croisée Windows x64 Release** avec LLVM-MinGW 20260616 : toutes les cibles de `steamvr/CMakeLists.txt` ont été compilées/liées. Les avertissements existants de `vrcam.cpp` ne sont pas corrigés dans cette modification ciblée.
+La CI Windows de cette branche compile la DLL et les fixtures, exécute les tests
+ci-dessous, puis teste le ZIP avec son Python embarqué avant de publier l’artifact.
+Consulter le résultat du workflow pour le commit téléchargé. La tentative locale de
+compilation croisée de la restauration a été bloquée par un crash du compilateur ;
+elle n’est pas utilisée comme preuve de compilation.
 
-| Vérification | Résultat |
+| Vérification | Couverture |
 |---|---|
-| DLL Windows et exécutables de fixtures | Compilation et édition de liens réussies |
-| Table des imports DLL | Pas d'import OpenXR/BodyWalk/SteamVR ; uniquement bibliothèques système/CRT |
-| `launch_plus_test.py` | 9 tests : profils, routage Flat/VR, runtime explicite et lancement sans dossier de sauvegardes |
-| `launch_windows_test.py` | 8 réussis, 3 ignorés car Windows requis |
-| `flat_controls_test.cpp` compilé et exécuté sur hôte | Réussi |
-| Six fixtures PCVR portables compilées et exécutées sur hôte | `math`, `gameplay`, `combat-rules`, `controller-bindings`, `spell-cast`, `bow-flight` : réussies |
-| Exécution des `.exe` Windows, D3D12, chargement dans D2R, casque | Non exécutés dans cet environnement ; suivre la CI et les essais ci-dessous |
+| Compilation Windows | DLL et toutes les cibles du CMake PCVR publié, plus Flat |
+| Fixtures C++ exécutées en CI | 15 : Flat, math, gameplay, combat, bindings, arc, QuickCast, sorts, panneaux, interactions, journal, réglages, stockage des réglages, calibration et suivi corporel |
+| Lanceurs et updater Python | 41 tests ; 3 propres à Windows ignorés localement, exécutés en CI |
+| Référence VR | Empreintes de 190 sources natives identiques au runtime livré par le setup |
+| ZIP portable | Python isolé, configuration All, trois CMD, mise à jour et retour arrière sur installation factice, préservation des fichiers existants |
+| D2R, rendu D3D12 au casque, commandes Quest 2 | Tests matériels nécessaires ; aucune validation matérielle revendiquée |
 
 ## Protocole matériel obligatoire avant validation
 
