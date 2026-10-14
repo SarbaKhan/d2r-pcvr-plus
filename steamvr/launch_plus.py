@@ -119,7 +119,7 @@ def main(arguments=None):
     if args.vdxr and args.mode != 'vr':
         parser.error('--vdxr is VR only')
     from game_install import validate_game
-    from install import require_game_closed
+    from process_guard import require_game_closed
     from launch_windows import main as launch_vr
     game, saves = args.game.resolve(), args.saves.resolve()
     validate_game(game, args.store, args.experimental_battlenet)

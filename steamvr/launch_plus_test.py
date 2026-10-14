@@ -99,7 +99,7 @@ class PlusTests(unittest.TestCase):
     def test_flat_launch_never_calls_vr_launcher(self):
         args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),'--mode','flat']
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
-             patch('install.require_game_closed'), patch('launch_windows.main') as vr, \
+             patch('process_guard.require_game_closed'), patch('launch_windows.main') as vr, \
              patch.object(plus.subprocess,'run') as run:
             run.return_value.returncode=0
             self.assertEqual(plus.main(args),0)
@@ -110,7 +110,7 @@ class PlusTests(unittest.TestCase):
     def test_snapshot_failure_prevents_any_launch(self):
         args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),'--mode','flat']
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
-             patch('install.require_game_closed'), patch.object(plus,'snapshot',side_effect=OSError('disk full')), \
+             patch('process_guard.require_game_closed'), patch.object(plus,'snapshot',side_effect=OSError('disk full')), \
              patch.object(plus.subprocess,'run') as run:
             with self.assertRaises(OSError): plus.main(args)
             run.assert_not_called()
@@ -118,7 +118,7 @@ class PlusTests(unittest.TestCase):
     def test_vr_launch_uses_original_route_after_backup(self):
         args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),'--mode','vr','--vdxr']
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
-             patch('install.require_game_closed'), patch('launch_windows.main',return_value=7) as vr:
+             patch('process_guard.require_game_closed'), patch('launch_windows.main',return_value=7) as vr:
             self.assertEqual(plus.main(args),7)
             vr.assert_called_once_with(['--frame-vr','--frame-vdxr',str(self.game.resolve()/'D2R.exe')])
             self.assertEqual(len(list(self.backups.iterdir())),1)

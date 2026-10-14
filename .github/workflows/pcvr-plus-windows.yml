@@ -1,4 +1,4 @@
-name: PCVR Plus Windows candidate
+name: PCVR Plus Windows portable
 on:
   push:
     branches: [feature/flat-plus]
@@ -29,18 +29,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Plus launcher fixtures failed' }
           & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_windows_test.py
           if ($LASTEXITCODE -ne 0) { throw 'Upstream launcher fixtures failed' }
-      - name: Stage candidate (no game assets)
+      - name: Run reversible updater fixtures
         shell: powershell
         run: |
-          New-Item -ItemType Directory candidate | Out-Null
-          Copy-Item build-frame/windows-native/d2rl-vrcam.dll,d2r_pcvr_plus_flat.ini,PCVR-PLUS.md,LICENSE,THIRD_PARTY.md candidate
-          Copy-Item third_party/minhook/LICENSE.txt candidate/MinHook-LICENSE.txt
-          Copy-Item external/reshade/LICENSE.md candidate/ReShade-LICENSE.md
-          Copy-Item -Recurse steamvr/licenses candidate/licenses
-          Copy-Item deps/D2RLoader-PluginSDK/LICENSE* candidate/licenses/
-          Get-ChildItem deps/OpenXR-SDK/LICENSE* | ForEach-Object { Copy-Item $_.FullName (Join-Path candidate/licenses ('OpenXR-' + $_.Name)) }
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p portable_plus_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Portable updater fixtures failed' }
+      - name: Package portable Windows overlay (no game assets)
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe ./steamvr/package_plus.py
+          if ($LASTEXITCODE -ne 0) { throw 'Portable packaging failed' }
+      - name: Test extracted ZIP with its embedded Python
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe ./steamvr/portable_smoke.py ./dist-plus/D2R-PCVR-Plus-Windows.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP smoke test failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-Plus-Windows-candidate
-          path: candidate/
+          name: D2R-PCVR-Plus-Windows
+          path: |
+            dist-plus/D2R-PCVR-Plus-Windows.zip
+            dist-plus/D2R-PCVR-Plus-Windows.zip.sha256
           if-no-files-found: error

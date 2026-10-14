@@ -106,3 +106,13 @@ The texture header/format mapping was checked against
 Original potion models and textures belong to the game and are extracted into
 the local `d2r_vr_potions` cache; neither that cache nor raw game assets are
 distributed in the repository or release. No Granny runtime is needed.
+
+## D2R PCVR Plus portable update
+
+The `D2R-PCVR-Plus-Windows` Actions artifact bundles the official CPython 3.12.10
+x64 embeddable runtime, verified by `steamvr/setup_windows_tools.ps1` (pinned
+archive digest plus Python Software Foundation Authenticode signature). Its full
+runtime and license are retained under `deps/python`, with a license copy under
+`licenses/Python-LICENSE.txt`. No pip packages are required. This overlay reuses
+the existing automatic-setup installation's D2RLoader, ReShade and OpenXR loader;
+it does not redistribute or replace these binaries.
