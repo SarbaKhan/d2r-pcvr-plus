@@ -1,4 +1,4 @@
-name: PCVR Plus Windows portable
+name: PCVR Plus Windows setup and portable
 on:
   push:
     branches: [feature/flat-plus]
@@ -39,6 +39,18 @@ jobs:
         run: |
           & ./deps/python/python.exe -m unittest discover -s steamvr -p portable_plus_test.py
           if ($LASTEXITCODE -ne 0) { throw 'Portable updater fixtures failed' }
+      - name: Test full installer and Steam shortcuts
+        shell: powershell
+        run: |
+          foreach ($suite in @('setup_native_test.py', 'setup_windows_test.py', 'install_test.py', 'uninstall_windows_test.py', 'plus_setup_test.py', 'battlenet_test.py')) {
+            & ./deps/python/python.exe -m unittest discover -s steamvr -p $suite
+            if ($LASTEXITCODE -ne 0) { throw "Installer fixtures failed: $suite" }
+          }
+          & ./deps/python/python.exe -m unittest discover -s installer -p '*_test.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer staging fixtures failed' }
+      - name: Build and smoke-test full Plus installer
+        shell: powershell
+        run: ./installer/build_plus_release.ps1
       - name: Package portable Windows overlay (no game assets)
         shell: powershell
         run: |
@@ -55,4 +67,13 @@ jobs:
           path: |
             dist-plus/D2R-PCVR-Plus-Windows.zip
             dist-plus/D2R-PCVR-Plus-Windows.zip.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-PLUS-Setup-0.1
+          path: |
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe.sha256
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe.build.json
+            PCVR-PLUS-SETUP.md
           if-no-files-found: error

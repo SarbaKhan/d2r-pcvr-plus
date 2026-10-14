@@ -79,6 +79,7 @@ def launch_environment(arguments):
     # The explicit launch flag overrides the normal SteamVR launch-option
     # manifest. Stock Play ignores it, and a missing VDXR install fails closed.
     environment = os.environ.copy()
+    environment['D2R_PCVR_PLUS_MODE'] = 'vr'
     # Overlay UI settings and this routing hint alone do not stop Steam's early
     # injection. The desktop handoff below also starts a clean launcher chain.
     for key in list(environment):
@@ -242,12 +243,34 @@ $desktop.Document.Application.ShellExecute($launch.executable,$launch.arguments,
         return 1
 
 
+def launch_flat(arguments):
+    """Steam app wrapper and Battle.net shortcut both enter the tested Flat route."""
+    if '--frame-vr' in arguments or VDXR_OPTION in arguments:
+        raise SystemExit('Flat and VR launch flags cannot be combined')
+    game = battlenet_game(arguments)
+    store = 'battlenet' if game is not None else 'steam'
+    if game is None:
+        executables = [arg for arg in arguments if ntpath.basename(arg).lower() == 'd2r.exe']
+        if len(executables) != 1:
+            raise SystemExit('Expected one Steam launch command containing D2R.exe')
+        game = Path(executables[0]).resolve().parent
+    from launch_plus import main as launch_plus
+    flags = ['--game', str(game), '--mode', 'flat', '--store', store]
+    if EXPERIMENTAL_OPTION in arguments:
+        flags.append(EXPERIMENTAL_OPTION)
+    # The Steam launch-options wrapper may include its default VR runtime.
+    # Do not inspect or initialize it for Flat.
+    return launch_plus(flags)
+
+
 def main(arguments):
     requests = [arg for arg in arguments if arg.startswith(DESKTOP_REQUEST)]
     if requests:
         if len(arguments) != 1:
             raise SystemExit('Unexpected desktop handoff arguments.')
         return desktop_child(Path(requests[0][len(DESKTOP_REQUEST):]))
+    if '--frame-flat' in arguments:
+        return launch_flat(arguments)
     command, cwd = prepare(arguments)
     environment = launch_environment(arguments)
     if os.name == 'nt' and '--frame-vr' in arguments and battlenet_game(arguments) is None:

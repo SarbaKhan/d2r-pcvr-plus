@@ -119,6 +119,9 @@ class InstallationTests(unittest.TestCase):
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASHES', loader_hashes):
                     install.main()
                 snapshot = next((root / 'backups').iterdir())
+                self.assertEqual(list((snapshot / 'saves').iterdir()), [snapshot / 'saves/Settings.json'])
+                flat = game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini'
+                self.assertIn(b'flat_layout=WASD', flat.read_bytes().replace(b' ', b''))
                 record = install.read_record(game)
                 self.assertEqual(record['snapshots'], [str(snapshot.resolve())])
                 self.assertEqual(record['store'], store)
@@ -154,6 +157,7 @@ class InstallationTests(unittest.TestCase):
                 (game / 'd2rloader/plugins/d2r_vr.ini').write_bytes(custom_ini)
                 (saves / 'Settings.json').write_bytes(custom_video)
                 (game / 'ReShade.ini').write_bytes(b'custom reshade settings')
+                flat.write_bytes(b'[input]\nflat_layout=ZQSD\n')
                 plugin.write_bytes(b'updated fixture plugin')
                 archive.write_bytes(historical_archive)
                 with patch.object(sys, 'argv', common + ['--preserve-settings']), \
@@ -162,6 +166,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((game / 'd2rloader/plugins/d2r_vr.ini').read_bytes(), custom_ini)
                 self.assertEqual((saves / 'Settings.json').read_bytes(), custom_video)
                 self.assertEqual((game / 'ReShade.ini').read_bytes(), b'custom reshade settings')
+                self.assertEqual(flat.read_bytes(), b'[input]\nflat_layout=ZQSD\n')
                 self.assertEqual((game / 'd2rloader/plugins/d2rl-vrcam.dll').read_bytes(), b'updated fixture plugin')
                 record = install.read_record(game)
                 self.assertEqual(len(record['snapshots']), 2)

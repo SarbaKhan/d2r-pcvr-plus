@@ -331,7 +331,7 @@ class NativeSetupTests(unittest.TestCase):
                     self.assertEqual(selected['store'], store)
                     self.assertEqual(selected['profile'], profile)
                     for edits, message in [({'profile': '../other'}, 'Steam account'),
-                                           ({'connections': 'vdxr'}, 'SteamVR for Steam Frame'),
+                                           ({'connections': 'unknown'}, 'Choose SteamVR'),
                                            ({'game': str(app)}, 'separate'),
                                            ({'mode': 'shortcuts'}, 'complete installed mod')]:
                         with self.assertRaisesRegex(ValueError, message):

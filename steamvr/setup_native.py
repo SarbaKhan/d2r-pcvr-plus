@@ -220,9 +220,8 @@ def validate_choices(values, root, managed_root=None):
         raise ValueError('Choose a supported game edition and headset.')
     connections = values.get('connections', '').split(',')
     if (not connections or len(set(connections)) != len(connections)
-            or any(name not in ('steamvr', 'vdxr') for name in connections)
-            or headset not in ('Quest 2', 'Quest 3') and connections != ['steamvr']):
-        raise ValueError('Choose SteamVR for Steam Frame, or SteamVR / Virtual Desktop for Quest.')
+            or any(name not in ('steamvr', 'vdxr', 'flat') for name in connections)):
+        raise ValueError('Choose SteamVR, Virtual Desktop, Flat Screen, or All.')
     if store == 'battlenet' and 'bin/CascLib.dll' not in manifest['sha256']:
         raise ValueError('This package does not include Battle.net support.')
     paths = {}
@@ -260,7 +259,7 @@ def validate_choices(values, root, managed_root=None):
         raise ValueError('Choose Update / repair, Full install or Shortcuts only.')
     if mode == 2 and not all((game / name).is_file() for name in (
             'D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2rl-vrcam.dll',
-            'd2rloader/plugins/d2r_vr.ini')):
+            'd2rloader/plugins/d2r_vr.ini', 'd2rloader/plugins/d2r_pcvr_plus_flat.ini')):
         raise ValueError('Shortcuts only requires a complete installed mod. Choose Update / repair instead.')
     options = setup.launch_options(target / '.runtime/python/python.exe', target / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     routing = {} if store == 'steam' else {'store': store, 'python': target / '.runtime/python/python.exe',
@@ -363,7 +362,7 @@ def install_selected(values, root):
         result = setup.apply_setup(**selection, root=root, on_steam_configured=steam_committed, hide_console=True)
         entry.update(status='installed', receipt=install.read_record(game))
         atomic_json(root / STATE, state)
-        print('Setup complete. Start Steam and use the matching VR shortcut with an offline character.', flush=True)
+        print('Setup complete. Start Steam and use the matching SteamVR, Virtual Desktop or Flat shortcut with an offline character.', flush=True)
         return result
     except BaseException:
         print('Setup stopped. Restoring changes from this attempt...', flush=True)

@@ -3,21 +3,21 @@
   #error PayloadDir must point to a verified native Windows package with its private Python runtime.
 #endif
 #ifndef ModVersion
-  #define ModVersion "0.3.12"
+  #define ModVersion "0.1"
 #endif
 #ifndef InstallerOutput
   #define InstallerOutput "Output"
 #endif
 
 [Setup]
-AppId=D2R-PCVR-Native-Windows
-AppName=D2R PCVR
+AppId=D2R-PCVR-Plus-Windows
+AppName=D2R PCVR Plus
 AppVersion={#ModVersion}
-AppPublisher=D2R PCVR contributors
-AppPublisherURL=https://github.com/bearstonem/d2r-pcvr
-AppSupportURL=https://github.com/bearstonem/d2r-pcvr/issues
-DefaultDirName={localappdata}\Programs\D2R PCVR
-DefaultGroupName=D2R PCVR
+AppPublisher=D2R PCVR Plus contributors
+AppPublisherURL=https://github.com/SarbaKhan/d2r-pcvr-plus
+AppSupportURL=https://github.com/SarbaKhan/d2r-pcvr-plus/issues
+DefaultDirName={localappdata}\Programs\D2R PCVR Plus
+DefaultGroupName=D2R PCVR Plus
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
@@ -28,25 +28,25 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 LicenseFile={#PayloadDir}\LICENSE
 OutputDir={#InstallerOutput}
-OutputBaseFilename=D2R-PCVR-Setup-{#ModVersion}
+OutputBaseFilename=D2R-PCVR-PLUS-Setup-{#ModVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
-UninstallDisplayName=D2R PCVR (Windows VR mod)
+UninstallDisplayName=D2R PCVR Plus (Windows Flat/VR mod)
 UninstallDisplayIcon={app}\.runtime\python\python.exe
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Installation help"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\INSTALL-WINDOWS.md"""
+Name: "{group}\Installation help"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\PCVR-PLUS-SETUP.md"""
 Name: "{group}\Controller mappings"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\CONTROLS.md"""
-Name: "{group}\Uninstall D2R PCVR"; Filename: "{uninstallexe}"
+Name: "{group}\Uninstall D2R PCVR Plus"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new VR shortcuts"; Flags: nowait postinstall skipifsilent; Check: SetupSucceeded
+Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new shortcuts"; Flags: nowait postinstall skipifsilent; Check: SetupSucceeded
 
 [Code]
 var
@@ -90,7 +90,7 @@ function InitializeSetup: Boolean;
 begin
   Result := not CheckForMutexes('D2R-PCVR-Managed-Operation');
   if Result then CreateMutex('D2R-PCVR-Managed-Operation')
-  else MsgBox('Another D2R PCVR setup or removal is running. Close it first.', mbError, MB_OK);
+  else MsgBox('Another D2R PCVR Plus setup or removal is running. Close it first.', mbError, MB_OK);
   if WizardSilent and (ExpandConstant('{param:CONFIG|}') = '') and
       (ExpandConstant('{param:PAYLOADCHECK|}') = '') then begin
     Log('Silent setup requires /CONFIG="path to setup choices INI". No game files were changed.');
@@ -148,8 +148,8 @@ end;
 procedure InitializeWizard;
 begin
   WizardForm.WelcomeLabel2.Caption :=
-    'Play your own Diablo II: Resurrected in first-person VR with motion controls.'#13#10#13#10 +
-    'Supports SteamVR and Virtual Desktop on Windows. Steam Frame uses SteamVR.'#13#10#13#10 +
+    'Play your own Diablo II: Resurrected in VR or on a flat screen.'#13#10#13#10 +
+    'Supports SteamVR, Virtual Desktop and Flat Screen on Windows.'#13#10#13#10 +
     'You must purchase and install the original game. No Blizzard game assets are included. Use an OFFLINE local character with this preview.'#13#10#13#10 +
     'Launch the original game once and complete its account prompts before installing. Save and exit D2R, then fully exit Steam before clicking Install.';
   PayloadRoot := ExpandConstant('{tmp}\') + '{app}';
@@ -158,25 +158,26 @@ begin
   ExtractTemporaryFiles('{app}\*');
   if ExpandConstant('{param:PAYLOADCHECK|}') <> '' then begin
     if not RunBackend(PayloadRoot, '--check') then RaiseException(LastOutput);
-    Log('D2R PCVR PAYLOADCHECK PASSED; no game or Steam files changed.');
+    Log('D2R PCVR Plus PAYLOADCHECK PASSED; no game or Steam files changed.');
     Abort;
   end;
   ProfileIDs := TStringList.Create;
   EditionPage := CreateInputOptionPage(wpLicense, 'Choose your game installation',
-    'Steam or Battle.net', 'Select the copy you want to play in VR. Battle.net support is experimental.', True, False);
+    'Steam or Battle.net', 'Select the copy you want to install PCVR Plus into. Battle.net support is experimental.', True, False);
   EditionPage.Add('Steam');
   HeadsetPage := CreateInputOptionPage(EditionPage.ID, 'Choose your headset',
-    'Controller layout and connection', 'Quest 2 uses Quest controls; physical Quest 2 testing is still pending.', True, False);
+    'Controller layout and connection', 'For VR sessions. Flat Screen does not require a headset. Quest 2 uses Quest controls.', True, False);
   HeadsetPage.Add('Steam Frame');
   HeadsetPage.Add('Quest 3');
   HeadsetPage.Add('Quest 2');
   HeadsetPage.Add('Other SteamVR headset');
   HeadsetPage.SelectedValueIndex := StrToIntDef(GetPreviousData('Headset', '0'), 0);
-  ConnectionPage := CreateInputOptionPage(HeadsetPage.ID, 'Connect your Quest',
+  ConnectionPage := CreateInputOptionPage(HeadsetPage.ID, 'Choose how to play',
     'Choose the connection you use', 'Virtual Desktop requires its headset app and Windows Streamer. Battle.net with VDXR has not yet been confirmed.', True, False);
   ConnectionPage.Add('Steam Link / SteamVR');
   ConnectionPage.Add('Virtual Desktop / VDXR');
-  ConnectionPage.Add('Both (create two Steam library shortcuts)');
+  ConnectionPage.Add('Flat Screen (no VR)');
+  ConnectionPage.Add('All (create three Steam library shortcuts)');
   ConnectionPage.SelectedValueIndex := StrToIntDef(GetPreviousData('Connection', '0'), 0);
   PathsPage := CreateInputDirPage(ConnectionPage.ID, 'Locate the installed game',
     'Detected folders can be changed with Browse', 'Select existing folders. Saved Games must contain Settings.json from the original game''s first launch.', False, '');
@@ -187,7 +188,7 @@ begin
     'The SteamVR folder contains steamxr_win64.json. Install SteamVR through Steam if it is missing.', False, '');
   RuntimePage.Add('SteamVR folder:');
   AccountPage := CreateInputOptionPage(RuntimePage.ID, 'Choose your Steam account',
-    'Steam library shortcuts', 'VR shortcuts will be added to this local account. Other games and shortcuts are kept.', True, True);
+    'Steam library shortcuts', 'Selected shortcuts will be added to this local account. Other games and shortcuts are kept.', True, True);
   ModePage := CreateInputOptionPage(AccountPage.ID, 'Install or update',
     'Choose how to apply settings', 'Game files, settings and Steam configuration are backed up. Character progress is kept.', True, False);
   ModePage.Add('Update / repair and keep calibration and video settings');
@@ -211,7 +212,7 @@ end;
 
 function UsesSteamVR: Boolean;
 begin
-  Result := (HeadsetPage.SelectedValueIndex in [0, 3]) or (ConnectionPage.SelectedValueIndex <> 1);
+  Result := ConnectionPage.SelectedValueIndex in [0, 3];
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
@@ -220,8 +221,7 @@ begin
     Result := (PageID >= EditionPage.ID) and (PageID <= BackupPage.ID);
     Exit;
   end;
-  Result := ((PageID = ConnectionPage.ID) and (HeadsetPage.SelectedValueIndex in [0, 3])) or
-            ((PageID = RuntimePage.ID) and not UsesSteamVR) or
+  Result := ((PageID = RuntimePage.ID) and not UsesSteamVR) or
             ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1)) or
             ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
 end;
@@ -282,10 +282,9 @@ var
   Connection: String;
 begin
   Headsets := ['Steam Frame', 'Quest 3', 'Quest 2', 'Other SteamVR headset'];
-  Connections := ['steamvr', 'vdxr', 'steamvr,vdxr'];
+  Connections := ['steamvr', 'vdxr', 'flat', 'steamvr,vdxr,flat'];
   Modes := ['repair', 'full', 'shortcuts'];
-  Connection := 'steamvr';
-  if not (HeadsetPage.SelectedValueIndex in [0, 3]) then Connection := Connections[ConnectionPage.SelectedValueIndex];
+  Connection := Connections[ConnectionPage.SelectedValueIndex];
   Lines := ['[setup]', 'store=' + PreviousEdition,
     'headset=' + Headsets[HeadsetPage.SelectedValueIndex], 'connections=' + Connection,
     'steam=' + PathsPage.Values[0], 'game=' + PathsPage.Values[1], 'saves=' + PathsPage.Values[2],
@@ -303,9 +302,7 @@ begin
     Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}');
     Exit;
   end;
-  Connection := 'SteamVR';
-  if not (HeadsetPage.SelectedValueIndex in [0, 3]) then
-    Connection := ConnectionPage.CheckListBox.Items[ConnectionPage.SelectedValueIndex];
+  Connection := ConnectionPage.CheckListBox.Items[ConnectionPage.SelectedValueIndex];
   Result := 'Game: ' + EditionPage.CheckListBox.Items[EditionPage.SelectedValueIndex] + NewLine +
     'Headset: ' + HeadsetPage.CheckListBox.Items[HeadsetPage.SelectedValueIndex] + NewLine +
     'Connection: ' + Connection + NewLine +
@@ -349,11 +346,11 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = wpFinished then begin
     if SetupFailed then begin
-      WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR setup needs attention';
+      WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR Plus setup needs attention';
       WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
     end else WizardForm.FinishedLabel.Caption :=
-      'Your VR shortcuts are ready in Steam. Connect your headset and use the matching SteamVR or Virtual Desktop shortcut with an OFFLINE character.'#13#10#13#10 +
-      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Start menu folder.';
+      'Your shortcuts are ready in Steam. Use SteamVR, Virtual Desktop or Flat Screen with an OFFLINE character.'#13#10#13#10 +
+      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Plus Start menu folder.';
   end;
 end;
 
@@ -389,7 +386,7 @@ function InitializeUninstall: Boolean;
 begin
   Result := not CheckForMutexes('D2R-PCVR-Managed-Operation');
   if Result then CreateMutex('D2R-PCVR-Managed-Operation')
-  else begin MsgBox('Another D2R PCVR operation is running. Close it first.', mbError, MB_OK); Exit; end;
+  else begin MsgBox('Another D2R PCVR Plus operation is running. Close it first.', mbError, MB_OK); Exit; end;
   Result := RunBackend(ExpandConstant('{app}'), '--uninstall-check');
   if not Result then MsgBox(LastOutput + #13#10#13#10 + 'Removal stopped. The mod, helper files and backups were kept. Close D2R and fully exit Steam, then retry.', mbError, MB_OK);
 end;
@@ -404,4 +401,4 @@ begin
 end;
 
 [Messages]
-ConfirmUninstall=Remove D2R PCVR from every Steam and Battle.net game copy configured by this installer?%n%nYour characters, shared stash, current video settings and installation backups will be kept.
+ConfirmUninstall=Remove D2R PCVR Plus from every Steam and Battle.net game copy configured by this installer?%n%nYour characters, shared stash, current video settings and installation backups will be kept.

@@ -1,3 +1,16 @@
+# D2R PCVR Plus Setup 0.1
+
+The active wizard now builds **D2R-PCVR-PLUS-Setup-0.1.exe**, with SteamVR,
+VDXR, Flat Screen and All (three Steam library shortcuts). See
+[PCVR-PLUS-SETUP.md](../PCVR-PLUS-SETUP.md) for current player/build instructions.
+`build_plus_release.ps1` builds the complete installer and runs isolated lifecycle
+and compiled-payload checks. Character snapshots are disabled; only installation
+files and Settings.json are backed up for rollback. Runtime VR sources are unchanged.
+
+The remaining notes below document the inherited PCVR packaging and recovery
+architecture. Old executable/version examples refer to the upstream installer;
+use the Plus build command above for this branch.
+
 # Native Windows setup EXE
 
 `D2R_PCVR_Setup.iss` builds the graphical installer for the native OpenXR mod.
