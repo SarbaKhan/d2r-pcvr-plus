@@ -109,33 +109,71 @@ def rollback(game):
         print('Original DLL restored. Profiles, saves and backup files retained.')
 
 
+LAUNCHERS = {
+    'steamvr': 'D2R-PCVR-PLUS-SteamVR.cmd',
+    'vdxr': 'D2R-PCVR-PLUS-VDXR.cmd',
+    'flat': 'D2R-PCVR-PLUS-Flat.cmd',
+}
+
+
+def launcher_text(action):
+    return ('@echo off\nsetlocal\n'
+            '"%~dp0deps\\python\\python.exe" "%~dp0steamvr\\portable_plus.py" ' + action + ' %*\n'
+            'set "result=%errorlevel%"\nif not "%result%"=="0" pause\nexit /b %result%\n')
+
+
+def write_launchers(settings, root):
+    selected = settings['launch_modes']
+    # Only replace/remove files that this configurator owns, never custom CMDs.
+    for action, name in LAUNCHERS.items():
+        path = root / name
+        if path.exists() and path.read_text(encoding='ascii') != launcher_text(action):
+            raise ValueError('Custom launcher already exists; rename it first: ' + str(path))
+    for action, name in LAUNCHERS.items():
+        path = root / name
+        if action in selected:
+            path.write_text(launcher_text(action), encoding='ascii')
+        else:
+            path.unlink(missing_ok=True)
+
+
 def configure():
+    source = ROOT / 'portable-settings.json'
+    previous = json.loads(source.read_text(encoding='utf-8')) if source.exists() else {}
     settings = {}
-    settings['game'] = str(Path(input('Existing D2R game folder: ').strip().strip('"')).resolve())
+    default_game = previous.get('game', '')
+    selected_game = input('Existing D2R game folder [' + default_game + ']: ').strip().strip('"')
+    settings['game'] = str(Path(selected_game or default_game).resolve())
     if not (Path(settings['game']) / 'D2RLoader.exe').is_file():
         raise ValueError('D2RLoader.exe not found')
     settings['store'] = input('Store (steam/battlenet) [steam]: ').strip() or 'steam'
     if settings['store'] not in ('steam', 'battlenet'):
         raise ValueError('Invalid store')
-    choice = input('VR runtime (steamvr/vdxr/system) [steamvr]: ').strip().lower() or 'steamvr'
-    if choice not in ('steamvr', 'vdxr', 'system'):
-        raise ValueError('Invalid VR runtime')
-    settings['vr_runtime'] = choice
-    settings['vdxr'] = choice == 'vdxr'  # Retain compatibility with earlier launchers.
-    if choice == 'steamvr':
-        default = Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Steam/steamapps/common/SteamVR/steamxr_win64.json'
+    print('1. Steam Link / SteamVR\n2. Virtual Desktop / VDXR\n3. Flat Screen\n4. All (create three CMD launchers)')
+    choice = input('Launch modes (1/2/3/4 or steamvr/vdxr/flat/all) [all]: ').strip().lower() or 'all'
+    choice = {'1':'steamvr', '2':'vdxr', '3':'flat', '4':'all'}.get(choice, choice)
+    if choice not in ('steamvr', 'vdxr', 'flat', 'all'):
+        raise ValueError('Invalid launch mode')
+    settings['launch_modes'] = list(LAUNCHERS) if choice == 'all' else [choice]
+    # Legacy generic VR launcher defaults to SteamVR when All is selected.
+    settings['vr_runtime'] = 'steamvr' if choice == 'all' else choice
+    settings['vdxr'] = choice == 'vdxr'
+    if 'steamvr' in settings['launch_modes']:
+        default = Path(previous['openxr_runtime']) if previous.get('openxr_runtime') else Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Steam/steamapps/common/SteamVR/steamxr_win64.json'
         selected = input('SteamVR manifest [' + str(default) + ']: ').strip().strip('"')
         manifest = (Path(selected) if selected else default).resolve()
         if not manifest.is_file():
             raise ValueError('SteamVR manifest not found; select the actual SteamVR installation: ' + str(manifest))
         settings['openxr_runtime'] = str(manifest)
+    write_launchers(settings, ROOT)
     (ROOT / 'portable-settings.json').write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    print('Created: ' + ', '.join(LAUNCHERS[mode] for mode in settings['launch_modes']))
     print('Configuration saved. Battle.net requires explicit --experimental-battlenet at launch.')
 
 
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('configure', 'update', 'rollback', 'flat', 'vr'))
+    parser.add_argument('action', choices=('configure', 'update', 'rollback', 'flat', 'vr', 'steamvr', 'vdxr'))
     parser.add_argument('--game', type=Path)
     runtime = parser.add_mutually_exclusive_group()
     runtime.add_argument('--openxr-runtime', type=Path)
@@ -158,12 +196,21 @@ def main(arguments=None):
             parser.error('Unrecognized arguments: ' + ' '.join(extra))
         (update if args.action == 'update' else rollback)(game)
         return 0
-    arguments = ['--mode', args.action, '--game', str(game)]
+    if args.action in LAUNCHERS and settings.get('launch_modes') and args.action not in settings['launch_modes']:
+        parser.error('This mode is not configured. Run Configure.cmd and select it or All.')
+    mode = 'vr' if args.action in ('steamvr', 'vdxr') else args.action
+    arguments = ['--mode', mode, '--game', str(game)]
     for key in ('store',):
         if key in settings:
             arguments += ['--' + key, settings[key]]
-    if args.action == 'vr':
-        if args.openxr_runtime is not None:
+    if mode == 'vr':
+        if args.action == 'steamvr':
+            if not settings.get('openxr_runtime'):
+                raise ValueError('SteamVR manifest missing. Run Configure.cmd and choose SteamVR or All.')
+            arguments += ['--openxr-runtime', settings['openxr_runtime']]
+        elif args.action == 'vdxr':
+            arguments.append('--vdxr')
+        elif args.openxr_runtime is not None:
             arguments += ['--openxr-runtime', str(args.openxr_runtime)]
         elif args.vdxr:
             arguments.append('--vdxr')
@@ -173,7 +220,7 @@ def main(arguments=None):
             elif settings.get('openxr_runtime'):
                 arguments += ['--openxr-runtime', settings['openxr_runtime']]
             elif settings.get('vr_runtime') != 'system':
-                raise ValueError('VR runtime is not explicitly configured. Run Configure.cmd and choose steamvr, vdxr or system; or pass --openxr-runtime PATH, --vdxr or --system-openxr.')
+                raise ValueError('VR runtime is not explicitly configured. Run Configure.cmd and choose SteamVR, VDXR or All; or pass --openxr-runtime PATH, --vdxr or --system-openxr.')
         print('VR runtime: ' + ('VDXR' if '--vdxr' in arguments else
               arguments[arguments.index('--openxr-runtime') + 1] if '--openxr-runtime' in arguments else
               'system/environment default'), flush=True)

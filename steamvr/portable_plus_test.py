@@ -145,6 +145,45 @@ class RuntimeRoutingTests(unittest.TestCase):
             self.assertNotIn(settings['saves'],args)
             self.assertNotIn(settings['backups'],args)
 
+    def test_dedicated_launchers_cannot_inherit_wrong_runtime(self):
+        settings={'launch_modes':['steamvr','vdxr','flat'],'vdxr':True,'openxr_runtime':'C:/Steam VR/runtime.json'}
+        steamvr=self.run_launch(settings,'steamvr')
+        self.assertEqual(steamvr[1],'vr')
+        self.assertIn('--openxr-runtime',steamvr);self.assertNotIn('--vdxr',steamvr)
+        vdxr=self.run_launch(settings,'vdxr')
+        self.assertEqual(vdxr[1],'vr')
+        self.assertIn('--vdxr',vdxr);self.assertNotIn('--openxr-runtime',vdxr)
+        flat=self.run_launch(settings,'flat')
+        self.assertEqual(flat[1],'flat')
+        self.assertNotIn('--vdxr',flat);self.assertNotIn('--openxr-runtime',flat)
+
+    def test_dedicated_steamvr_never_falls_back_to_system(self):
+        with self.assertRaisesRegex(ValueError,'manifest missing'):
+            self.run_launch({'vdxr':True},'steamvr')
+
+    def test_configure_all_then_flat_generates_requested_launchers(self):
+        (self.root/'D2RLoader.exe').write_bytes(b'fixture')
+        manifest=self.root/'runtime.json';manifest.write_text('{}')
+        answers=[str(self.root),'steam','all',str(manifest)]
+        with patch.object(portable,'ROOT',self.root), patch('builtins.input',side_effect=answers):
+            portable.configure()
+        for action,name in portable.LAUNCHERS.items():
+            self.assertEqual((self.root/name).read_text(),portable.launcher_text(action))
+        # Flat-only does not ask for or validate a runtime; previous game path is reused.
+        manifest.unlink()
+        with patch.object(portable,'ROOT',self.root), patch('builtins.input',side_effect=['','steam','3']):
+            portable.configure()
+        self.assertEqual(json.loads(self.settings.read_text())['launch_modes'],['flat'])
+        self.assertTrue((self.root/portable.LAUNCHERS['flat']).is_file())
+        self.assertFalse((self.root/portable.LAUNCHERS['steamvr']).exists())
+        self.assertFalse((self.root/portable.LAUNCHERS['vdxr']).exists())
+
+    def test_custom_launcher_is_not_overwritten(self):
+        custom=self.root/portable.LAUNCHERS['flat'];custom.write_text('custom commands')
+        with self.assertRaisesRegex(ValueError,'Custom launcher'):
+            portable.write_launchers({'launch_modes':['flat']},self.root)
+        self.assertEqual(custom.read_text(),'custom commands')
+
     def test_configure_saves_explicit_steamvr_choice(self):
         (self.root/'D2RLoader.exe').write_bytes(b'fixture')
         manifest=self.root/'runtime.json';manifest.write_text('{}')

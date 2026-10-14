@@ -19,9 +19,9 @@ def smoke(archive):
         script = package / 'steamvr/portable_plus.py'
         environment = {k:v for k,v in os.environ.items() if not k.upper().startswith('PYTHON')}
         environment['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
-        def run(*arguments):
+        def run(*arguments, **kwargs):
             return subprocess.run([str(python), *map(str, arguments)], cwd=work,
-                                  env=environment, check=True, capture_output=True, text=True)
+                                  env=environment, check=True, capture_output=True, text=True, **kwargs)
         run('-c', 'import launch_plus, launch_windows, game_install, process_guard, portable_plus; import ctypes, hashlib, json, subprocess, tempfile; print("isolated runtime OK")')
         for action in ('configure', 'update', 'rollback', 'flat', 'vr'):
             run(script, action, '--help')
@@ -36,22 +36,30 @@ def smoke(archive):
             path.write_bytes(data)
         preserved = {p:p.read_bytes() for p in game.rglob('*') if p.is_file() and p.name != 'd2rl-vrcam.dll'}
         # Exercise user-visible CMD wrappers too; only fixture files are modified.
-        def cmd(name):
-            subprocess.run(['cmd.exe', '/d', '/c', 'call', str(package/(name+'.cmd')), '--game', str(game)],
+        def cmd(name, *arguments):
+            subprocess.run(['cmd.exe', '/d', '/c', 'call', str(package/(name+'.cmd')), *arguments],
                            cwd=work, env=environment, check=True, stdin=subprocess.DEVNULL,
                            capture_output=True, text=True, timeout=60)
-        cmd('Update')
+        manifest=work/'SteamVR runtime.json'
+        manifest.write_text('{}')
+        run(script, 'configure', input='\n'.join([str(game), 'steam', 'all', str(manifest)])+'\n')
+        settings=json.loads((package/'portable-settings.json').read_text())
+        if settings['launch_modes'] != ['steamvr','vdxr','flat']:
+            raise AssertionError('All did not configure three launch modes')
+        for name in ('D2R-PCVR-PLUS-SteamVR', 'D2R-PCVR-PLUS-VDXR', 'D2R-PCVR-PLUS-Flat'):
+            cmd(name, '--help')
+        cmd('Update', '--game', str(game))
         if (plugins/'d2rl-vrcam.dll').read_bytes() != (package/'payload/d2rl-vrcam.dll').read_bytes():
             raise AssertionError('Installed DLL differs from packaged DLL')
         if not (plugins/'d2r_pcvr_plus_flat.ini').is_file():
             raise AssertionError('Flat profile missing')
-        cmd('Rollback')
+        cmd('Rollback', '--game', str(game))
         if (plugins/'d2rl-vrcam.dll').read_bytes() != b'original DLL':
             raise AssertionError('Rollback did not restore original')
         for path, data in preserved.items():
             if path.read_bytes() != data:
                 raise AssertionError('Existing installation changed: ' + str(path))
-        print('Portable ZIP smoke passed: isolated Python, CMD update/rollback, preserved files.')
+        print('Portable ZIP smoke passed: isolated Python, All configuration, three CMD launchers, update/rollback, preserved files.')
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 # D2R PCVR Plus — mise à jour portable Windows x64
 
 Ce ZIP met à jour une **installation D2R PCVR existante créée par le setup automatique**.
-Il contient la DLL compilée, les profils Flat/VR, deux lanceurs, l'outil de mise à jour
+Il contient la DLL compilée, les profils Flat/VR, les lanceurs, l'outil de mise à jour
 et Python 3.12.10 x64 embarqué avec sa bibliothèque standard et sa licence.
 Aucune installation de Python, aucun compilateur et aucun téléchargement au premier
 lancement ne sont nécessaires. Conserver le dossier extrait entier.
@@ -12,13 +12,14 @@ lancement ne sont nécessaires. Conserver le dossier extrait entier.
    permanent accessible en écriture, distinct du dossier du jeu.
 2. Exécuter `Configure.cmd`. Indiquer le dossier contenant `D2R.exe` et
    `D2RLoader.exe`. Aucun dossier de personnages ou de backup n’est demandé.
-   Choisir Steam ou Battle.net, puis le runtime VR : `steamvr`, `vdxr` ou
-   `system`. Pour SteamVR, confirmer le chemin réel de `steamxr_win64.json`.
+   Choisir Steam ou Battle.net, puis **Steam Link / SteamVR**,
+   **Virtual Desktop / VDXR**, **Flat Screen** ou **All** (trois lanceurs CMD).
+   Pour SteamVR ou All, confirmer le chemin réel de `steamxr_win64.json`.
    Les chemins sont mémorisés dans `portable-settings.json` à côté des lanceurs.
 3. Exécuter `Update.cmd`. Il sauvegarde et vérifie l'ancienne DLL ainsi qu'une copie
    du profil VR dans `d2rloader/pcvr-plus-backups/<identifiant>/`, remplace la DLL
    et ajoute `d2r_pcvr_plus_flat.ini` seulement si ce fichier n'existe pas déjà.
-4. Utiliser `Launch-Flat-Plus.cmd` ou `Launch-VR-Plus.cmd`. Le jeu utilise son
+4. Utiliser le lanceur `D2R-PCVR-PLUS-*.cmd` du mode souhaité. Le jeu utilise son
    emplacement de sauvegarde habituel, sans copie automatique ni redirection.
 
 D2RLoader, ReShade, OpenXR, les ressources du setup, `pcvr-install.json`, le profil
@@ -111,13 +112,13 @@ Ces options sélectionnent explicitement le manifeste SteamVR pour le premier
 raccourci. Le lanceur Plus appelle directement la même fonction de lancement
 Windows, mais ne lit pas les options Steam du jeu.
 
-Le configurateur propose désormais trois choix :
+Le configurateur propose désormais quatre choix :
 
 - `steamvr` : transmet le manifeste choisi à `--frame-openxr-runtime=...`
   dans le lanceur d'origine, qui définit `XR_RUNTIME_JSON` pour ce lancement;
 - `vdxr` : transmet `--frame-vdxr`, comme le raccourci Virtual Desktop;
-- `system` : utilise volontairement le runtime par défaut du système ou de
-  l'environnement, sans forcer SteamVR.
+- `flat` : écran classique sans runtime VR;
+- `all` : crée les trois lanceurs indépendants ci-dessous.
 
 Les anciennes configurations avec `vdxr=true` restent compatibles. Celles avec
 `vdxr=false` ne distinguaient pas SteamVR du runtime système : relancer
@@ -158,3 +159,34 @@ fichiers `steamvr/launch_plus.py` et `steamvr/portable_plus.py` dans le dossier
 portable puis relancer `Configure.cmd`. Aucun changement de DLL n’est nécessaire.
 La copie de l’ancienne DLL et du profil VR effectuée par `Update.cmd` reste
 disponible pour le retour arrière; elle ne concerne pas les personnages.
+
+## Trois lanceurs indépendants pour les tests
+
+Exécuter `Configure.cmd` et choisir **All** (ou 4). Le configurateur crée,
+dans le dossier portable :
+
+| Fichier | Mode imposé |
+|---|---|
+| `D2R-PCVR-PLUS-SteamVR.cmd` | VR avec le manifeste SteamVR configuré |
+| `D2R-PCVR-PLUS-VDXR.cmd` | VR avec `--frame-vdxr` |
+| `D2R-PCVR-PLUS-Flat.cmd` | Flat, sans sélection de runtime VR |
+
+Les trois coexistent; aucun changement de configuration n'est nécessaire pour
+passer d'un mode à l'autre. Fermer le jeu avant de lancer un autre mode. Choisir
+un seul mode génère uniquement son lanceur; un ancien lanceur généré est retiré
+si désélectionné, mais un fichier CMD modifié manuellement n'est jamais écrasé.
+Le choix Flat seul n'exige aucun manifeste SteamVR. Les chemins déjà enregistrés
+sont proposés lors d'une nouvelle configuration. Pour Battle.net, les contrôles
+expérimentaux restent actifs : ajouter `--experimental-battlenet` au lanceur.
+
+Les anciens `Launch-Flat-Plus.cmd` et `Launch-VR-Plus.cmd` sont conservés pour
+compatibilité. Avec All, le lanceur VR générique utilise SteamVR; employer les
+noms explicites ci-dessus pour choisir sans ambiguïté. Le runtime système reste
+accessible via l'option avancée `Launch-VR-Plus.cmd --system-openxr`.
+
+Pour cette mise à jour, remplacer `steamvr/portable_plus.py` puis relancer
+`Configure.cmd`; la DLL ne change pas. Aucun raccourci Steam n'est créé ou modifié.
+L'intégration des quatre choix dans le setup graphique et la création des trois
+entrées de bibliothèque Steam sont réservées à la version finale. Cette étape
+de tests reste une mise à jour d'une installation PCVR existante, sans nouveau
+setup complet ni demande de dossier de personnages.
