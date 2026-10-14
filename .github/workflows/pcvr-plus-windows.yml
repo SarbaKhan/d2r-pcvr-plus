@@ -35,6 +35,10 @@ jobs:
           New-Item -ItemType Directory candidate | Out-Null
           Copy-Item build-frame/windows-native/d2rl-vrcam.dll,d2r_pcvr_plus_flat.ini,PCVR-PLUS.md,LICENSE,THIRD_PARTY.md candidate
           Copy-Item third_party/minhook/LICENSE.txt candidate/MinHook-LICENSE.txt
+          Copy-Item external/reshade/LICENSE.md candidate/ReShade-LICENSE.md
+          Copy-Item -Recurse steamvr/licenses candidate/licenses
+          Copy-Item deps/D2RLoader-PluginSDK/LICENSE* candidate/licenses/
+          Get-ChildItem deps/OpenXR-SDK/LICENSE* | ForEach-Object { Copy-Item $_.FullName (Join-Path candidate/licenses ('OpenXR-' + $_.Name)) }
       - uses: actions/upload-artifact@v4
         with:
           name: D2R-PCVR-Plus-Windows-candidate
