@@ -1,6 +1,6 @@
-# D2R PCVR Plus Setup 0.1
+# D2R PCVR Plus Setup 0.1.1
 
-The active wizard now builds **D2R-PCVR-PLUS-Setup-0.1.exe**, with SteamVR,
+The active wizard now builds **D2R-PCVR-PLUS-Setup-0.1.1.exe**, with SteamVR,
 VDXR, Flat Screen and All (three Steam library shortcuts). See
 [PCVR-PLUS-SETUP.md](../PCVR-PLUS-SETUP.md) for current player/build instructions.
 `build_plus_release.ps1` builds the complete installer and runs isolated lifecycle

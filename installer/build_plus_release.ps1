@@ -24,12 +24,12 @@ $compilerDir = Join-Path $repo 'deps/inno-7.1.0'
 $process = Start-Process -FilePath $compilerSetup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',('/DIR="{0}"' -f $compilerDir)) -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw 'Inno Setup tools installation failed' }
 $package = Join-Path $repo 'build-frame/releases/pcvr-plus-full.zip'
-& $python "$repo/steamvr/package.py" --build "$repo/build-frame/windows-native" --openxr-loader $loaders[0].FullName --casclib "$repo/build-frame/casclib-installer/CascLib.dll" --release-tag v0.1-plus --output $package
+& $python "$repo/steamvr/package.py" --build "$repo/build-frame/windows-native" --openxr-loader $loaders[0].FullName --casclib "$repo/build-frame/casclib-installer/CascLib.dll" --release-tag v0.1.1-plus --output $package
 if ($LASTEXITCODE -ne 0) { throw 'Full package validation failed' }
-& "$repo/installer/build_native_installer.ps1" -PackagePath $package -Version '0.1' -ISCCPath "$compilerDir/ISCC.exe"
+& "$repo/installer/build_native_installer.ps1" -PackagePath $package -Version '0.1.1' -ISCCPath "$compilerDir/ISCC.exe"
 & "$repo/installer/smoke_native_installer.ps1" -ISCCPath "$compilerDir/ISCC.exe"
 $payloadLog = Join-Path $repo 'build-frame/installers/payload-check.log'
-$process = Start-Process -FilePath "$repo/build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe" -ArgumentList @('/PAYLOADCHECK=1','/VERYSILENT','/SUPPRESSMSGBOXES',('/LOG="{0}"' -f $payloadLog)) -Wait -PassThru
+$process = Start-Process -FilePath "$repo/build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe" -ArgumentList @('/PAYLOADCHECK=1','/VERYSILENT','/SUPPRESSMSGBOXES',('/LOG="{0}"' -f $payloadLog)) -Wait -PassThru
 # PAYLOADCHECK deliberately aborts before installation. Check its success marker.
 if (!(Test-Path -LiteralPath $payloadLog) -or !(Select-String -LiteralPath $payloadLog -SimpleMatch 'D2R PCVR Plus PAYLOADCHECK PASSED; no game or Steam files changed.' -Quiet)) {
     throw "Compiled installer payload check failed (exit $($process.ExitCode))"

@@ -1,6 +1,6 @@
-# D2R PCVR Plus — Setup 0.1
+# D2R PCVR Plus — Setup 0.1.1
 
-`D2R-PCVR-PLUS-Setup-0.1.exe` installe le mod complet sur une installation
+`D2R-PCVR-PLUS-Setup-0.1.1.exe` installe le mod complet sur une installation
 Windows x64 de Diablo II: Resurrected, sans installation PCVR préalable.
 Il contient le plugin Flat/VR, les profils, Python privé, le chargeur OpenXR
 et CascLib. Il télécharge automatiquement D2RLoader et ReShade depuis leurs
@@ -8,6 +8,19 @@ sites officiels, avec vérification des empreintes approuvées : Internet est
 nécessaire pendant l'installation. Aucun Python ni compilateur à installer.
 Aucun fichier Blizzard n'est distribué ; les caches graphiques sont générés
 localement à partir du jeu acheté et installé.
+
+## Correctif 0.1.1 : lancement Flat depuis Steam
+
+Le raccourci Flat utilise désormais le même relais par le bureau Windows que
+SteamVR, sans initialisation OpenXR. Le relais lance une seule instance, attend
+sa fermeture et ne tente aucun second lancement en cas d'échec. Les erreurs et
+codes de sortie Flat sont enregistrés dans `d2rloader/logs/pcvr-launch.log` du jeu.
+
+Pour mettre à jour une installation Plus 0.1, fermer le jeu et Steam, relancer
+ce setup et choisir **Update / repair**. Aucune réinstallation de D2R nécessaire ;
+les réglages VR et Flat sont conservés. Ce correctif concerne les scripts de
+lancement, pas les sources de la DLL. La disparition du problème observé reste
+à confirmer sur un PC réel.
 
 ## Installation
 

@@ -80,10 +80,10 @@ jobs:
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-PLUS-Setup-0.1
+          name: D2R-PCVR-PLUS-Setup-0.1.1
           path: |
-            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe
-            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe.sha256
-            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.exe.build.json
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe.sha256
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe.build.json
             PCVR-PLUS-SETUP.md
           if-no-files-found: error

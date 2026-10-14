@@ -62,7 +62,7 @@ class PlusSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='Plus accents é ') as temp:
             game = Path(temp).resolve()
             with patch.object(launch_plus, 'main', return_value=0) as flat, patch.object(launch_windows, 'launch_environment', side_effect=AssertionError('No XR for Flat')), patch.object(launch_windows, 'launch_from_desktop', side_effect=AssertionError('No VR handoff')):
-                self.assertEqual(launch_windows.main(['--frame-openxr-runtime=missing.json', str(game / 'D2R.exe'), '--frame-flat']), 0)
+                self.assertEqual(launch_windows.launch_flat(['--frame-openxr-runtime=missing.json', str(game / 'D2R.exe'), '--frame-flat'], desktop=True), 0)
             self.assertEqual(flat.call_args.args[0], ['--game', str(game.resolve()), '--mode', 'flat', '--store', 'steam'])
 
     def test_flat_battlenet_wrapper_preserves_explicit_opt_in(self):
