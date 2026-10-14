@@ -120,7 +120,7 @@ class PlusTests(unittest.TestCase):
         with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
              patch('install.require_game_closed'), patch('launch_windows.main',return_value=7) as vr:
             self.assertEqual(plus.main(args),7)
-            vr.assert_called_once_with(['--frame-vr','--frame-vdxr',str(self.game/'D2R.exe')])
+            vr.assert_called_once_with(['--frame-vr','--frame-vdxr',str(self.game.resolve()/'D2R.exe')])
             self.assertEqual(len(list(self.backups.iterdir())),1)
 
     def test_shipped_flat_profile(self):
