@@ -280,7 +280,9 @@ def main():
     require_game_closed()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     snapshot.mkdir(parents=True)
-    shutil.copytree(saves, snapshot / 'saves')
+    # Only video settings are needed for rollback. Never copy characters/stash.
+    (snapshot / 'saves').mkdir()
+    shutil.copy2(saves / 'Settings.json', snapshot / 'saves/Settings.json')
     installed = []
     manifest = {'game': str(game), 'store': store, 'game_version': version,
                 'previous_mod': (game / 'd2rloader/plugins/d2rl-vrcam.dll').is_file(),
@@ -336,6 +338,10 @@ def main():
             put(rel, content)
 
     put_config(Path('d2rloader/plugins/d2r_vr.ini'), out.getvalue().encode())
+    flat_profile = Path('d2rloader/plugins/d2r_pcvr_plus_flat.ini')
+    # Flat preferences survive repair and full VR calibration resets.
+    if not (game / flat_profile).is_file():
+        put(flat_profile, (ROOT / 'd2r_pcvr_plus_flat.ini').read_bytes())
     put_config(Path('ReShade.ini'), b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
     put_config(Path('D2R_Frame_ReShade.ini'), b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
     put(Path('reshade-shaders/Shaders/D2R_DepthFog.fx'), (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())
@@ -348,7 +354,7 @@ def main():
                      'Atmospherics Quality': 2, 'Shadow Quality': 2})
     if not args.preserve_settings:
         (saves / 'Settings.json').write_text(json.dumps(settings, indent=4))
-    print(f'Installed offline VR mod. Save and file backup: {snapshot}')
+    print(f'Installed offline PCVR Plus mod. Installation and video-settings backup: {snapshot}')
 
 
 if __name__ == '__main__':

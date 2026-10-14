@@ -16,23 +16,6 @@ struct Sim {
     void Draw(){in.trigger=1;Step();assert(out.bowDrawing);for(int i=0;i<10;++i){in.hand[0].p.z+=.04f;Step();}}
 };
 int main() {
-    {
-        Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.selectedSkill=47;
-        s.in.bowSlot=4;s.in.bowSkill=12;s.in.bowOwner=-1;s.in.skillContext=7;s.Step(3);
-        s.Draw();s.in.trigger=0;s.Step();assert(s.out.nativeBowRelease&&s.out.skill==4&&s.engine.Selection()==0);
-    }
-    {
-        Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.selectedSkill=47;
-        s.in.bowSlot=4;s.in.bowSkill=12;s.in.skillContext=7;s.in.hand[0].p.x=.5f;s.Step(3);
-        s.in.trigger=1;s.Step();assert(s.out.skill==0&&!s.out.bowDrawing);
-        for(int i=0;i<10;++i){s.in.hand[0].p.x-=.05f;s.Step();assert(s.out.skill==0&&!s.out.bowDrawing);}
-        s.in.trigger=0;s.Step();assert(!s.out.nativeBowRelease);
-    }
-    {
-        Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.bowSlot=4;s.in.bowSkill=12;s.Step(3);
-        s.Draw();s.in.bowSlot=-1;s.in.bowSkill=-1;s.in.trigger=0;s.Step();
-        assert(!s.out.nativeBowRelease&&!s.out.bowRelease&&s.out.block);
-    }
     for(int id:{6,7,11,12,16,21,22,26,27,31}) {
         Sim s;s.Select(id);s.Draw();assert(s.out.skill==-1&&!s.out.attack&&!s.out.bowRelease);
         s.in.trigger=0;s.Step();assert(s.out.nativeBowRelease&&s.out.skill==2&&!s.out.bowRelease&&!s.out.attack);

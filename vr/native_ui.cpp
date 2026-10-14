@@ -16,7 +16,6 @@
 #include "controller_bindings.h"
 #include "skill_slots.h"
 #include "spell_aim.h"
-#include "spell_cast.h"
 #include "weapon_skills.h"
 #include "panel_input.h"
 namespace gamestate {uint32_t DataBank();}
@@ -52,7 +51,7 @@ bool BindingReady() {
     bindingReady=true;framevr::logging::Write("Frame skill editor: native assignment, clear and catalog readers verified");return true;
 }
 int Slot(int wheel) {
-    if(wheel<0||wheel>=framevr::skills::Count)return -1;
+    if(wheel<0||wheel>=8)return -1;
     return reinterpret_cast<int(*)(int,bool)>(d2rsig::Addr(abi::ButtonSlotRva))(
         framevr::skills::Buttons(wheel),framevr::skills::Alternate(wheel));
 }
@@ -136,16 +135,7 @@ void Capture(framevr::interaction::Snapshot& s) {
     const int bank=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::ControllerBankRva))();
     if(bank!=0&&bank!=16)return;
     s.bindingBank=bank;
-    unsigned usedSlots=0;
-    for(int i=0;i<framevr::skills::Count;++i){
-        const int slot=Slot(i);
-        // A customized/unsupported controller layout must not alias two hand
-        // bindings. Leave the skill surface unavailable rather than edit/cast
-        // a different slot. Equipment, vitals and native menus remain usable.
-        if(slot<0||slot>=16||(usedSlots&(1u<<slot)))return;
-        usedSlots|=1u<<slot;
-    }
-    for(int i=0;i<framevr::skills::Count;++i) {
+    for(int i=0;i<8;++i) {
         const int slot=Slot(i);
         if(slot<0||slot>=16)continue;
         auto& skill=s.skills[i];
@@ -153,9 +143,6 @@ void Capture(framevr::interaction::Snapshot& s) {
         if(!framevr::interaction::ReadControllerBinding(d2rsig::Addr(abi::ControllerTableRva),bank,slot,
             [](uintptr_t p,auto& value){return Read(p,value);},binding))continue;
         int skillId=binding.skill;
-        // Keep the physical right-primary interaction safe for existing layouts.
-        // Explicit skill assignments replace it; clearing restores Interact.
-        if(i==8&&skillId<=0)skillId=357;
         // Preserve the native controller getter's combined Town Portal shortcut:
         // use a scroll when its base level is positive, otherwise the tome.
         if(skillId==359) {
@@ -177,16 +164,10 @@ void Capture(framevr::interaction::Snapshot& s) {
            Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile)) {
             skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
             skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
-            int16_t start=-1,secondary=-1;
-            uint8_t los=255;
-            if(Read(row+0x4c,start)&&Read(row+0x68,secondary)&&Read(row+0x231,los))skill.physical=skill.owner==-1&&los==0&&
-                framevr::spellcast::Candidate(h[1],skillId,start,serverFunction,missile,flags,secondary);
         }
         const auto name=Name(skillId);std::snprintf(skill.name,sizeof skill.name,"%s",name.c_str());
     }
     if(BindingReady()) {
-        auto& interact=s.catalog[s.skillCount++];interact.id=357;interact.known=interact.available=true;
-        std::snprintf(interact.name,sizeof interact.name,"Interact / pick up");
         uintptr_t node=0;bool valid=Read(skillList,node);
         unsigned visited=0;
         for(;valid&&node&&visited<256;++visited) {
@@ -215,12 +196,12 @@ void Capture(framevr::interaction::Snapshot& s) {
             const int order=std::strcmp(a.name,b.name);return order?order<0:a.owner<b.owner;
         });
     }
-    static uint64_t lastSession=0;static int lastBank=-1;static std::array<int,framevr::skills::Count> lastIds{};static unsigned lastDirected=0;
-    unsigned directed=0;std::array<int,framevr::skills::Count> ids{};
-    for(int i=0;i<framevr::skills::Count;++i){ids[i]=s.skills[i].known?s.skills[i].id:-2;if(s.skills[i].directed)directed|=1u<<i;}
+    static uint64_t lastSession=0;static int lastBank=-1;static std::array<int,8> lastIds{};static unsigned lastDirected=0;
+    unsigned directed=0;std::array<int,8> ids{};
+    for(int i=0;i<8;++i){ids[i]=s.skills[i].known?s.skills[i].id:-2;if(s.skills[i].directed)directed|=1u<<i;}
     if(lastSession!=s.session||lastBank!=bank||lastIds!=ids||lastDirected!=directed) {
-        char line[240];std::snprintf(line,sizeof line,"Frame hand assignments: controller bank=%d skills=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d directed=0x%03X",
-            bank,ids[0],ids[1],ids[2],ids[3],ids[4],ids[5],ids[6],ids[7],ids[8],ids[9],directed);
+        char line[200];std::snprintf(line,sizeof line,"Frame wheel assignments: controller bank=%d skills=%d,%d,%d,%d,%d,%d,%d,%d directed=0x%02X",
+            bank,ids[0],ids[1],ids[2],ids[3],ids[4],ids[5],ids[6],ids[7],directed);
         framevr::logging::Write(line);lastSession=s.session;lastBank=bank;lastIds=ids;lastDirected=directed;
     }
 }
@@ -229,8 +210,8 @@ bool Assign(const framevr::interaction::Request& r,const framevr::interaction::S
     const int slot=Slot(r.index);
     const int bank=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::ControllerBankRva))();
     if(slot<0||slot>=16||bank!=r.bank)return false;
-    bool left=r.skill==357;
-    if(r.skill>=0&&r.skill!=357) {
+    bool left=false;
+    if(r.skill>=0) {
         const int index=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::LocalIndexRva))();
         if(index<0||index>=8)return false;
         const auto player=reinterpret_cast<uintptr_t(*)(int)>(d2rsig::Addr(abi::ClientPlayerRva))(index);

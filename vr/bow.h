@@ -8,12 +8,7 @@ void Install();
 void Update(const framevr::bowflight::Gate& gate,uintptr_t clientPlayer);
 void Submit(const framevr::bowflight::Shot& shot);
 bool PreviewReady(); // lock-free; native mesh replaced the tracked draw guide
-bool SpellReady();
-bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y);
-// 0: unrelated request; 1: copied/adjusted; -1: reject before native creation.
-int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted);
 void Created(uintptr_t game,uintptr_t params,uintptr_t unit);
-bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot);
-bool OwnsVisual(uintptr_t unit);
+bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint);
 void Report();
 }

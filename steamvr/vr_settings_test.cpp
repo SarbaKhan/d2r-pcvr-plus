@@ -7,85 +7,6 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
-    Check(s.values[OrdinaryMobBars]==0,"ordinary mob bars are off by default");
-    {Model bars;bars.Open(s);bars.Click({Kind::Tab,int(Page::VR)});
-        const auto hit=At(Page::VR,ValueBox(9));
-        Check(hit.kind==Kind::Change&&hit.index==OrdinaryMobBars,"VR tab exposes ordinary mob toggle");
-        Check(RowY+9*RowStep+72<876,"last row leaves room for save status");
-        bars.Click(hit);auto request=bars.Click({Kind::Apply});
-        Check(request.changed==(1u<<OrdinaryMobBars)&&request.values[OrdinaryMobBars]==1,"toggle saves only mob visibility");}
-    Check(s.values[SmoothTurn]==0&&s.values[Snap]==30,"snap turning remains the default");
-    Check(EffectiveSnapAngle(30,-1)==30&&EffectiveSnapAngle(0,-1)==0,"legacy snap and smooth profiles retain their mode");
-    Check(EffectiveSnapAngle(45,1)==0&&EffectiveSnapAngle(45,0)==45,"explicit toggle selects camera mode without losing angle");
-    Check(EffectiveSnapAngle(0,0)==30,"turning off legacy smooth mode restores default snap angle");
-    Check(SnapDegrees(NAN)==30&&SnapDegrees(-20)==15&&SnapDegrees(999)==180,"camera and menu share snap bounds");
-    {Model turning;turning.Open(s);
-        turning.Click(At(Page::VR,ValueBox(3)));
-        Check(turning.Get()[SmoothTurn]==1&&turning.Get()[Snap]==30,"value-box click enables smooth turning independently");
-        turning.Click({Kind::Close});turning.Open(s);
-        Check(turning.Get()[SmoothTurn]==0&&!turning.Dirty(),"closing without Apply discards smooth toggle");
-        turning.Click(At(Page::VR,ValueBox(3)));
-        auto request=turning.Click({Kind::Apply});
-        Check(request.changed==(1u<<SmoothTurn),"Apply saves only the turning mode");
-        turning.Click(At(Page::VR,ValueBox(3)));
-        Check(turning.Get()[SmoothTurn]==1,"toggle cannot change while saving");
-        auto saved=s;saved.values=request.values;saved.sequence=request.sequence;saved.result=Result::Saved;
-        turning.Observe(saved);turning.Close();turning.Open(saved);
-        turning.Click(At(Page::VR,ValueBox(3)));
-        Check(turning.Get()[SmoothTurn]==0&&turning.Get()[Snap]==30,"reopened toggle restores snap turning");
-    }
-    Check(s.values[NavigationLocation]==0,"combined navigation defaults to Wrist");
-    Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
-    {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
-        const int row=2;
-        Check(RowCount(Page::HUD)==3&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
-        for(int location=1;location<=3;++location){
-            navigation.Click(At(Page::HUD,Increase(row)));
-            Check(navigation.Get()[NavigationLocation]==location,"navigation offers Palm, Either and Off");
-        }
-        auto request=navigation.Click({Kind::Apply});
-        Check(request.changed==(1u<<NavigationLocation)&&request.values[NavigationLocation]==3&&request.values[VitalsLocation]==0,
-            "combined navigation can turn off without changing vitals");}
-    Check(s.values[VitalsLocation]==0&&s.values[CriticalAlerts]==0,"existing wrist placement remains default; automatic alerts require opt-in");
-    Check(Normalize(VitalsLocation,99)==0&&Normalize(VitalsLocation,1.5f)==0,"unknown vitals locations fall back to wrist");
-    {Model hud;hud.Open(s);hud.Click(At(hud.page,Tabs[int(Page::HUD)]));
-        hud.Click(At(hud.page,Increase(0)));
-        Check(hud.Get()[VitalsLocation]==1&&!hud.Get()[CriticalAlerts],"Palm selection does not enable automatic alerts");
-        auto request=hud.Click({Kind::Apply});
-        Check(request.changed==(1u<<VitalsLocation),"palm placement saves independently");
-        hud.Open(s);hud.Click(At(Page::HUD,ValueBox(1)));request=hud.Click({Kind::Apply});
-        Check(request.changed==(1u<<CriticalAlerts)&&request.values[CriticalAlerts]==1,"alert opt-in saves independently");}
-    Check(s.values[PlanarSpellAim]==1,"spell aiming defaults to planar");
-    {Model aim;aim.Open(s);const auto hit=At(Page::Controls,PlanarSpellAimBox);
-        Check(hit.kind==Kind::Change&&hit.index==PlanarSpellAim,"controls tab exposes planar aiming toggle");
-        aim.Click(hit);Check(s.values[PlanarSpellAim]==1&&aim.Get()[PlanarSpellAim]==0,"aim change is a draft");
-        const auto request=aim.Click({Kind::Apply});
-        Check(request.changed==(1u<<PlanarSpellAim)&&request.values[PlanarSpellAim]==0,"free aim saves only its preference");
-        Check(!WeaponIndicatorsBox.Contains(PlanarSpellAimBox.x,PlanarSpellAimBox.y)&&
-              PlanarSpellAimBox.y+PlanarSpellAimBox.h<876,"aim toggle avoids other controls and footer");}
-    Check(s.values[WeaponSkillIndicators]==0,"weapon skill indicators default off");
-    {Model indicators;indicators.Open(s);const auto hit=At(Page::Controls,WeaponIndicatorsBox);
-        Check(hit.kind==Kind::Change&&hit.index==WeaponSkillIndicators,"controls tab exposes weapon indicator toggle");
-        indicators.Click(hit);auto request=indicators.Click({Kind::Apply});
-        Check(request.changed==(1u<<WeaponSkillIndicators)&&request.values[WeaponSkillIndicators]==1,"indicator opt-in saves only its preference");}
-    Check(s.values[ControllerLabels]==0&&Normalize(ControllerLabels,99)==0&&Normalize(ControllerLabels,1.5f)==0,"unknown controller preferences use automatic");
-    {Model chooser;chooser.Open(s);chooser.Click({Kind::Tab,int(Page::VR)});
-        auto hit=[&](Rect r){return HitTest(chooser.page,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height,chooser.controllerMenu);};
-        chooser.Click(hit(ControllerBox));Check(chooser.controllerMenu&&!chooser.Dirty(),"dropdown opens without changing selection");
-        chooser.Click(hit(ControllerOption(2)));
-        Check(!chooser.controllerMenu&&chooser.Get()[ControllerLabels]==2&&chooser.Dirty(),"Index option changes draft only");
-        chooser.Click(hit(ControllerBox));
-        const auto covered=hit(ValueBox(0));
-        Check(covered.kind==Kind::ControllerChoice,"dropdown options own covered setting rows");
-        const auto outside=hit({58,RowY,100,40});
-        Check(outside.kind==Kind::DismissMenu,"open dropdown consumes outside clicks instead of changing rows");
-        chooser.Click(outside);Check(!chooser.controllerMenu&&chooser.Get()[Motion]==0,"outside click only dismisses");
-        chooser.Click(hit(ControllerBox));Check(chooser.DismissControllerMenu()&&chooser.open,"Back dismisses dropdown first");
-        auto pending=chooser.Click({Kind::Apply});
-        Check(pending.changed==(1u<<ControllerLabels)&&pending.values[ControllerLabels]==2,"Apply queues preference alone");
-        chooser.Click(hit(ControllerBox));Check(!chooser.controllerMenu,"cannot edit while saving");
-        chooser.Close();chooser.Open(s);Check(chooser.Get()[ControllerLabels]==0&&!chooser.controllerMenu,"reopen discards unsaved choice");
-    }
     Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==300,"distance fallbacks match release configuration");
     {Model distance;distance.Open(s);
         for(int i=0;i<3;++i)distance.Click({Kind::Change,ObjectDistance,-1});
@@ -95,7 +16,7 @@ int main(){
     Check(HitTest(Page::VR,-.01f,.5f).kind==Kind::None&&HitTest(Page::VR,NAN,.5f).kind==Kind::None,"invalid laser coordinates ignored");
     Check(At(Page::VR,Calibrate).kind==Kind::Calibrate&&At(Page::VR,Recenter).kind==Kind::Recenter,"separate calibration and recenter buttons");
     Check(Normalize(BeltForward,.06f)==.06f,"settings preserve the closer belt placement");
-    for(int p=0;p<TabCount;++p){
+    for(int p=0;p<3;++p){
         auto hit=At(Page(p),Tabs[p]);Check(hit.kind==Kind::Tab&&hit.index==p,"tab rectangle matches input");
         for(int row=0;row<RowCount(Page(p));++row){
             auto plus=At(Page(p),Increase(row)),minus=At(Page(p),Decrease(row));
@@ -132,7 +53,7 @@ int main(){
     m.Open(s);for(int i=0;i<200;++i)m.Click({Kind::Change,Snap,1});
     Check(m.Get()[Snap]==180,"upper limit clamps");
     for(int i=0;i<200;++i)m.Click({Kind::Change,Snap,-1});
-    Check(m.Get()[Snap]==15&&Normalize(Waist,INFINITY)==Definitions[Waist].defaultValue,"lower and nonfinite limits");
+    Check(m.Get()[Snap]==0&&Normalize(Waist,INFINITY)==Definitions[Waist].defaultValue,"lower and nonfinite limits");
     s.ready=false;m.Open(s);m.Click({Kind::Change,Motion,1});
     Check(!m.Dirty()&&!m.Click({Kind::Apply}).sequence,"missing config remains read-only");
     InputGate gate;

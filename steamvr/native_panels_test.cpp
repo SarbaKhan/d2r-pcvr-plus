@@ -1,5 +1,4 @@
 #include "native_panels.h"
-#include "npc_dialogue.h"
 #include "panel_input_mode.h"
 #include "menu_controls.h"
 #include "quick_cast.h"
@@ -9,18 +8,12 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
-    for(auto name:{"WaypointPanel","WaypointPanelExpansion","WaypointPanelOriginal"})
-        Check(panels::Modal(name)&&panels::OpaqueBackground(name),"waypoint destinations use the shared opaque black background instead of different per-eye worlds");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
         "BankExpansionLayout","BankOriginalLayout","StashPanel","PlayerInventoryExpansionLayout",
         "PlayerInventoryOriginalLayout","HoradricCubeLayout","HirelingInventoryPanel","MercenaryInventoryLayout"})
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"management surfaces use the same opaque background in both eyes");
     for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","GoldTransferPanel","QuantityPanel","HUDPanel","HUDTradeHint","MiniMenuPanel","TooltipsPanel"})
         Check(!panels::OpaqueBackground(name),"dialogue, journal and auxiliary panels do not independently black out the world");
-    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel"})
-        Check(panels::UpperBand(name),"tabbed inventory and independent merchant roots center their upper content at eye level");
-    for(auto name:{"WaypointPanel","NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","QuantityPanel","ConfirmationPanel","HUDTradeHint","TooltipsPanel"})
-        Check(!panels::UpperBand(name),"unrelated layouts and auxiliary popups cannot independently shift the workspace");
     panels::InputModeLease mode;
     Check(!mode.PreserveController(100,true),"desktop input untouched without VR ownership");
     mode.Refresh(100);
@@ -33,29 +26,6 @@ int main(){
     Check(panels::FocusUsesPointer(mode.Active(800),true),"laser hover keeps exact widget focus");
     Check(!panels::FocusUsesPointer(mode.Active(800),false),"native navigation restores cursor snapping despite queued mouse-release lease");
     Check(mode.Active(800),"switching focus does not cancel protection for queued pointer events");
-    panels::ItemTooltipHover hover;
-    Check(!hover.Active(100),"desktop starts without immediate tooltip or automatic comparison ownership");
-    hover.Update(100,true,true,false);
-    Check(hover.Active(100),"first laser hit enables tooltips without a dwell timer");
-    int keyReads=0;
-    auto key=[&](int k){++keyReads;return k==0x11?1:0;};
-    Check(panels::ItemCompareKey(hover.Active(100),true,0x10,key)==1&&keyReads==0,
-        "native equipped-item comparison needs no physical Shift press");
-    Check(!panels::ItemCompareKey(hover.Active(100),false,0x10,key)&&keyReads==1,
-        "purchase, transfer and gameplay Shift queries retain native state");
-    Check(panels::ItemCompareKey(hover.Active(100),true,0x11,key)==1&&keyReads==2,
-        "other held modifiers retain native state even inside tooltip code");
-    Check(hover.Active(399)&&!hover.Active(400),"stopped XR frames expire tooltip ownership");
-    for(int lost=0;lost<3;++lost) {
-        hover.Update(500,true,true,false);
-        hover.Update(501,lost!=0,lost!=1,lost==2);
-        Check(!hover.Active(501),"focus/tracking/navigation loss, ray miss or drag clears item hover immediately");
-        Check(!panels::ItemCompareKey(hover.Active(501),true,0x10,key),"inactive laser cannot force native comparison");
-        Check(panels::ItemCompareKey(hover.Active(501),true,0x10,[](int){return 1;})==1,
-            "real Shift still compares items with automatic comparison inactive");
-    }
-    hover.Update(600,true,true,false);
-    Check(hover.Active(600),"reacquiring item hover is immediate after a miss or drag");
     // Reproduce a laser-started Amazon session: physical bow/javelin releases
     // and walking send no native A, so KB/M remains active and target lookup
     // never gives the semantic interact guard a usable item/entrance target.
@@ -205,84 +175,13 @@ int main(){
     for(int frame=0;frame<90;++frame)
         Check(inventory.Step(true,drop,true,.5f,.5f,false).buttons==menus::X,"X/drop is forwarded for the entire native hold duration");
     Check(!menus::Busy(sortGate.Step(menus::Mode::World,10,sort)),"closing inventory during a sort hold cannot swap in gameplay");
-    const auto square=panels::Fit(4096,4096),wide=panels::Fit(3840,2160);
-    Check(std::fabs(square.height-1.06875f)<.00001f&&square.width==square.height,"4096 square inventory fits original workspace height without distortion");
-    Check(wide.width==panels::Width&&wide.height==square.height,"widescreen workspace remains unchanged");
-    const auto title=panels::Fit(4096,4096,2.f);
-    Check(title.width==1.125f&&title.height==1.125f,"square main menu fits original 2m widescreen envelope");
-    const auto missing=panels::Fit(0,0);
-    Check(missing.width==wide.width&&missing.height==wide.height,"missing source uses finite widescreen fallback");
-    // The NPC box is a small region of the full UI. Enlarge its pixel pitch,
-    // not its surrounding canvas, and map each displayed choice back to the
-    // original native coordinate after moving the region to eye level.
-    for(auto source:{journal::Rect{0,0,4096,4096},journal::Rect{0,0,1920,1080},journal::Rect{0,0,2160,2400}}) {
-        const auto crop=dialogue::Crop({1740,120,360,240},source.w,source.h);
-        const auto size=dialogue::Size(crop,source.w,source.h);
-        Check(crop.w>0&&crop.h>0,"NPC bounds produce a source region at square, wide and portrait resolutions");
-        Check(std::fabs(size.width/crop.w-4.f*panels::Fit(source.w,source.h).width/source.w)<.00001f,"NPC text has four times the original workspace pixel pitch");
-        const auto placed=panels::AtEyeLevel({0,1.65f,0},math::Yaw(.4f),panels::Distance);
-        for(float u:{.02f,.5f,.98f})for(float v:{.02f,.3f,.7f,.98f}) {
-            const auto p=placed.position+math::Rotate(placed.orientation,{(u-.5f)*size.width,(.5f-v)*size.height,0});
-            const auto front=math::Rotate(placed.orientation,{0,0,1});math::PanelHit hit;math::Vec pixel{};
-            Check(math::IntersectPanel(p+front,front*-1,placed.position,placed.orientation,size.width,size.height,hit),"laser hits the enlarged eye-level NPC surface");
-            Check(journal::Pixel(crop,hit.u,hit.v,source.w,source.h,pixel)&&
-                std::fabs(pixel.x-(crop.x+u*crop.w)/source.w)<.00001f&&
-                std::fabs(pixel.y-(crop.y+v*crop.h)/source.h)<.00001f,"enlarged NPC choices map back to native dialogue pixels");
-        }
-    }
-    const auto edge=dialogue::Crop({0,0,200,100},3840,2160);
-    Check(edge.x==0&&edge.y==0&&edge.w==208&&edge.h==108,"dialogue border padding clips at source edges");
-    // Captured Charsi bounds at 4096 square. The old design-resolution
-    // conversion began at x=1832, cutting 106 pixels off a box starting at 1726.
-    for(auto native:{journal::Rect{1726,306,300,244},journal::Rect{1698,252,300,244}}) {
-        const auto crop=dialogue::Crop(native,4096,4096);
-        Check(crop.x==native.x-8&&crop.y==native.y-8&&crop.w==316&&crop.h==260,
-            "live Charsi source-pixel rectangle retains the full border and every choice");
-        const auto anotherSource=dialogue::Crop(native,3840,2160);
-        Check(crop.x==anotherSource.x&&crop.y==anotherSource.y&&crop.w==anotherSource.w&&crop.h==anotherSource.h,
-            "source size must not rescale already-resolved native widget coordinates");
-        math::Vec pixel{};
-        Check(journal::Pixel(crop,.5f,.5f,4096,4096,pixel)&&
-            std::fabs(pixel.x-(native.x+native.w*.5f)/4096)<.00001f&&
-            std::fabs(pixel.y-(native.y+native.h*.5f)/4096)<.00001f,
-            "centered NPC laser lands at original dialogue center after crop correction");
-    }
-    Check(!dialogue::Crop({8000,8000,200,100},3840,2160).w&&!dialogue::Crop({0,0,0,100},4096,4096).h,"missing/outside NPC bounds cannot create an invalid XR crop");
-    Check(panels::UpperBandOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
-    Check(std::fabs(panels::UpperBandOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
-    for(float eyeHeight:{1.15f,1.75f})for(float pitch:{-.6f,0.f,.6f}) {
-        const math::Vec head{.2f,eyeHeight,-.3f};
-        const auto look=math::Multiply(math::Yaw(.65f),{std::sin(pitch/2),0,0,std::cos(pitch/2)});
-        for(float distance:{panels::Distance,panels::MainDistance}) {
-            const auto placed=panels::AtEyeLevel(head,look,distance);
-            Check(placed.position.y==eyeHeight,"seated/standing menu anchor is at eye level even when opening while looking up or down");
-            Check(std::fabs(math::Dot(placed.position-head,placed.position-head)-distance*distance)<.00001f,"menu stays at the requested close distance");
-            Check(placed.orientation.x==0&&placed.orientation.z==0,"menu remains upright without inheriting head pitch");
-        }
-        const auto placed=panels::AtEyeLevel(head,look,panels::Distance);
-        const auto origin=placed.position+math::Vec{0,panels::UpperBandOffset(square),0};
-        math::PanelHit hit;
-        const auto direction=math::Rotate(placed.orientation,{0,0,-1});
-        Check(math::IntersectPanel(head,direction,origin,placed.orientation,square.width,square.height,hit),"eye-level ray hits the lowered square menu");
-        Check(std::fabs(hit.u-.5f)<.00001f&&std::fabs(hit.v-.28125f)<.00001f,"eye-level ray targets center of upper widescreen inventory band");
-        Check(square.width/panels::Distance>1.45f*square.width/1.25f,"square inventory has substantially larger angular text size than first height candidate");
-    }
-    // Source pixels, physical panel and mouse mapping agree at both menu sizes,
-    // including square presets, portrait headset targets and ultrawide desktop.
-    for(float maximum:{panels::Width,2.f})
-    for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200},
-                  journal::Rect{0,0,1536,1536},journal::Rect{0,0,4096,4096},journal::Rect{0,0,2160,2400},journal::Rect{0,0,3440,1440}}) {
-        const auto surface=panels::Fit(size.w,size.h,maximum);
-        Check(surface.width<=maximum&&surface.height<=maximum*9.f/16.f,"native canvas stays within comfortable width and height");
-        Check(std::fabs(surface.width/surface.height-float(size.w)/size.h)<.00001f,"menu artwork retains source aspect");
-        const auto larger=panels::Fit(size.w*2,size.h*2,maximum);
-        Check(larger.width==surface.width&&larger.height==surface.height,"pixel density does not change physical menu size");
+    // Source pixels, physical panel and mouse mapping agree at multiple aspects.
+    for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200}}) {
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {
-            const auto placed=panels::AtEyeLevel({.3f,1.4f,0},math::Yaw(.65f),panels::Distance);
-            const auto rot=placed.orientation;const auto origin=placed.position+math::Vec{0,panels::UpperBandOffset(surface),0};
-            auto point=origin+math::Rotate(rot,{(u-.5f)*surface.width,(.5f-v)*surface.height,0});
+            const auto rot=math::Yaw(.65f);const math::Vec origin{.3f,1.4f,-1.25f};
+            auto point=origin+math::Rotate(rot,{(u-.5f)*panels::Width,(.5f-v)*panels::Height(size.w,size.h),0});
             const auto front=math::Rotate(rot,{0,0,1});math::PanelHit hit;math::Vec pixel{};
-            Check(math::IntersectPanel(point+front,front*-1,origin,rot,surface.width,surface.height,hit),"rotated panel ray");
+            Check(math::IntersectPanel(point+front,front*-1,origin,rot,panels::Width,panels::Height(size.w,size.h),hit),"rotated panel ray");
             Check(journal::Pixel(size,hit.u,hit.v,size.w,size.h,pixel)&&std::fabs(pixel.x-u)<.00001f&&std::fabs(pixel.y-v)<.00001f,"native pixel mapping across both panes and tooltips");
         }
     }

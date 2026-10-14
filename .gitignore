@@ -47,3 +47,6 @@ promo/
 **/d2r_vr_icons/
 **/d2r_vr_potions/
 /vkd3d-proton.cache*
+
+# Portable CI staging
+dist-plus/

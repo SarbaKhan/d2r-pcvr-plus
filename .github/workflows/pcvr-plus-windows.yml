@@ -1,0 +1,89 @@
+name: PCVR Plus Windows setup and portable
+on:
+  push:
+    branches: [feature/flat-plus]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        id: tools-cache
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Install upstream pinned Windows tools
+        shell: powershell
+        run: ./steamvr/setup_windows_tools.ps1
+      - uses: actions/cache/save@v4
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Build Windows plugin and fixtures
+        shell: powershell
+        run: ./steamvr/build_windows.ps1
+      - name: Run CPU-only Windows fixtures
+        shell: powershell
+        run: |
+          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|bow-flight|quick-cast|spell-aim|native-panels|interaction|journal|vr-settings|vr-settings-store|body-calibration|body-tracking)-test$'
+          if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
+      - name: Run Flat/VR launcher fixtures
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_plus_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Plus launcher fixtures failed' }
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_windows_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream launcher fixtures failed' }
+      - name: Verify shipped VR source baseline
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p vr_baseline_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'VR source baseline changed' }
+      - name: Run reversible updater fixtures
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p portable_plus_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Portable updater fixtures failed' }
+      - name: Test full installer and Steam shortcuts
+        shell: powershell
+        run: |
+          foreach ($suite in @('setup_native_test.py', 'setup_windows_test.py', 'install_test.py', 'uninstall_windows_test.py', 'plus_setup_test.py', 'battlenet_test.py')) {
+            & ./deps/python/python.exe -m unittest discover -s steamvr -p $suite
+            if ($LASTEXITCODE -ne 0) { throw "Installer fixtures failed: $suite" }
+          }
+          & ./deps/python/python.exe -m unittest discover -s installer -p '*_test.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer staging fixtures failed' }
+      - name: Build and smoke-test full Plus installer
+        shell: powershell
+        run: ./installer/build_plus_release.ps1
+      - name: Package portable Windows overlay (no game assets)
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe ./steamvr/package_plus.py
+          if ($LASTEXITCODE -ne 0) { throw 'Portable packaging failed' }
+      - name: Test extracted ZIP with its embedded Python
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe ./steamvr/portable_smoke.py ./dist-plus/D2R-PCVR-Plus-Windows.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP smoke test failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-Windows
+          path: |
+            dist-plus/D2R-PCVR-Plus-Windows.zip
+            dist-plus/D2R-PCVR-Plus-Windows.zip.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-PLUS-Setup-0.1.1
+          path: |
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe.sha256
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe.build.json
+            PCVR-PLUS-SETUP.md
+          if-no-files-found: error

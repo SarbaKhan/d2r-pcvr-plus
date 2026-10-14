@@ -25,20 +25,6 @@ struct Sim {
     }
 };
 int main() {
-    for(bool quick:{false,true})for(int slot=0;slot<skills::Count;++slot) {
-        Sim s;s.engine.Select(slot);s.Step(2);
-        Check(!CastingSkill(s.in,s.out,0),"selection alone does not change locomotion routing");
-        s.in.quickCast=quick;s.in.quickSkill=quick?slot:-1;s.in.trigger=quick?0:1;s.Step();
-        Check(CastingSkill(s.in,s.out,0),"trigger and shortcut casts keep native movement input for all slots");
-        for(Vec delta: {Vec{0,0,.02f},Vec{0,0,-.02f},Vec{.02f,0,0},Vec{-.02f,0,0}}) {
-            s.in.head.p=s.in.head.p+delta;s.in.aim.p=s.in.aim.p+delta;
-            for(auto& hand:s.in.hand)hand.p=hand.p+delta;
-            s.Step();Check(CastingSkill(s.in,s.out,149)&&!s.out.block,"moving while holding a cast retains the native locomotion route");
-        }
-        Check(!CastingSkill(s.in,s.out,150),"stale cast cannot retain movement routing ownership");
-        s.in.cancel=true;s.Step();Check(!CastingSkill(s.in,s.out,0),"cancel clears cast locomotion ownership");
-        s.in.active=false;s.Step();Check(!CastingSkill(s.in,s.out,0),"menu/tracking inactivity clears cast locomotion ownership");
-    }
     {
         Sim s;s.engine.Select(2);s.Step(2);s.in.quickCast=true;s.in.quickSkill=7;
         Check(s.Step().skill==7&&!s.out.attack&&!s.out.meleeContact,"quick cast overrides motion combat");

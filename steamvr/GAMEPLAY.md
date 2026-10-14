@@ -1,55 +1,5 @@
 # Motion gameplay prototype
 
-## Sorceress casting regression candidate (2026-10-13)
-
-The tester reported a left-trigger Town Portal casting the right-trigger fire
-spell, inaccurate fire-spell aim, and movement stopping during casts. The log
-confirmed distinct native assignments (right slot 0: skill 36, left slot 4:
-skill 219) and an installed spell resolver hook. Controller quick casts also
-use the `0x1446c0 -> 0x143960` aim path; they need a final integer-target
-correction there, independently of the existing `0x190440` resolver hook.
-Only the aim caller gets this correction; movement callers retain their points.
-Native VR casts bypass the legacy walk-learned direction calibration, and a
-missing/stale rendered staff pose falls back to the casting hand's tracked aim.
-
-The left and right trigger use the same native B button in different banks.
-The candidate sends the alternate modifier alone for at least 50 ms and a new
-published packet before allowing its button through. This sequencing happens
-where the game polls the pad, so an XR/render hitch cannot skip the modifier
-report. A release cancels the pending cast. This is a candidate fix for native
-input ordering, not yet confirmed in a headset.
-
-**Movement lock remains unresolved.** Keeping locomotion input present does
-not bypass the native cast state/animation gate. This candidate does not claim
-to enable walking through spell animations. Live native-path inspection and
-offline headset checks are still needed for all three reported symptoms.
-
-## Two-hand wheels source candidate (2026-10-13)
-
-The current source replaces the single held wheel with two toggled hand wheels.
-Click either stick, then use the opposite laser and trigger to edit that hand's
-five slots. Trigger assignments are persistent; face shortcuts are temporary.
-The character's native controller assignments persist the ten bindings across
-weapon sets. Right A retains Interact when its native slot is basic/unassigned;
-an explicit spell assignment replaces it. Native duplicate-binding rules apply.
-
-The left trigger assignment now owns supported bow gestures and physical Smite.
-Right trigger still grabs the bow string; away from the string it uses its own
-assignment. The Weapon skill gestures VR setting disables those skill gestures
-without removing button casts. Unsupported melee skills remain button-only.
-Each hand has its own aim pose and optional skill indicator (off by default). Left casts cannot inherit
-an equipped right-hand wand/staff shaft. Simultaneous input is serialized with
-release gating, not delayed until another cast finishes.
-
-Movement and turning remain available while the wheel owns combat input.
-The Inventory, Map and VR Settings utility tabs replace displaced shortcuts;
-native menu navigation and motion-disabled fallback controls remain available.
-See [CONTROLS.md](../CONTROLS.md) for the current layout. The older controls and
-installed-build reports below are historical and do not describe this candidate.
-This candidate is not installed or headset-tested; the inherited aim/movement
-fix also does not establish uninterrupted movement through native animations.
-
-
 Right-handed OpenXR controls for offline D2R. The owner verified the live native
 bow string/draw and two-hand aiming, then verified revision 4 free-swing melee
 on 2026-10-09. A new **physical basic-arrow build is installed for testing**:
@@ -93,27 +43,6 @@ Spell casting remains **equip, point, pull right trigger**. Directional spells
 now use the visible wand, staff, scepter or orb shaft; other equipment uses the
 right-hand aim. Native selected-target snapping and aim assist are suppressed
 only while resolving an owned directional cast, including quick-cast shortcuts.
-Projectile targets follow the sampled aim even while walking backward or
-strafing. They use the current native player position and world-space weapon
-direction, without the legacy walking calibration; the final target is corrected
-even when the native movement path skips the usual attack-point helper.
-The controller's press/repeat command is corrected again after its second
-selected-unit lookup, before native command validation. This override changes
-only the current local directional cast's target, without changing native
-action flags, costs or cadence. Resolver, final-command and missile-creation
-diagnostics distinguish the requested aim from what native creation receives.
-The owner confirmed separate trigger spells now work, but reported fire-spell
-direction sticking between quarter turns even after the final-command correction.
-Missile logs and native validation identified the cause: the previous 60-cell
-aim point exceeded the server's 50-cell limit on each axis except near diagonals.
-The aim point now sits 40 cells away, leaving movement margin and preserving all
-headings. This changes the heading reference, not native projectile lifetime or
-travel range. The corrected range still needs headset validation.
-While a trigger skill or quick-cast shortcut is held, locomotion stays on the
-native controller stick instead of the legacy direct-walk reinjection path.
-Legacy aim modes cannot replace that stick or hold stand-still Shift during a
-VR skill cast. The owner reports that casting still stops character movement;
-this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
 Ground placements, buffs, summons and corpse-only skills keep native targeting.
 Host tests and native signature/table checks pass; this aim correction still
@@ -169,7 +98,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
-| Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
+| Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -177,57 +106,15 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 
-The minimap and compass form one navigation display on your left hand.
-**VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),
-**Palm**, **Either**, or **Off**. Click **Apply** to save. Both appear and hide
-together, independently of health/mana. When both displays share a hand face,
-navigation sits above the vitals; otherwise it sits directly at the hand anchor.
-The wheel's **MAP** tab remains available even when navigation is **Off**.
-
-A slim bronze **compass** sits above the minimap. Its fixed
-center marker shows your facing direction; **N** is the top of the native map,
-with **E/S/W** and diagonal bearings around it. Physical turns, stick turns and
-recenter use the same orientation as the stereo camera. Looking straight down
-retains the last reliable horizontal head direction so the bearings do not flip.
-Wrist placement uses the watch gesture. Palm placement uses the same deliberate
-palm-up hold and casting guards as health/mana below. Both navigation elements
-hide while a wheel or menu is open; low-resource alerts never summon them.
-The compass shows direction only; it does not add destination or quest markers.
-
-**VR Settings > HUD > Health / mana location** offers **Wrist** (default),
-**Palm**, **Either**, or **Off**. Click **Apply** to save. Palm mode puts the
-health/mana and XP display just above your left palm: raise it in front of you,
-turn the palm upward toward your eyes, and hold for a quarter second. Release
-the left trigger and grip; casting with that hand hides the display. Lower or
-turn your hand to hide it. Losing left-hand tracking or opening a menu hides it
-and requires a new deliberate hold. Navigation has its own location setting, so
-you can keep health/mana on the wrist and navigation in the palm, or vice versa.
-
-**Low health / mana alerts** is a separate toggle, **Off** by default. Leave it
-off for gesture-only vitals. Opting in adds a brief popup near your view and
-left-hand vibration below 25% health or 10% mana in spell mode. Location **Off**
-suppresses these alerts too. Palm placement and gesture comfort still require
-headset testing on Quest and Index controllers.
-
-Native OpenXR gameplay hides the original flat bottom toolbar (health/mana
-orbs, belt and skill buttons), including with older `hud.hide=0` profiles or
-legacy camera settings that would otherwise draw it back into the view. This
-is automatic and does not change your INI. Native inventory, dialogue and
-other menu panels remain available; desktop/legacy camera HUD preferences
-still apply outside active headset gameplay. Labels and tooltips outside the
-toolbar strip remain visible. Verify both eyes and the game's different UI
-safe-area sizes when testing this fix in a headset.
-
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
-full-screen automap capture is unsupported. When neither the wrist nor the Map
-tab needs it, the native map returns to its prior visibility. The wrist retains
-health, mana, level and XP progress with the wrist minimap turned off.
+full-screen automap capture is unsupported. Closing the tab restores the map's
+prior visibility. The wrist retains health, mana, level and XP progress.
 
 ### Inventory, conversations and trading in VR
 
 Native in-game menus share a room-anchored surface in front of you. The full
-tabbed character menu, stash, inventory, cube, trade and waypoint surfaces use one opaque
+tabbed character menu, stash, inventory, cube and trade surfaces use one opaque
 black background in both eyes. Dialogue and journal panels retain the world
 backdrop. Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
@@ -296,8 +183,8 @@ tabs and a **Reset eye height** button:
 | Tab | Contents |
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
-| VR | Motion combat on/off, seated belt position, dominant hand, smooth/snap turning, smooth turn speed, belt height and forward reach, wrist minimap on/off (default On) |
-| Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
+| VR | Motion combat on/off, seated belt position, holsters, smooth/snap turning, smooth turn speed, belt height and forward reach |
+| Video | Foveation Off / Fixed / Eye tracked, runtime capability/gaze status, added sky, fog, dungeon ceilings, terrain and object draw distances |
 
 Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
@@ -314,9 +201,8 @@ when motion combat is off and from the title/character screen while XR is active
 Eye-tracked shading requires runtime support, permission and valid gaze. Missing
 gaze uses full quality; unsupported VRS also renders at full quality. The menu
 does not change runtime privacy permissions. DLSS, textures and shadows stay in
-the game's **Options → Video**. **VR render resolution** selects the game's
-source size independently of the physical monitor. See [resolution settings
-and testing notes](VR_RESOLUTION.md). There is no control rebinding here.
+the game's **Options → Video**; headset render resolution stays in SteamVR.
+There is no in-menu resolution override or control rebinding in this candidate.
 
 First headset check: open/close from the shortcut, then from the wheel; visit all
 three tabs and reset height; cancel an edit and confirm it is discarded; Apply
@@ -395,9 +281,7 @@ belts supply extra rows behind the same four grab positions, up to four items
 per column; the count includes those reserves. The next native item appears
 after consumption. The wheel uses/grabs existing contents rather than assigning
 items. Bottles stay upright at the waist and follow the held grip
-in six degrees of freedom. A 90-degree local pitch correction keeps grabbed
-bottles upright in either hand; drinking checks use the same corrected opening.
-Reach highlights the nearest occupied slot; a grab
+in six degrees of freedom. Reach highlights the nearest occupied slot; a grab
 moves that bottle off the belt into the hand without consuming it. Empty columns
 have no bottle. A refill/reorder cancels an unspent grab. The held model keeps its
 captured identity even after automatic refill. It darkens only after the
@@ -426,19 +310,11 @@ Optional live configuration (metres below/forward/from the estimated torso):
 ```ini
 [interactions]
 seated=0
-navigation_location=0
-vitals_location=0
-critical_alerts=0
 waist_below_eyes=0.65
 belt_forward=0.26
 hip_width=0.28
 holsters=1
 ```
-
-`vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,
-`3` Off. Older profiles without `navigation_location` start at Wrist if either
-legacy `wrist_map` or `wrist_compass` is enabled, or Off if both are disabled.
-An explicit navigation location takes precedence over those legacy switches.
 
 Seated mode raises the waist anchors. The belt and hip holsters follow tracked
 position and horizontal facing every frame, including while hands are lowered
@@ -478,10 +354,8 @@ occlusion and the bottle art is a functional placeholder.
 
 Select a supported skill on the wheel, release the selection trigger, then use
 the weapon's familiar motion. The gold **ACTIVE** border/badge identifies the
-persistent selection independently of the hovered wedge. Weapon-side indicators
-are off by default; enable **VR Settings > Controls > Weapon skill indicators**
-and Apply to restore them. When enabled with the wheel closed, a small native
-skill icon follows the weapon hand. Its name and action hint
+persistent selection independently of the hovered wedge. With the wheel closed,
+a small native skill icon follows the weapon hand. Its name and action hint
 appear briefly on change, or while busy/unavailable. Quick casting temporarily
 shows its own icon and **QUICK CAST** cue, then restores the persistent choice.
 These indicators show assignments and observed actions, not invented mana or
@@ -802,23 +676,3 @@ three eligible melee checks, three accuracy overrides and three block bypasses
 without failures. The final free-swing run recorded 58 physical contacts and
 58 native accepted hits with no rejections; the owner reported "works great."
 Arrow/spell live verification remains open.
-
-### Ice Bolt visual height correction
-
-Hand-cast Ice Bolt uses the same airborne flight/planar aiming path as Fireball;
-Charged Bolt alone keeps its native ground path. Spell visuals now identify the
-asset instance root from the native entity list and Transform parent, rather
-than taking the first entity without TrackReleasePoint. Ice Bolt's VFX child
-also lacks that component, so the previous heuristic could bind the child and
-subtract its authored height at the wrong level. Binding only the actual root
-keeps the emitter at the physical shot position with the existing +4-unit
-child-height compensation. Native costs, damage, speeds and flight remain.
-
-The new list/storage/parent offsets are guarded against local 3.3.93787 code.
-Synthetic fixtures visit the release-free child before the root, validate full
-entity generations and reject missing/malformed state. Height checks cover Ice
-Bolt and Fireball at varied hand/floor heights alongside grounded Charged Bolt.
-All 55 native checks pass. The correction still needs an offline headset test
-of Ice Bolt in each hand, planar/free aim and concurrent casting. No agent
-headset validation or game asset distribution. A bounded first-eight-entities
-log records Ice Bolt root classification to help verify the native handoff.

@@ -3,7 +3,7 @@
 #include <cstring>
 #include "vr_settings_ui.h"
 namespace framevr::settings {
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected){
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body){
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=Width;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
@@ -20,7 +20,6 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         DrawTextW(dc,wide,-1,&rect,DT_WORDBREAK|DT_NOPREFIX|(center?DT_CENTER:DT_LEFT));
     };
     const COLORREF quiet=RGB(154,174,182);
-    const auto labels=controllers::Resolve(controllers::Choice(int(m.Get()[ControllerLabels])),detected);
     auto button=[&](Rect rect,const char* label,Hit hit,bool selected=false,bool enabled=true){
         const bool hot=hover.kind==hit.kind&&hover.index==hit.index&&hover.delta==hit.delta;
         fill(rect,!enabled?RGB(33,40,44):hot?RGB(63,103,112):selected?RGB(39,80,89):RGB(31,48,56));
@@ -62,50 +61,33 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
     text("Right-hand laser + trigger",{862,44,378,42},false,true,quiet);
-    const char* tabs[]={"Controls","VR","Video","HUD"};
-    for(int i=0;i<TabCount;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
+    const char* tabs[]={"Controls","VR","Video"};
+    for(int i=0;i<3;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::Controls){
         text("LEFT HAND",{58,209,520,46},true);text("RIGHT HAND",{676,209,520,46},true);
         struct Help{const char* key;const char* action;};
-        const auto leftFaces=labels.Button(1,1)+" / "+labels.Button(1,2);
-        const auto leftAlternates=labels.Button(1,3)+" / "+labels.Button(1,4);
-        const auto rightFaces=labels.Button(0,1)+" / "+labels.Button(0,2)+" / grip + face";
-        const Help left[]={{"Stick","Walk"},{leftFaces.c_str(),"Assigned left-hand skills"},{leftAlternates.c_str(),"Alternate left-hand skills"},{"Trigger","Assigned left-hand skill"},{"Stick click","Toggle left wheel; right laser edits"},{"Grip + stick click","Reset eye height"},{"Grip near belt","Grab a potion"}};
-        const Help right[]={{"Stick / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger at bow string","Nock, pull back, release to shoot"},{"Trigger with javelin","Hold, throw, release in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
+        const Help left[]={{"Stick","Walk"},{"X","Inventory / close game panels"},{"Y (hold)","Spell and equipment wheel"},{"Grip + Y","Open VR settings / Calibrate body"},{"Stick click","Map"},{"Grip + stick click","Reset eye height"},{"Grip near belt","Grab a potion"}};
+        const Help right[]={{"Stick / click + hold","Turn / sort inventory in native panels"},{"Trigger","Attack / panel click or drag"},{"A / B","Interact / cancel or close menu"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger at bow string","Nock, pull back, release to shoot"},{"Trigger with javelin","Hold, throw, release in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
         for(int i=0;i<7;++i)for(int side=0;side<2;++side){
-            const auto& h=(side?right:left)[i];const int x=side?658:40,y=264+i*64;
-            fill({x,y,582,60},i%2?RGB(19,31,39):RGB(22,36,44));
-            text(h.key,{x+18,y+2,550,29},false,false,RGB(116,220,219));
-            text(h.action,{x+18,y+30,550,30});
+            const auto& h=(side?right:left)[i];const int x=side?658:40,y=264+i*72;
+            fill({x,y,582,66},i%2?RGB(19,31,39):RGB(22,36,44));
+            text(h.key,{x+18,y+5,550,31},false,false,RGB(116,220,219));
+            text(h.action,{x+18,y+33,550,34});
         }
-        text(Definitions[WeaponSkillIndicators].label,{40,714,875,32});
-        text(Definitions[WeaponSkillIndicators].detail,{40,746,875,29},false,false,quiet);
-        button(WeaponIndicatorsBox,m.Get()[WeaponSkillIndicators]>.5f?"On":"Off",{Kind::Change,WeaponSkillIndicators,1},false,m.ready&&!m.Busy());
-        text(Definitions[PlanarSpellAim].label,{40,780,875,32});
-        text(Definitions[PlanarSpellAim].detail,{40,812,875,29},false,false,quiet);
-        button(PlanarSpellAimBox,m.Get()[PlanarSpellAim]>.5f?"On":"Off",{Kind::Change,PlanarSpellAim,1},false,m.ready&&!m.Busy());
-        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
-        text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
+        text(m.Get()[Motion]>.5f?"Arrow skills: draw/release. Smite: left shield swing/thrust. Quick cast: Left Trigger + face; Left Grip for alternates.":"Motion combat is off. Enable it on the VR tab for swings, bow draw, javelin throws and the wheel.",{40,788,1200,42});
+        text("Panels: Left Trigger = Ctrl; Right Grip = Shift; Right B = Back. Keep D2R focused.",{40,832,1200,42},false,false,quiet);
     }else{
-        if(m.page==Page::VR){
-            char status[128];std::snprintf(status,sizeof status,"Headset / controllers   L: %s / R: %s",
-                controllers::Name(detected.hands[1]),controllers::Name(detected.hands[0]));
-            text(status,{40,191,815,34},false,false,quiet);
-            fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
-            const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  v";
-            text(selected.c_str(),{ControllerBox.x,ControllerBox.y+7,ControllerBox.w,37},false,true);
-        }else text(m.page==Page::HUD?"Choose how you check your health, mana and navigation.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        text(m.page==Page::VR?"Change values, then Apply. Controls are blocked while this panel is open.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
-            fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
-            text(d.label,{58,y+1,780,29},true);text(d.detail,{58,y+30,795,28},false,false,quiet);
+            fill({40,y-4,1200,76},row%2?RGB(19,31,39):RGB(22,36,44));
+            text(d.label,{58,y+1,780,39},true);text(d.detail,{58,y+42,795,30},false,false,quiet);
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
-            else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
-            else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
-            else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
+            else if(key==Snap&&value==0)std::snprintf(label,sizeof label,"Smooth");
+            else if(key==Snap)std::snprintf(label,sizeof label,"Snap %.0f deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
@@ -115,13 +97,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
         }
         if(m.page==Page::Video){
-            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,716,1200,65},false,false,quiet);
-            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,795,1200,65},false,false,quiet);
-        }
-        if(m.page==Page::HUD){
-            text("Palm: raise your left hand in front of you, turn the palm upward and hold briefly.",{58,525,1160,76},false,false,quiet);
-            text("Release the left trigger and grip to check palm displays. Lower or turn your hand to hide them.",{58,615,1160,76},false,false,quiet);
-            text("Minimap and compass move together. Their location is independent of health and mana.",{58,705,1160,76},false,false,quiet);
+            text("DLSS, textures and shadows: game Options > Video. Stream resolution: SteamVR.",{40,760,1200,55},false,false,quiet);
+            text("Eye tracking requires runtime permission. Some effects may compile on first use.",{40,816,1200,48},false,false,quiet);
         }
     }
     const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";
@@ -130,10 +107,6 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     button(Calibrate,"Calibrate body",{Kind::Calibrate},false,m.ready&&!m.Busy()&&!m.Dirty());
     button(Close,"Close",{Kind::Close});
     button(Apply,"Apply",{Kind::Apply},true,m.ready&&m.Dirty()&&!m.Busy());
-    if(m.page==Page::VR&&m.controllerMenu){
-        for(int i=0;i<int(controllers::Choice::Count);++i)
-            button(ControllerOption(i),controllers::Choices[i],{Kind::ControllerChoice,i},int(m.Get()[ControllerLabels])==i);
-    }
     }
     GdiFlush();std::vector<uint8_t> rgba(Width*Height*4);const auto* p=static_cast<uint8_t*>(bits);
     for(int i=0;i<Width*Height;++i){rgba[4*i]=p[4*i+2];rgba[4*i+1]=p[4*i+1];rgba[4*i+2]=p[4*i];rgba[4*i+3]=255;}

@@ -79,6 +79,7 @@ def launch_environment(arguments):
     # The explicit launch flag overrides the normal SteamVR launch-option
     # manifest. Stock Play ignores it, and a missing VDXR install fails closed.
     environment = os.environ.copy()
+    environment['D2R_PCVR_PLUS_MODE'] = 'vr'
     # Overlay UI settings and this routing hint alone do not stop Steam's early
     # injection. The desktop handoff below also starts a clean launcher chain.
     for key in list(environment):
@@ -133,8 +134,15 @@ def desktop_child(request_path):
     try:
         request = json.loads(request_path.read_text(encoding='utf-8'))
         arguments = request['arguments']
+        if '--frame-flat' in arguments and battlenet_game(arguments) is None:
+            cwd, _ = flat_launch_options(arguments)
+            publish_status(status_path, state='running', pid=os.getpid())
+            # Explorer is the parent; never hand off again or initialize XR.
+            result = launch_flat(arguments, desktop=True)
+            publish_status(status_path, state='finished', result=result)
+            return result
         if '--frame-vr' not in arguments or battlenet_game(arguments) is not None:
-            raise ValueError('Desktop launch handoff requires the Steam VR edition.')
+            raise ValueError('Desktop launch handoff requires the Steam Flat or VR edition.')
         command, cwd = prepare(arguments)
         environment = launch_environment(arguments)
         if request.get('runtime'):
@@ -192,7 +200,7 @@ def wait_for_desktop(status_path, timeout=20):
                         raise OSError('Desktop launch helper exited without a result.')
                 continue
             if time.monotonic() >= deadline:
-                raise OSError('Windows desktop did not acknowledge the VR launch.')
+                raise OSError('Windows desktop did not acknowledge the game launch.')
             time.sleep(.05)
     finally:
         if handle:
@@ -200,7 +208,8 @@ def wait_for_desktop(status_path, timeout=20):
 
 
 def launch_from_desktop(arguments, cwd, environment):
-    launch_log(cwd, 'Requesting Windows desktop handoff for Steam VR loader')
+    mode = 'Flat' if '--frame-flat' in arguments else 'VR'
+    launch_log(cwd, f'Requesting Windows desktop handoff for Steam {mode} loader')
     try:
         with tempfile.TemporaryDirectory(prefix='d2r-vr-launch-') as temporary:
             request = Path(temporary) / 'request.json'
@@ -234,12 +243,49 @@ $desktop.Document.Application.ShellExecute($launch.executable,$launch.arguments,
             detail = (error.stderr or b'').decode('utf-8', errors='replace').strip()[:800]
             detail = detail or f'Windows desktop request exited with code {error.returncode}.'
         elif isinstance(error, subprocess.TimeoutExpired):
-            detail = 'Windows desktop request timed out before acknowledging the VR launch.'
+            detail = 'Windows desktop request timed out before acknowledging the game launch.'
         else:
             detail = str(error)
         launch_log(cwd, f'Windows desktop launch failed: {detail}')
-        print(f'VR launch failed: {detail}', file=sys.stderr)
+        print(f'{mode} launch failed: {detail}', file=sys.stderr)
         return 1
+
+
+def flat_launch_options(arguments):
+    """Steam app wrapper and Battle.net shortcut both enter the tested Flat route."""
+    if '--frame-vr' in arguments or VDXR_OPTION in arguments:
+        raise SystemExit('Flat and VR launch flags cannot be combined')
+    game = battlenet_game(arguments)
+    store = 'battlenet' if game is not None else 'steam'
+    if game is None:
+        executables = [arg for arg in arguments if ntpath.basename(arg).lower() == 'd2r.exe']
+        if len(executables) != 1:
+            raise SystemExit('Expected one Steam launch command containing D2R.exe')
+        game = Path(executables[0]).resolve().parent
+    flags = ['--game', str(game), '--mode', 'flat', '--store', store]
+    if EXPERIMENTAL_OPTION in arguments:
+        flags.append(EXPERIMENTAL_OPTION)
+    # The Steam launch-options wrapper may include its default VR runtime.
+    # Do not inspect or initialize it for Flat.
+    return str(game), flags
+
+
+def launch_flat(arguments, *, desktop=False):
+    game, flags = flat_launch_options(arguments)
+    from launch_plus import main as launch_plus
+    # Match the known-good CMD's Explorer ancestry. Inheriting Steam's injected
+    # launcher chain can affect D2RLoader even with OpenVR/overlay disabled.
+    if sys.platform == 'win32' and battlenet_game(arguments) is None and not desktop:
+        return launch_from_desktop(arguments, game, {})
+    launch_log(game, 'Starting Flat loader (desktop helper)' if desktop else 'Starting Flat loader (direct)')
+    try:
+        result = launch_plus(flags)
+    except (Exception, SystemExit) as error:
+        launch_log(game, f'Flat launch failed: {type(error).__name__}: {error}')
+        print(f'Flat launch failed: {error}', file=sys.stderr)
+        return 1
+    launch_log(game, f'Flat loader exited code=0x{result & 0xffffffff:08x}')
+    return result
 
 
 def main(arguments):
@@ -248,6 +294,8 @@ def main(arguments):
         if len(arguments) != 1:
             raise SystemExit('Unexpected desktop handoff arguments.')
         return desktop_child(Path(requests[0][len(DESKTOP_REQUEST):]))
+    if '--frame-flat' in arguments:
+        return launch_flat(arguments)
     command, cwd = prepare(arguments)
     environment = launch_environment(arguments)
     if os.name == 'nt' and '--frame-vr' in arguments and battlenet_game(arguments) is None:
