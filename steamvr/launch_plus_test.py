@@ -123,6 +123,32 @@ class PlusTests(unittest.TestCase):
             vr.assert_called_once_with(['--frame-vr','--frame-vdxr',str(self.game.resolve()/'D2R.exe')])
             self.assertEqual(len(list(self.backups.iterdir())),1)
 
+    def test_explicit_runtime_reaches_original_launcher(self):
+        manifest=self.game/'Steam VR runtime.json'
+        manifest.write_text('{}')
+        args=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups),
+              '--mode','vr','--openxr-runtime',str(manifest)]
+        with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
+             patch('process_guard.require_game_closed'), patch('launch_windows.main',return_value=0) as vr:
+            self.assertEqual(plus.main(args),0)
+            vr.assert_called_once_with(['--frame-vr','--frame-openxr-runtime='+str(manifest.resolve()),str(self.game.resolve()/'D2R.exe')])
+            from launch_windows import launch_environment
+            self.assertEqual(launch_environment(vr.call_args.args[0])['XR_RUNTIME_JSON'],str(manifest.resolve()))
+            self.assertEqual(len(list(self.backups.iterdir())),1)
+
+    def test_invalid_runtime_does_not_backup_or_launch(self):
+        base=['--game',str(self.game),'--saves',str(self.saves),'--backups',str(self.backups)]
+        for flags in (['--mode','flat','--openxr-runtime','missing.json'],
+                      ['--mode','vr','--openxr-runtime','missing.json'],
+                      ['--mode','vr','--openxr-runtime','missing.json','--vdxr']):
+            with self.subTest(flags=flags), patch.object(plus.sys,'platform','win32'), \
+                 patch.object(plus,'snapshot') as snapshot, patch('launch_windows.main') as vr, \
+                 self.assertRaises(SystemExit):
+                try:
+                    plus.main(base+flags)
+                finally:
+                    snapshot.assert_not_called();vr.assert_not_called()
+
     def test_shipped_flat_profile(self):
         config=configparser.ConfigParser(interpolation=None,strict=False,allow_no_value=True)
         config.read_string('[global]\n'+(Path(__file__).parents[1]/'d2r_pcvr_plus_flat.ini').read_text())

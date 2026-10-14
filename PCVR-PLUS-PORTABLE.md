@@ -13,7 +13,8 @@ lancement ne sont nécessaires. Conserver le dossier extrait entier.
 2. Exécuter `Configure.cmd`. Indiquer le dossier contenant `D2R.exe` et
    `D2RLoader.exe`, le dossier de sauvegardes réellement utilisé (contenant
    `Settings.json`), puis un dossier permanent de sauvegardes de sécurité **séparé**.
-   Choisir Steam ou Battle.net et le runtime VR habituel (VDXR ou non).
+   Choisir Steam ou Battle.net, puis le runtime VR : `steamvr`, `vdxr` ou
+   `system`. Pour SteamVR, confirmer le chemin réel de `steamxr_win64.json`.
    Les chemins sont mémorisés dans `portable-settings.json` à côté des lanceurs.
 3. Exécuter `Update.cmd`. Il sauvegarde et vérifie l'ancienne DLL ainsi qu'une copie
    du profil VR dans `d2rloader/pcvr-plus-backups/<identifiant>/`, remplace la DLL
@@ -104,3 +105,43 @@ boutons fonctionnent dans les menus ou seulement pas en jeu. Joindre
 `d2rloader/logs/d2r-vr-frame.log` après une session concernée et préciser les
 actions obtenues et attendues pour chaque clic de stick. Les fichiers de gestion
 des profils et commandes VR restent identiques à la base PCVR retenue.
+
+## Sélection explicite du runtime VR
+
+Les raccourcis du setup passent par `steam.exe -applaunch 2536520 --frame-vr`
+(avec `--frame-vdxr` pour Virtual Desktop), puis par les options du jeu Steam.
+Ces options sélectionnent explicitement le manifeste SteamVR pour le premier
+raccourci. Le lanceur Plus appelle directement la même fonction de lancement
+Windows après la sauvegarde, mais ne lit pas les options Steam du jeu.
+
+Le configurateur propose désormais trois choix :
+
+- `steamvr` : transmet le manifeste choisi à `--frame-openxr-runtime=...`
+  dans le lanceur d'origine, qui définit `XR_RUNTIME_JSON` pour ce lancement;
+- `vdxr` : transmet `--frame-vdxr`, comme le raccourci Virtual Desktop;
+- `system` : utilise volontairement le runtime par défaut du système ou de
+  l'environnement, sans forcer SteamVR.
+
+Les anciennes configurations avec `vdxr=true` restent compatibles. Celles avec
+`vdxr=false` ne distinguaient pas SteamVR du runtime système : relancer
+`Configure.cmd` pour choisir explicitement. Aucun réglage OpenXR global ni
+raccourci Steam n'est modifié. Le runtime sélectionné est affiché au lancement.
+
+Pour cette correction, la DLL est inchangée : remplacer les deux scripts
+`steamvr/portable_plus.py` et `steamvr/launch_plus.py` du paquet extrait par
+ceux du nouveau ZIP, puis relancer `Configure.cmd`. Ne pas relancer `Update.cmd`
+si la DLL Plus est déjà installée. On peut aussi extraire le nouveau paquet dans
+un autre dossier et le configurer pour la même installation.
+
+Surcharge ponctuelle (nouveau lanceur uniquement) :
+
+```bat
+Launch-VR-Plus.cmd --openxr-runtime "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json"
+Launch-VR-Plus.cmd --vdxr
+Launch-VR-Plus.cmd --system-openxr
+```
+
+Test matériel : comparer le raccourci SteamVR du setup au lanceur Plus configuré
+avec exactement le même manifeste, puis vérifier A/B/X/Y et les clics des sticks
+dans les menus et en jeu. La sélection explicite corrige une différence réelle
+de lancement; la résolution du problème de commandes Quest reste à confirmer.

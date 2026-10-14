@@ -101,5 +101,53 @@ class UpdateTests(unittest.TestCase):
             portable.rollback(self.game)
 
 
+class RuntimeRoutingTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)
+        self.settings=self.root/'portable-settings.json'
+
+    def run_launch(self, settings, action='vr', extra=()):
+        self.settings.write_text(json.dumps({'game':str(self.root), **settings}))
+        with patch.object(portable,'ROOT',self.root), patch.object(portable,'launch',return_value=0) as launch:
+            portable.main([action,*extra])
+            return launch.call_args.args[0]
+
+    def test_saved_steamvr_manifest_forwarded_and_flat_ignores_it(self):
+        settings={'vr_runtime':'steamvr','openxr_runtime':'C:/Steam VR/runtime.json'}
+        self.assertEqual(self.run_launch(settings)[-2:],['--openxr-runtime',settings['openxr_runtime']])
+        self.assertNotIn('--openxr-runtime',self.run_launch(settings,'flat'))
+
+    def test_legacy_vdxr_is_preserved(self):
+        self.assertIn('--vdxr',self.run_launch({'vdxr':True}))
+
+    def test_legacy_non_vdxr_requires_explicit_choice(self):
+        with self.assertRaisesRegex(ValueError,'not explicitly configured'):
+            self.run_launch({'vdxr':False})
+
+    def test_cli_choice_overrides_saved_runtime(self):
+        self.assertNotIn('--vdxr',self.run_launch({'vdxr':True},extra=['--openxr-runtime','C:/Steam/runtime.json']))
+        self.assertNotIn('--openxr-runtime',self.run_launch({'openxr_runtime':'saved'},extra=['--vdxr']))
+        args=self.run_launch({'vdxr':True},extra=['--system-openxr'])
+        self.assertNotIn('--vdxr',args);self.assertNotIn('--openxr-runtime',args)
+
+    def test_explicit_system_setting_has_no_override(self):
+        args=self.run_launch({'vr_runtime':'system'})
+        self.assertNotIn('--vdxr',args);self.assertNotIn('--openxr-runtime',args)
+
+    def test_configure_saves_explicit_steamvr_choice(self):
+        (self.root/'D2RLoader.exe').write_bytes(b'fixture')
+        saves=self.root/'saves';saves.mkdir();(saves/'Settings.json').write_text('{}')
+        manifest=self.root/'runtime.json';manifest.write_text('{}')
+        answers=[str(self.root),str(saves),str(self.root/'backups'),'steam','steamvr',str(manifest)]
+        with patch.object(portable,'ROOT',self.root), patch('builtins.input',side_effect=answers):
+            portable.configure()
+        settings=json.loads(self.settings.read_text())
+        self.assertEqual(settings['vr_runtime'],'steamvr')
+        self.assertEqual(settings['openxr_runtime'],str(manifest.resolve()))
+        self.assertFalse(settings['vdxr'])
+
+
 if __name__ == '__main__':
     unittest.main()

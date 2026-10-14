@@ -117,7 +117,18 @@ def configure():
     settings['store'] = input('Store (steam/battlenet) [steam]: ').strip() or 'steam'
     if settings['store'] not in ('steam', 'battlenet'):
         raise ValueError('Invalid store')
-    settings['vdxr'] = input('VR uses VDXR? (y/N): ').lower() == 'y'
+    choice = input('VR runtime (steamvr/vdxr/system) [steamvr]: ').strip().lower() or 'steamvr'
+    if choice not in ('steamvr', 'vdxr', 'system'):
+        raise ValueError('Invalid VR runtime')
+    settings['vr_runtime'] = choice
+    settings['vdxr'] = choice == 'vdxr'  # Retain compatibility with earlier launchers.
+    if choice == 'steamvr':
+        default = Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Steam/steamapps/common/SteamVR/steamxr_win64.json'
+        selected = input('SteamVR manifest [' + str(default) + ']: ').strip().strip('"')
+        manifest = (Path(selected) if selected else default).resolve()
+        if not manifest.is_file():
+            raise ValueError('SteamVR manifest not found; select the actual SteamVR installation: ' + str(manifest))
+        settings['openxr_runtime'] = str(manifest)
     (ROOT / 'portable-settings.json').write_text(json.dumps(settings, indent=2), encoding='utf-8')
     print('Configuration saved. Battle.net requires explicit --experimental-battlenet at launch.')
 
@@ -126,7 +137,14 @@ def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('configure', 'update', 'rollback', 'flat', 'vr'))
     parser.add_argument('--game', type=Path)
+    runtime = parser.add_mutually_exclusive_group()
+    runtime.add_argument('--openxr-runtime', type=Path)
+    runtime.add_argument('--vdxr', action='store_true')
+    runtime.add_argument('--system-openxr', action='store_true', help='Use the system/environment runtime')
     args, extra = parser.parse_known_args(arguments)
+    override = args.openxr_runtime is not None or args.vdxr or args.system_openxr
+    if override and args.action != 'vr':
+        parser.error('OpenXR runtime options are VR only')
     if args.action == 'configure':
         configure()
         return 0
@@ -144,8 +162,21 @@ def main(arguments=None):
     for key in ('saves', 'backups', 'store'):
         if key in settings:
             arguments += ['--' + key, settings[key]]
-    if args.action == 'vr' and settings.get('vdxr'):
-        arguments.append('--vdxr')
+    if args.action == 'vr':
+        if args.openxr_runtime is not None:
+            arguments += ['--openxr-runtime', str(args.openxr_runtime)]
+        elif args.vdxr:
+            arguments.append('--vdxr')
+        elif not args.system_openxr:
+            if settings.get('vdxr') or settings.get('vr_runtime') == 'vdxr':
+                arguments.append('--vdxr')
+            elif settings.get('openxr_runtime'):
+                arguments += ['--openxr-runtime', settings['openxr_runtime']]
+            elif settings.get('vr_runtime') != 'system':
+                raise ValueError('VR runtime is not explicitly configured. Run Configure.cmd and choose steamvr, vdxr or system; or pass --openxr-runtime PATH, --vdxr or --system-openxr.')
+        print('VR runtime: ' + ('VDXR' if '--vdxr' in arguments else
+              arguments[arguments.index('--openxr-runtime') + 1] if '--openxr-runtime' in arguments else
+              'system/environment default'), flush=True)
     return launch(arguments + extra)
 
 

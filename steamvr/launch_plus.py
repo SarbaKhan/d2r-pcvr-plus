@@ -112,12 +112,16 @@ def main(arguments=None):
     parser.add_argument('--mode', required=True, choices=('flat', 'vr'))
     parser.add_argument('--store', choices=('steam', 'battlenet'), default='steam')
     parser.add_argument('--experimental-battlenet', action='store_true')
-    parser.add_argument('--vdxr', action='store_true', help='VR only')
+    runtime = parser.add_mutually_exclusive_group()
+    runtime.add_argument('--vdxr', action='store_true', help='VR only')
+    runtime.add_argument('--openxr-runtime', type=Path, help='Explicit OpenXR manifest; VR only')
     args = parser.parse_args(arguments)
     if sys.platform != 'win32':
         parser.error('This launcher targets Windows. Proton is not validated.')
-    if args.vdxr and args.mode != 'vr':
-        parser.error('--vdxr is VR only')
+    if (args.vdxr or args.openxr_runtime) and args.mode != 'vr':
+        parser.error('OpenXR runtime options are VR only')
+    if args.openxr_runtime and not args.openxr_runtime.is_file():
+        parser.error('OpenXR runtime manifest not found: ' + str(args.openxr_runtime))
     from game_install import validate_game
     from process_guard import require_game_closed
     from launch_windows import main as launch_vr
@@ -134,6 +138,8 @@ def main(arguments=None):
             arguments = ['--frame-vr']
             if args.vdxr:
                 arguments.append('--frame-vdxr')
+            elif args.openxr_runtime:
+                arguments.append('--frame-openxr-runtime=' + str(args.openxr_runtime.resolve()))
             if args.store == 'battlenet':
                 arguments.extend(['--battlenet-game=' + str(game), '--experimental-battlenet'])
             else:
