@@ -8199,11 +8199,6 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     g_ctx = ctx;
     g_base = ctx->exeBase;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&UpdateThread, &g_self);
-#ifdef D2RVR_NATIVE_OPENXR
-    if(!framevr::logging::Start(g_self))ctx->LogWarn("Frame buffered logger could not start; routine diagnostics disabled to protect gameplay");
-    else ctx->LogInfo("Frame runtime diagnostics: d2rloader/logs/d2r-vr-frame.log (buffered, no per-message disk flush)");
-    if(!pairtime::threadStats.Start())ctx->LogWarn("Frame CPU diagnostics worker could not start; thread scans disabled");
-#endif
 
     // d2r_vr.ini beside this DLL
     DWORD n = GetModuleFileNameW(g_self, g_iniPath, MAX_PATH);
@@ -8222,6 +8217,11 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
         return false;
     }
     g_flatSession = explicitFlat || (!modeLength && GetPrivateProfileIntW(L"mode",L"platform",1,g_iniPath)==0);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!framevr::logging::Start(g_self))ctx->LogWarn("Frame buffered logger could not start; routine diagnostics disabled to protect gameplay");
+    else ctx->LogInfo("Frame runtime diagnostics: d2rloader/logs/d2r-vr-frame.log (buffered, no per-message disk flush)");
+    if(!pairtime::threadStats.Start())ctx->LogWarn("Frame CPU diagnostics worker could not start; thread scans disabled");
+#endif
     Log(g_flatSession ? "PCVR Plus: Flat session; OpenXR transport disabled" : "PCVR Plus: VR session");
 #ifdef D2RVR_NATIVE_OPENXR
     if(!g_flatSession) vrsettings::Poll(g_iniPath);
