@@ -22,6 +22,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "../steamvr/flat_controls.h"
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
@@ -773,7 +774,33 @@ float GameInterfaceScale() {
 
 void StartMatrixWatch();   // [debug] matrix_writer, below PickHeroMatrix
 
+// Selected once before hooks/threads start. A runtime change requires a restart.
+bool g_flatSession = false;
+std::atomic<unsigned> g_flatBindings{pcvrplus::PackKeys('W', 'A', 'S', 'D')};
+int MoveKey(int index) {
+    static constexpr int vrKeys[] = {'W', 'A', 'S', 'D'};
+    return g_flatSession ? pcvrplus::Key(g_flatBindings.load(), index) : vrKeys[index];
+}
+void LoadFlatBindings() {
+    wchar_t layout[16]{};
+    GetPrivateProfileStringW(L"input", L"flat_layout", L"WASD", layout, 16, g_iniPath);
+    const bool azerty = _wcsicmp(layout, L"ZQSD") == 0;
+    const wchar_t* names[] = {L"flat_forward", L"flat_left", L"flat_back", L"flat_right"};
+    const int defaults[] = {azerty ? 'Z' : 'W', azerty ? 'Q' : 'A', 'S', 'D'};
+    unsigned packed = 0;
+    for (int i = 0; i < 4; ++i) {
+        wchar_t value[16]{}, fallback[2] = {wchar_t(defaults[i]), 0};
+        GetPrivateProfileStringW(L"input", names[i], fallback, value, 16, g_iniPath);
+        const int key = pcvrplus::LetterKey(value[0], value[1], defaults[i]);
+        packed |= unsigned(key) << (i * 8);
+    }
+    if (pcvrplus::UniqueKeys(packed)) g_flatBindings.store(packed);
+    else Log("PCVR Plus: duplicate movement bindings ignored; keeping previous keys");
+}
+
 void LoadSettings() {
+    g_set.platform.store(g_flatSession ? 0 : 1);
+    if (g_flatSession) LoadFlatBindings();
     #ifdef D2RVR_NATIVE_OPENXR
     framevr::profile::Request(GetPrivateProfileIntW(L"debug",L"profile_capture",0,g_iniPath));
     billboards::ConfigurePortalCenters(IniB(L"debug",L"portal_centers",true));
@@ -782,12 +809,12 @@ void LoadSettings() {
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
-    framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
+    framevr::ConfigureGameplay(!g_flatSession && IniB(L"gameplay",L"motion_controls",false));
     framevr::ConfigureInteractions(IniB(L"interactions",L"seated",false),IniF(L"interactions",L"waist_below_eyes",.65f),
         IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"dominant_hand",0)==1?1:0);
-    projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
-    bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
-    combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
+    projectiles::Configure(!g_flatSession && IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
+    bowvr::Configure(!g_flatSession && IniB(L"gameplay",L"motion_controls",false));
+    combat::Configure(!g_flatSession && IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
@@ -806,7 +833,7 @@ void LoadSettings() {
     if(labelCapture&&labelCapture!=lastLabelCapture)d2rcam::ArmLabelCapture();
     lastLabelCapture=labelCapture;
 #endif
-    g_set.platform.store(IniF(L"mode", L"platform", 1.0f) != 0.0f ? 1 : 0);
+    // Platform is frozen for this process; switching transport needs a restart.
 #if D2RVR_FIRST_PERSON
     g_set.flatView.store(std::clamp((int)IniF(L"mode", L"flat_view", 3.0f), 1, 3));
 #else
@@ -832,7 +859,7 @@ void LoadSettings() {
         // Only first person uses the native OpenXR eye poses. The legacy
         // FlatVR orbit/table cameras cannot be submitted with those poses:
         // a saved third-person mode persisted that mismatch across launches.
-        if (v != 4) {
+        if (!g_flatSession && v != 4) {
             Log("Frame OpenXR: restoring first person; other VR cameras require the legacy FlatVR transport");
             v = 4;
             write = true;
@@ -1768,7 +1795,7 @@ FlatVRAfrEye* g_afrBlock = nullptr;
 std::atomic<int> g_eye{0};   // also declared above BuildProj
 
 void OpenAfrBlock() {
-    if (g_afrBlock) return;
+    if (g_flatSession || g_afrBlock) return;
     g_afrMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(FlatVRAfrEye), FLATVR_AFR_EYE_NAME);
     if (g_afrMap) g_afrBlock = (FlatVRAfrEye*)MapViewOfFile(g_afrMap, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(FlatVRAfrEye));
     if (g_afrBlock) { memset(g_afrBlock, 0, sizeof *g_afrBlock); g_afrBlock->version = FLATVR_AFR_EYE_VERSION; }
@@ -1831,6 +1858,7 @@ bool LabelsWanted() {
 // and whenever the setting changes. FlatVR with the pair on and one picture
 // coming shows it flat (2026-10-08).
 void FlatVr3DTick() {
+    if (g_flatSession) return;
     static int sent = -1;
     static bool had = false;
     static const wchar_t* const kName[3] = {D2RVR_FLATVR_3D_NONE_NAME, D2RVR_FLATVR_3D_DEPTH_NAME, D2RVR_FLATVR_3D_PAIR_NAME};
@@ -2321,7 +2349,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     // The menus (the character screen's 3D scene too: it has a hero point) keep the game's camera.
     if (!g_inWorld.load()) return false;
 #ifdef D2RVR_NATIVE_OPENXR
-    if(gamestate::MenuOpen()&&!framevr::SpatialMenu())return false; // ordinary flat UI panel
+    if(!g_flatSession&&gamestate::MenuOpen()&&!framevr::SpatialMenu())return false; // ordinary flat UI panel
 #endif
     if (TopStereoOn()) return TopStereoView(in, out);
     if (!g_enabled.load() || !in.lookAtValid) return false;
@@ -2491,7 +2519,7 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]);
 bool VrProj(const d2rcam::WorldView& in, float M[16]) {
     FRAME_PROFILE(Projection);
 #ifdef D2RVR_NATIVE_OPENXR
-    if(gamestate::MenuOpen()&&!framevr::SpatialMenu())return false;
+    if(!g_flatSession&&gamestate::MenuOpen()&&!framevr::SpatialMenu())return false;
 #endif
     const bool ours = VrProjInner(in, M);
     if (ours) {
@@ -2523,7 +2551,7 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
         M[8] += g_eye.load() == 0 ? shift : -shift;
     }
 #ifdef D2RVR_NATIVE_OPENXR
-    if (!ThirdPerson() && !Overhead()) framevr::Projection(M, nearZ, g_eye.load());
+    if (!g_flatSession && !ThirdPerson() && !Overhead()) framevr::Projection(M, nearZ, g_eye.load());
     g_projSx.store(M[0]); g_projSy.store(M[5]);
 #endif
     AcquireSRWLockExclusive(&g_skyLock);
@@ -3349,7 +3377,7 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
 std::atomic<const BWPadMirror*> g_padMirror{nullptr};
 
 bool PadMirrorRead(BWPadMirror* out) {
-    if (!g_set.bodywalkPad.load()) return false;
+    if (g_flatSession || !g_set.bodywalkPad.load()) return false;
     const BWPadMirror* p = g_padMirror.load();
     if (!p) {
         static std::atomic<ULONGLONG> lastTry{0};
@@ -3395,6 +3423,7 @@ constexpr uint64_t RVA_INTERACT_ON_ATTACK = 0x22BD840;
 const D2RVR_Actions* g_actions = nullptr;
 
 uint32_t ActionsHeld() {
+    if (g_flatSession) return 0;
     if (!g_actions) {
         static ULONGLONG lastTry = 0;
         if (GetTickCount64() - lastTry < 1000) return 0;
@@ -3501,7 +3530,8 @@ uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
 // Mouse look and W A S D ([input] mouse_look, F9): the first-person game
 // without a headset. Live while our camera shows a game area and no menu is open.
 std::atomic<bool> g_mouseLookOn{false};
-bool ShooterActive() { return g_mouseLookOn.load() && g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen(); }
+bool ChatOpen();
+bool ShooterActive() { return (!g_flatSession || !ChatOpen()) && g_mouseLookOn.load() && g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen(); }
 
 // The game's chat line (Enter) is open: then W A S D are letters typed, not
 // ours. D2's UI-state array, one byte per panel at 0x2A2ADA0 (GetUIState
@@ -3562,7 +3592,7 @@ std::atomic<int> g_keyMove{0};               // the hook: 0 not in yet, 1 in, 2 
 std::atomic<uint32_t> g_keyMoveCalls{0};     // how often the game asked: still while W is held = its UI is on the pad
 
 // Flat play through the keyboard move: on while the hook is in or may still go in.
-bool FlatKeyMode() { return g_set.platform.load() == 0 && g_set.flatKeyMove.load() && g_keyMove.load() != 2; }
+bool FlatKeyMode() { return g_flatSession; }
 // ... and the game sees no pad at all.
 bool FlatNoPad() { return FlatKeyMode() && g_set.flatNoPad.load(); }
 // VR third person (F2) played with the mouse and keyboard ([input] vr_keys_walk):
@@ -3639,8 +3669,8 @@ bool FlatMoveInput(float* px, float* py, const char** from) {
     float x = 0.0f, y = 0.0f;
     if (ShooterActive() && GameFocused() && !ChatOpen()) {
         auto held = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
-        y = (held('W') ? 1.0f : 0.0f) - (held('S') ? 1.0f : 0.0f);
-        x = (held('D') ? 1.0f : 0.0f) - (held('A') ? 1.0f : 0.0f);
+        y = (held(MoveKey(0)) ? 1.0f : 0.0f) - (held(MoveKey(2)) ? 1.0f : 0.0f);
+        x = (held(MoveKey(3)) ? 1.0f : 0.0f) - (held(MoveKey(1)) ? 1.0f : 0.0f);
         if (x != 0.0f && y != 0.0f) { x *= 0.70710678f; y *= 0.70710678f; }
         *from = "keys";
     }
@@ -3712,7 +3742,7 @@ void InstallKeyMoveHook() {
         // run and so never decrypted: no verdict there, only tried again.
         if (flat && g_inWorld.load() && ++misses >= 20) {
             g_keyMove.store(2);
-            Log("vrcam: flat: keyboard move hook NOT possible (0x8A960 not as expected - another build?) - W A S D walk the old way, through a pad");
+            Log("vrcam: flat: keyboard move hook NOT possible (0x8A960 not as expected - another build?) - Flat movement unavailable; native mouse input retained");
         }
         return;
     }
@@ -3720,7 +3750,7 @@ void InstallKeyMoveHook() {
     g_keyMove.store(in ? 1 : 2);
     if (flat)
         Log(in ? "vrcam: flat: keyboard move hook in - W A S D walk through the game's own keyboard move, the mouse clicks where you look"
-               : "vrcam: flat: keyboard move hook FAILED - W A S D walk the old way, through a pad");
+               : "vrcam: flat: keyboard move hook FAILED - Flat movement unavailable; native mouse input retained");
     else
         Log(in ? "vrcam: VR: keyboard move hook in - in third person (F2) W A S D walk where the camera looks"
                : "vrcam: VR: keyboard move hook FAILED - W A S D in third person stay the game's own keys");
@@ -3789,7 +3819,7 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
 #ifdef D2RVR_NATIVE_OPENXR
     // Mouse menu events must never become world movement, attacks, or loot,
     // including a delayed release after the native dialog closes itself.
-    if(g_enabled.load()&&g_inWorld.load()&&(gamestate::MenuOpen()||panelinput::BlocksWorld()))return 0;
+    if(!g_flatSession&&g_enabled.load()&&g_inWorld.load()&&(gamestate::MenuOpen()||panelinput::BlocksWorld()))return 0;
     struct CommandScope {
         framevr::spellaim::CommandAim previous=g_spellCommand;
         CommandScope(){g_spellCommand={};}
@@ -3870,7 +3900,7 @@ void FlatPadTick() {
     static uint32_t lastCalls = 0;
     static ULONGLONG lastTold = 0;
     const uint32_t calls = g_keyMoveCalls.load();
-    const bool keys = (GetAsyncKeyState('W') | GetAsyncKeyState('A') | GetAsyncKeyState('S') | GetAsyncKeyState('D')) & 0x8000;
+    const bool keys = (GetAsyncKeyState(MoveKey(0)) | GetAsyncKeyState(MoveKey(1)) | GetAsyncKeyState(MoveKey(2)) | GetAsyncKeyState(MoveKey(3))) & 0x8000;
     if (g_keyMove.load() == 1 && ((FlatKeyMode() && ShooterActive()) || VrKeyWalk()) && GameFocused() && keys && calls == lastCalls &&
         GetTickCount64() - lastTold > 10000) {
         lastTold = GetTickCount64();
@@ -4238,8 +4268,8 @@ void HookCursor() {
 LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
 #ifdef D2RVR_NATIVE_OPENXR
     LRESULT resolutionResult=0;
-    if(framevr::resolution::Handle(h,msg,w,l,g_gameWndProc,resolutionResult))return resolutionResult;
-    if(framevr::HandleWindowFocusMessage(h,msg,w,l))return 0;
+    if(!g_flatSession&&framevr::resolution::Handle(h,msg,w,l,g_gameWndProc,resolutionResult))return resolutionResult;
+    if(!g_flatSession&&framevr::HandleWindowFocusMessage(h,msg,w,l))return 0;
 #endif
     // F1..F3 (F4 in VR) pick the view: the game, which has skills on them, never sees them.
     if ((msg == WM_KEYDOWN || msg == WM_KEYUP) && w >= VK_F1 && (int)w < VK_F1 + ViewCount()) return 0;
@@ -4258,7 +4288,7 @@ LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     // VR third person with vr_keys_walk (VrKeyWalk): the same - W A S D walk there.
     if ((msg == WM_KEYDOWN || msg == WM_CHAR) && (ShooterActive() || VrKeyWalk()) && !ChatOpen()) {
         const WPARAM k = msg == WM_CHAR && w >= 'a' && w <= 'z' ? w - ('a' - 'A') : w;
-        if (k == 'W' || k == 'A' || k == 'S' || k == 'D') return 0;
+        if (k == WPARAM(MoveKey(0)) || k == WPARAM(MoveKey(1)) || k == WPARAM(MoveKey(2)) || k == WPARAM(MoveKey(3))) return 0;
     }
     // Flat with the keyboard move: the game stays in mouse mode, so the mouse is
     // the game's - its pointer kept in the window's middle (MouseTick), a click
@@ -4307,7 +4337,7 @@ void HookGameWindow() {
     if (g_gameWndProc) {
         g_gameWnd = h;
 #ifdef D2RVR_NATIVE_OPENXR
-        framevr::resolution::Attach(h);
+        if(!g_flatSession) framevr::resolution::Attach(h);
 #endif
     }
 }
@@ -4319,7 +4349,7 @@ bool g_dragging = false;
 POINT g_dragLast{};
 
 void MouseTick() {
-    if (!g_enabled.load() || !GameFocused()) { g_dragging = false; return; }
+    if (!g_enabled.load() || !GameFocused() || (g_flatSession && (gamestate::MenuOpen() || ChatOpen()))) { g_dragging = false; return; }
     const bool shooter=ShooterActive(),drag=(GetAsyncKeyState(VK_MBUTTON)&0x8000)!=0;
     if(!shooter&&!drag){g_dragging=false;return;}
     POINT p{};
@@ -4869,7 +4899,7 @@ void GameCodeTick(bool iniChanged) {
     if (d2rsig::Generation() == written) return;
     written = d2rsig::Generation();
     std::wstring path = g_iniPath;
-    path.resize(path.size() - wcslen(L"d2r_vr.ini"));
+    path.resize(path.find_last_of(L"\\/") + 1);
     path += L"d2r_vr_game_code.txt";
     FILE* f = _wfopen(path.c_str(), L"wb");
     if (!f) return;
@@ -4902,6 +4932,7 @@ void InstallHooks() {
         LogF("vrcam: attack point hook %s", g_h.point ? "in" : "NOT in");
     }
 #ifdef D2RVR_NATIVE_OPENXR
+    if (!g_flatSession) {
     static bool spellController=false,spellHover=false,spellResolve=false;
     if(!g_spellCommandReady.load()&&
        d2rsig::Check(spellaimabi::CastClickRva,spellaimabi::CastClickSig,sizeof spellaimabi::CastClickSig)&&
@@ -4925,6 +4956,7 @@ void InstallHooks() {
             reinterpret_cast<void*>(&HookSpellResolve),reinterpret_cast<void**>(&OrigSpellResolve));
         if(spellController&&spellHover&&spellResolve){g_spellAimReady=true;Log("Frame spell aim: weapon-axis directional casting; native target override scoped to cast resolver");}
     }
+    } // Native motion spell hooks stay out of Flat sessions.
 #endif
     if (!g_h.interact) {
         g_h.interact = d2rsig::Hook(RVA_INTERACT_TARGET, kSigInteractTarget, sizeof kSigInteractTarget, (void*)&HookInteractTarget, (void**)&OrigInteractTarget);
@@ -5040,7 +5072,7 @@ ConsoleCommandResult __cdecl CmdVrcam(D2R::Game::Client*, const ConsoleCommandCo
     return ConsoleCommandResult::Handled;
 }
 void OpenShared() {
-    if (g_shared) return;
+    if (g_flatSession || g_shared) return;
     if (!g_map) g_map = OpenFileMappingW(FILE_MAP_READ, FALSE, D2RVR_SHARED_NAME);
     // The whole section, not sizeof: an older bridge made it smaller (no grips),
     // and a view longer than the section fails. A page holds either.
@@ -7774,7 +7806,7 @@ void TryRegister() {
     dlssmv::SetLogger(&Log);
     hud::Register();       // the interface's own layer: [hud] hide
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::Register(&Log, +[](){return gamestate::MenuOpen()||!g_inWorld.load();}, +[](){return g_inWorld.load();}, &gamestate::ToggleMenus);
+    if(!g_flatSession) framevr::Register(&Log, +[](){return gamestate::MenuOpen()||!g_inWorld.load();}, +[](){return g_inWorld.load();}, &gamestate::ToggleMenus);
 #endif
     g_registered = true;
     Log("vrcam: joined ReShade - the fog and the sky follow d2r_vr.ini [fog] [sky]");
@@ -7979,7 +8011,7 @@ DWORD WINAPI UpdateThread(void*) {
         hud::SetUiMask((fx::FogWanted() || fx::TableKeyWanted()) && !LabelsWanted());
         SkyTick();
         flog::Tick(g_set.frameLog.load());
-        gamecmd::Tick();   // skills, potions, Alt... held in BodyWalk: pressed on the UI thread
+        if(!g_flatSession) gamecmd::Tick();   // skills, potions, Alt... held in BodyWalk: pressed on the UI thread
         FloorPointerTick();   // F3: the mouse pointer on the game's ground, as the head moves
         CrosshairDepthTick();   // F2's crosshair: nearer as the camera looks down
         AfrQuietWhenOff();
@@ -8046,7 +8078,7 @@ DWORD WINAPI UpdateThread(void*) {
             fx::dlsseyes::Install();
             prevscan::Tick();
 #ifdef D2RVR_NATIVE_OPENXR
-            const bool menuSaved=vrsettings::Poll(g_iniPath);
+            const bool menuSaved=!g_flatSession&&vrsettings::Poll(g_iniPath);
 #endif
             const int previousRings=g_set.rings.load();
             const float previousModelRadius=g_set.modelRadius.load();
@@ -8070,6 +8102,7 @@ DWORD WINAPI UpdateThread(void*) {
             billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
+            if (!g_flatSession) {
             projectiles::Install();
             panelinput::Install();
             projectiles::Report();
@@ -8079,6 +8112,7 @@ DWORD WINAPI UpdateThread(void*) {
             melee::Report();
             bowvr::Install();
             bowvr::Report();
+            }
 #endif
             ApplyRender();
             HookGameWindow();
@@ -8175,9 +8209,22 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     DWORD n = GetModuleFileNameW(g_self, g_iniPath, MAX_PATH);
     while (n > 0 && g_iniPath[n - 1] != L'\\') --n;
     g_iniPath[n] = 0;
-    wcscat_s(g_iniPath, L"d2r_vr.ini");
+    wchar_t launchMode[16]{};
+    const DWORD modeLength = GetEnvironmentVariableW(L"D2R_PCVR_PLUS_MODE", launchMode, 16);
+    if (modeLength && (modeLength >= 16 || (wcscmp(launchMode,L"flat") && wcscmp(launchMode,L"vr")))) {
+        ctx->LogError("PCVR Plus: invalid D2R_PCVR_PLUS_MODE; plugin not started");
+        return false;
+    }
+    const bool explicitFlat = wcscmp(launchMode,L"flat") == 0;
+    wcscat_s(g_iniPath, explicitFlat ? L"d2r_pcvr_plus_flat.ini" : L"d2r_vr.ini");
+    if(explicitFlat && GetFileAttributesW(g_iniPath)==INVALID_FILE_ATTRIBUTES) {
+        ctx->LogError("PCVR Plus: missing d2r_pcvr_plus_flat.ini; plugin not started");
+        return false;
+    }
+    g_flatSession = explicitFlat || (!modeLength && GetPrivateProfileIntW(L"mode",L"platform",1,g_iniPath)==0);
+    Log(g_flatSession ? "PCVR Plus: Flat session; OpenXR transport disabled" : "PCVR Plus: VR session");
 #ifdef D2RVR_NATIVE_OPENXR
-    vrsettings::Poll(g_iniPath);
+    if(!g_flatSession) vrsettings::Poll(g_iniPath);
 #endif
     ReloadIfChanged();
     g_mouseLookOn.store(MouseLookForView());
@@ -8207,7 +8254,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     OpenShared();
     OpenAfrBlock();
     gamestate::Init(ctx);
-    gamecmd::Init(ctx);
+    if(!g_flatSession) gamecmd::Init(ctx);
 #ifdef D2RVR_NATIVE_OPENXR
     melee::Init(ctx);
     bowvr::Init(ctx);

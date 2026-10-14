@@ -1,0 +1,42 @@
+name: PCVR Plus Windows candidate
+on:
+  push:
+    branches: [feature/flat-plus]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install upstream pinned Windows tools
+        shell: powershell
+        run: ./steamvr/setup_windows_tools.ps1
+      - name: Build Windows plugin and fixtures
+        shell: powershell
+        run: ./steamvr/build_windows.ps1
+      - name: Run CPU-only Windows fixtures
+        shell: powershell
+        run: |
+          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -R '^(flat-controls|math|gameplay|combat-rules|controller-bindings|spell-cast|bow-flight)-test$'
+          if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
+      - name: Run launcher and save-backup fixtures
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_plus_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Plus launcher fixtures failed' }
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p launch_windows_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream launcher fixtures failed' }
+      - name: Stage candidate (no game assets)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory candidate | Out-Null
+          Copy-Item build-frame/windows-native/d2rl-vrcam.dll,d2r_pcvr_plus_flat.ini,PCVR-PLUS.md,LICENSE,THIRD_PARTY.md candidate
+          Copy-Item third_party/minhook/LICENSE.txt candidate/MinHook-LICENSE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-Windows-candidate
+          path: candidate/
+          if-no-files-found: error

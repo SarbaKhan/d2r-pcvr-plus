@@ -1,3 +1,11 @@
+# D2R PCVR Plus
+
+Candidate expérimentale ajoutant les vues Flat à la base D2R PCVR. **Compilation vérifiée, essais en jeu et au casque encore nécessaires.**
+
+Voir [analyse, installation, compilation et protocole de tests](PCVR-PLUS.md). Branche de travail : `feature/flat-plus`. Documentation et crédits PCVR d’origine conservés ci-dessous.
+
+---
+
 # D2R PCVR
 
 Play **Diablo II: Resurrected in VR on Windows**, with support for
