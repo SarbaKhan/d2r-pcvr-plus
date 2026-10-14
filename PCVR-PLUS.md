@@ -1,7 +1,7 @@
 # D2R PCVR Plus — première candidate Flat/VR
 
 **État : compilation Windows vérifiée ; jouabilité et absence de régression VR à valider sur matériel réel.**
-Cette branche n'est pas une version stable. La cause des freezes/corruptions signalés avec D2R VR n'a pas été identifiée ; ce travail ne prétend pas les avoir corrigés.
+Cette branche reste en validation. L'utilisateur a identifié les freezes et corruptions signalés comme un problème de son PC, désormais résolu, et non de D2R VR. À sa demande, les lanceurs n'effectuent plus de backups de personnages et laissent le jeu gérer ses sauvegardes natives.
 
 La base reste [bearstonem/d2r-pcvr](https://github.com/bearstonem/d2r-pcvr), commit `6abf4e52c13fae5eea11aa5defd7618645d706e9`.
 Le dépôt de référence [natpoh/diablo2-vr-port](https://github.com/natpoh/diablo2-vr-port) a été examiné au commit `4b6284c0766c089139693a504333b9a19201cdd2`.
@@ -36,7 +36,7 @@ Plan appliqué : sélectionner la plateforme avant les hooks, figer cette sélec
 - VR : profil existant, transport, contrôles physiques et lanceur Windows d'origine conservés. Cela doit encore être confirmé au casque.
 - Deux profils indépendants : `d2r_pcvr_plus_flat.ini` et `d2r_vr.ini`. Dans Flat, `[camera]` règle la première personne et `[third]` la distance/hauteur de troisième personne ; F1 utilise la caméra du jeu. Le FOV et les touches sont communs aux vues Flat.
 
-Limites connues : pas de test dans D2R ici ; pas de garantie d'absence de régression ou de corruption. Les hooks Flat peuvent ne pas correspondre à un autre build ; consulter les logs et revenir à F1/F9 si nécessaire. Le clic dans le vide peut redevenir une marche si le hook de clic échoue. Aucun multijoueur TCP/IP ni travail Proton ajouté.
+Limites connues : pas de test dans D2R ici ; validation matérielle encore nécessaire pour exclure des régressions. Les hooks Flat peuvent ne pas correspondre à un autre build ; consulter les logs et revenir à F1/F9 si nécessaire. Le clic dans le vide peut redevenir une marche si le hook de clic échoue. Aucun multijoueur TCP/IP ni travail Proton ajouté.
 
 ## Compilation Windows
 
