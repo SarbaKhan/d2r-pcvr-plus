@@ -113,7 +113,7 @@ def shortcuts(original, steam, game, modes):
 
 def validate(values):
     c = copy.deepcopy(values)
-    for key in ('game', 'steam_root', 'profile', 'saves', 'destination'):
+    for key in ('game', 'steam_root', 'profile', 'saves'):
         c[key] = str(Path(c[key]).expanduser().resolve())
     c['steam'] = str(Path(c['steam']).expanduser().absolute())
     if not (Path(c['game']) / 'D2R.exe').is_file():
@@ -135,9 +135,12 @@ def validate(values):
             if not c.get(mode + '_runtime'):
                 raise ValueError('Select the ' + mode + ' Linux OpenXR manifest.')
             c[mode + '_runtime'] = runtime_manifest(c[mode + '_runtime'], mode)
-    destination = Path(c['destination'])
-    if destination in (Path.home(), Path('/')) or destination.is_relative_to(Path(c['game'])):
-        raise ValueError('Choose a dedicated setup folder outside the game folder.')
+    destination = Path(c['game']) / APP
+    if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+        raise ValueError('The D2R-PCVR-Plus installation path must be a real directory, not a symlink or file.')
+    if c.get('destination') and Path(c['destination']).expanduser().absolute() != destination:
+        raise ValueError('Setup installs automatically in the game folder under D2R-PCVR-Plus. Run setup again.')
+    c['destination'] = str(destination)
     if destination.exists() and any(destination.iterdir()) and not (destination / 'plus-linux-managed.json').is_file():
         raise ValueError('The destination is not empty and is not a managed Plus installation.')
     return c
@@ -190,7 +193,7 @@ def install_choices(choices, source_bundle, payload, runner):
     destination = Path(c['destination'])
     source_bundle = Path(source_bundle).resolve()
     if destination == source_bundle or source_bundle.is_relative_to(destination) or destination.is_relative_to(source_bundle):
-        raise ValueError('Run setup from the extracted download and choose a separate permanent installation folder.')
+        raise ValueError('Extract the download outside the game folder and run that copy of setup. The permanent installation is managed automatically.')
     # Stage and promote the complete Python/Qt bundle. Keep the old installation
     # available if a later dependency download or game installation fails.
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -204,7 +207,7 @@ def install_choices(choices, source_bundle, payload, runner):
             for folder in ('installation-backups', 'configuration-backups', 'deps'):
                 if (destination / folder).is_dir():
                     shutil.copytree(destination / folder, stage / folder, dirs_exist_ok=True)
-        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.2', 'game': c['game']}))
+        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.3', 'game': c['game']}))
         if destination.exists():
             destination.rename(old)
         stage.rename(destination)

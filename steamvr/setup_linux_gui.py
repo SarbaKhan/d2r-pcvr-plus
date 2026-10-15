@@ -16,7 +16,7 @@ class Setup(QWizard):
     def __init__(self, root):
         super().__init__()
         self.root = root
-        self.setWindowTitle('D2R PCVR Plus — Linux Setup 0.2.2 (Preview)')
+        self.setWindowTitle('D2R PCVR Plus — Linux Setup 0.2.3 (Preview)')
         self.resize(850, 680)
         self.setOption(QWizard.NoBackButtonOnStartPage)
         self.setOption(QWizard.NoBackButtonOnLastPage)
@@ -79,8 +79,9 @@ class Setup(QWizard):
         self.path_row(form, 'steam', 'Steam executable', False)
         self.path_row(form, 'game', 'Diablo II: Resurrected folder').editingFinished.connect(self.load_game)
         self.path_row(form, 'saves', 'Existing Saved Games folder')
-        self.path_row(form, 'destination', 'Install setup and launcher to')
-        self.fields['destination'].setText(str(Path.home() / '.local/share/D2R-PCVR-Plus'))
+        location = QLabel('Setup and launcher are installed automatically in the game folder, under D2R-PCVR-Plus.')
+        location.setWordWrap(True)
+        form.addRow(location)
         self.accounts = QComboBox()
         form.addRow('Steam account (userdata ID)', self.accounts)
         button = QPushButton('Detect folders again')

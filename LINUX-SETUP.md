@@ -1,4 +1,4 @@
-# D2R PCVR Plus — Linux Qt Setup (0.2.2 preview)
+# D2R PCVR Plus — Linux Qt Setup (0.2.3 preview)
 
 An English-language setup wizard for the Steam edition of Diablo II: Resurrected.
 The portable archive includes Python, Qt and the Windows mod DLL. You do not need
@@ -21,13 +21,14 @@ included. Promotional library artwork is credited in `artwork/README.md`. Native
 
 1. Install D2R through Steam, choose a working Proton version, launch it once,
    then exit. Keep the existing Proton prefix and Saved Games folder.
-2. Download the **D2R-PCVR-PLUS-Setup-0.2.2-Linux-x86_64** Actions artifact.
+2. Download the **D2R-PCVR-PLUS-Setup-0.2.3-Linux-x86_64** Actions artifact.
    Extract the GitHub ZIP, then extract the `.tar.gz` inside it. Keep all files
    in the extracted folder together.
 3. Run `D2R-PCVR-Plus-Setup` from that folder (double-click it, or run
    `./D2R-PCVR-Plus-Setup` in a terminal). Do not run it as root.
 4. Confirm or browse for the Steam **data folder**, Linux Steam **executable**,
-   game folder, existing Saved Games folder, and permanent setup destination.
+   game folder and existing Saved Games folder. The setup destination is automatically
+   `<game folder>/D2R-PCVR-Plus`; there is no destination field.
    Steam data is commonly `~/.local/share/Steam`; the executable is usually
    `/usr/bin/steam`. They are separate fields. Select the correct Steam account.
 5. Select **Steam Link / SteamVR**, **WiVRn**, **Flat Screen (no VR)**, or **All**.
@@ -44,7 +45,8 @@ included. Promotional library artwork is credited in `artwork/README.md`. Native
 
 The download folder can be removed after success. Keep the permanent setup
 folder: the original D2R Steam entry calls its launcher. Do not move it manually.
-To update, run a newly extracted setup and choose the same permanent destination.
+To update, extract a new download outside the game folder and run setup for the
+same game. Do not extract the download over the managed installation.
 
 ## Launch behavior
 
@@ -125,7 +127,7 @@ Explicit `SSL_CERT_FILE` / `SSL_CERT_DIR` overrides are respected and validated.
 No trust-store changes are made to the operating system or game launch environment.
 
 If an earlier installation failed at the first HTTPS download, extract the new
-setup and run it with the same permanent destination; no game cleanup is needed.
+setup and select the same game folder; no game cleanup is needed.
 For TLS diagnostics, run `./D2R-PCVR-Plus-Setup --tls-check`. If system certificates
 are missing, repair your distribution's `ca-certificates` package; never disable
 certificate verification.
@@ -213,3 +215,22 @@ backed up or relocated.
 - Repeat setup, including an installation folder containing spaces or accents.
 - Confirm Flat mouse look on Wayland and the previously validated VR controls,
   panel placement and NPC dialogue menus. These still require the real machine.
+
+## Version 0.2.3: installation inside the game folder
+
+The complete launcher, bundled Python/Qt runtime, dependencies and setup files
+now live in `<game folder>/D2R-PCVR-Plus`. The review page shows this automatic
+path. Game plugins remain in their normal D2RLoader locations. Character saves
+and the Proton prefix are not moved.
+
+For an existing external installation, run the new download, select the same
+game and all previously used modes, and approve replacing the old launch options.
+Steam and application-menu shortcuts are refreshed to use the new installation.
+The old external folder is not modified or deleted; retain it for its historical
+installation/configuration snapshots. Existing game preferences are preserved.
+A symlink or an unrelated nonempty folder at the new destination is rejected.
+
+Validation: automated fixtures cover automatic destination selection, paths with
+spaces and Unicode, unmanaged-folder/symlink rejection, launcher routing and
+failed-update restoration. Confirm Flat, SteamVR and WiVRn on the real machine
+after upgrading; CI cannot validate headset launches.

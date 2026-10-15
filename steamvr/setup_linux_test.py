@@ -34,7 +34,7 @@ class SetupTests(unittest.TestCase):
         self.steam_exe.write_text('#!/bin/sh\nexit 0\n')
         self.steam_exe.chmod(0o755)
         self.c = dict(game=str(self.game), steam_root=str(self.steam), steam=str(self.steam_exe),
-                      profile=str(self.profile), saves=str(self.saves), destination=str(self.root / 'installed'),
+                      profile=str(self.profile), saves=str(self.saves), destination=str(self.game / 'D2R-PCVR-Plus'),
                       modes=['flat'], layout='ZQSD', text_locale='frFR', audio_locale='', reviewed_options='')
 
     def profiles(self):
@@ -65,6 +65,21 @@ class SetupTests(unittest.TestCase):
         (dest / 'unrelated').touch()
         with self.assertRaises(ValueError):
             setup.validate(self.c)
+
+    def test_destination_is_automatic_and_rejects_symlinks(self):
+        choices = dict(self.c)
+        choices.pop('destination')
+        destination = self.game / 'D2R-PCVR-Plus'
+        self.assertEqual(setup.validate(choices)['destination'], str(destination))
+        target = self.root / 'unrelated'
+        target.mkdir()
+        try:
+            destination.symlink_to(target, target_is_directory=True)
+        except OSError:
+            self.skipTest('Symlinks are unavailable on this runner')
+        with self.assertRaisesRegex(ValueError, 'symlink'):
+            setup.validate(choices)
+        self.assertEqual(list(target.iterdir()), [])
 
     def test_preferences_preserve_other_settings_and_empty_default(self):
         self.profiles()
@@ -117,6 +132,12 @@ class SetupTests(unittest.TestCase):
         executable = bundle / 'D2R-PCVR-Plus-Setup'
         executable.write_text('fixture')
         executable.chmod(0o755)
+        old = self.root / 'old external installation'
+        old.mkdir()
+        (old / 'historical-snapshot').write_bytes(b'keep')
+        previous = setup.shlex.quote(str(old / executable.name)) + ' --route %command%'
+        self.local.write_text(vdf.set_launch_options(self.local.read_text(), previous))
+        self.c['reviewed_options'] = previous
         def installer(command, check):
             self.assertEqual(command[1], '--install-game')
             self.assertIn('--preserve-settings', command)
@@ -126,8 +147,11 @@ class SetupTests(unittest.TestCase):
         self.assertEqual((self.saves / 'temporary.d2s').read_bytes(), b'character must never change')
         self.assertIn('custom = true', (self.game / 'd2rloader/config/d2rloader.toml').read_text())
         self.assertIn(' --route %command%', setup.current_options(self.profile))
+        self.assertIn(str(self.game / 'D2R-PCVR-Plus'), setup.current_options(self.profile))
         self.assertEqual(setup.preferences(self.game)['text_locale'], 'frFR')
         self.assertTrue((Path(self.c['destination']) / '_internal/payload/linux-launch.json').is_file())
+        self.assertNotIn(str(old), setup.current_options(self.profile))
+        self.assertEqual((old / 'historical-snapshot').read_bytes(), b'keep')
 
     def test_options_changed_since_review_aborts_before_installation(self):
         self.local.write_text(vdf.set_launch_options(self.local.read_text(), 'different %command%'))
