@@ -16,7 +16,7 @@ class Setup(QWizard):
     def __init__(self, root):
         super().__init__()
         self.root = root
-        self.setWindowTitle('D2R PCVR Plus — Linux Setup 0.2.1 (Preview)')
+        self.setWindowTitle('D2R PCVR Plus — Linux Setup 0.2.2 (Preview)')
         self.resize(850, 680)
         self.setOption(QWizard.NoBackButtonOnStartPage)
         self.setOption(QWizard.NoBackButtonOnLastPage)
@@ -192,6 +192,7 @@ class Setup(QWizard):
                     'Steam account: ' + Path(self.pending['profile']).name,
                     'Install to: ' + self.pending['destination'],
                     'Modes: ' + ', '.join(backend.NAMES[m] for m in self.pending['modes']),
+                    'Shortcuts: Steam library and application menu (WiVRn headset launcher included)',
                     'Flat keyboard: ' + self.layout_choice.currentText(),
                     'Text language: ' + self.language_boxes['text_locale'].currentText(),
                     'Audio language: ' + self.language_boxes['audio_locale'].currentText(),

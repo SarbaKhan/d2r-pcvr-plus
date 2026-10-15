@@ -1,0 +1,153 @@
+{
+  "project": "D2R PCVR Plus",
+  "version": "artwork-v1",
+  "assets": [
+    {
+      "path": "flat/cover.png",
+      "width": 600,
+      "height": 900,
+      "mode": "RGB",
+      "sha256": "3f47696c3c9c2a38f01a509dd23ffde324d841b737ef4e92971bdf1f6d31515e"
+    },
+    {
+      "path": "flat/wide-cover.png",
+      "width": 920,
+      "height": 430,
+      "mode": "RGB",
+      "sha256": "184f0711cd0418ada143fba5327f29ebe77d5d5fc06159fa9b6c52299dfd4234"
+    },
+    {
+      "path": "flat/background.png",
+      "width": 1920,
+      "height": 620,
+      "mode": "RGB",
+      "sha256": "f1fbbcc11cda9b0f2760b3a8a5fd7d2a2701f630c1b22b314b803f36c60252b0"
+    },
+    {
+      "path": "flat/logo.png",
+      "width": 1600,
+      "height": 1259,
+      "mode": "RGBA",
+      "sha256": "5b0a91ef1681e4a7fd5f507789282c1d203816fd6b97a139411248120e2cb2e7"
+    },
+    {
+      "path": "flat/icon.png",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA",
+      "sha256": "6e3ac3f7295c0ad847fcc9789bd278fe3782624e499193f2790d6a2d69091821"
+    },
+    {
+      "path": "steamvr/cover.png",
+      "width": 600,
+      "height": 900,
+      "mode": "RGB",
+      "sha256": "4d7690b9ac44c5d22c516627dd277a905a93fcd2dc382edc943265b3de569d72"
+    },
+    {
+      "path": "steamvr/wide-cover.png",
+      "width": 920,
+      "height": 430,
+      "mode": "RGB",
+      "sha256": "051dc868e1ff2e19b593fca213ac81bb2709616a2aa1537af8cba44ea40bba5d"
+    },
+    {
+      "path": "steamvr/background.png",
+      "width": 1920,
+      "height": 620,
+      "mode": "RGB",
+      "sha256": "e2b673e767891b0e5b9254ef671f2f4b765582b4e4ac38b552d5a4a8a2f9b7ad"
+    },
+    {
+      "path": "steamvr/logo.png",
+      "width": 1600,
+      "height": 1259,
+      "mode": "RGBA",
+      "sha256": "3a11c7624a8a10d8bcb56bb271f5663dd65007a9e53a47b4f5935d38f1c6df99"
+    },
+    {
+      "path": "steamvr/icon.png",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA",
+      "sha256": "1b78a27525ce01bcb0ddf4b70b04996c43a30f5882f00024ef8c79e153387dcd"
+    },
+    {
+      "path": "wivrn/cover.png",
+      "width": 600,
+      "height": 900,
+      "mode": "RGB",
+      "sha256": "99c4fd480f2fd7ccea98096d2c2f92c36aab6bf932661d939633c945d9a1f52c"
+    },
+    {
+      "path": "wivrn/wide-cover.png",
+      "width": 920,
+      "height": 430,
+      "mode": "RGB",
+      "sha256": "ce7cb13e1d76af404b999fb28609932fc101906e4987535424d587fae68cfa3d"
+    },
+    {
+      "path": "wivrn/background.png",
+      "width": 1920,
+      "height": 620,
+      "mode": "RGB",
+      "sha256": "d7d5bb30f323532da5093325ea55c4ca613bf6991572823b7c3197076d6a7716"
+    },
+    {
+      "path": "wivrn/logo.png",
+      "width": 1600,
+      "height": 1259,
+      "mode": "RGBA",
+      "sha256": "cdc010dae0aac40819b58906ecdef09ab04dd45c199d00b659f34676ed2dbdd8"
+    },
+    {
+      "path": "wivrn/icon.png",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA",
+      "sha256": "8e71d2dc75129dd252d4bee51577d313e4a659840a732f03beae45c52948d306"
+    },
+    {
+      "path": "virtual-desktop/cover.png",
+      "width": 600,
+      "height": 900,
+      "mode": "RGB",
+      "sha256": "f695b83fad16448071e64a11a69e8fa6f904eebabc383ef9274d751d2e25c3ed"
+    },
+    {
+      "path": "virtual-desktop/wide-cover.png",
+      "width": 920,
+      "height": 430,
+      "mode": "RGB",
+      "sha256": "c8385d64b2bf99173394336d4fc46903e46f5237bbfa0d9a226c6a6c4f460661"
+    },
+    {
+      "path": "virtual-desktop/background.png",
+      "width": 1920,
+      "height": 620,
+      "mode": "RGB",
+      "sha256": "09191ceb767999d52ae8c9de8a4c78541294a8f079831d4bbd6e08d2958e59c3"
+    },
+    {
+      "path": "virtual-desktop/logo.png",
+      "width": 1600,
+      "height": 1259,
+      "mode": "RGBA",
+      "sha256": "59a42af967a394587f201d866112bfcb560ff49f15cc882c54caae8623c7aee4"
+    },
+    {
+      "path": "virtual-desktop/icon.png",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA",
+      "sha256": "00e4224d5dbfce061c748ef35070f9d8647d0c25439d6f56a3b288b4d2e701a8"
+    }
+  ],
+  "sources": {
+    "Background.png": "73f48c6d88abdd9408885014df756a8d575d65eb7ac6fb1bb970dc81def33fae",
+    "Cover.png": "45d0a2cf0c9762e00df1be23b3a4829b040291bc9c77b366049837ede68fa13f",
+    "Icon.png": "a67bad5f4953935e4d2abba16a4a1e0504c2b1bd7e9ab03ef5d13d7825f132f8",
+    "Logo.png": "9a65c5acdabe4ced5ef4eca944fb921083b0ee5bc9870a62a517568139cb09a8",
+    "Wide Cover.png": "4070b5330f3017e5bc24d0c2d875d0b5b04fde9a9037bdfa5ee9593ab213434c"
+  }
+}

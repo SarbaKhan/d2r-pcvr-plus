@@ -20,6 +20,9 @@ def main():
     files += ['steamvr/vr_baseline.json', 'external/reshade/LICENSE.md', 'third_party/minhook/LICENSE.txt']
     for folder, pattern in [('steamvr/licenses', '*.txt'), ('reshade/sky', '*.png')]:
         files += [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / folder).glob(pattern))]
+    files += ['artwork/manifest.json', 'artwork/README.md']
+    files += ['artwork/' + mode + '/' + kind + '.png' for mode in ('flat', 'steamvr', 'wivrn', 'virtual-desktop')
+              for kind in ('icon', 'cover', 'wide-cover', 'background', 'logo')]
     payload = {name: (ROOT / name).read_bytes() for name in files}
     for name in ('d2rl-vrcam.dll', 'openxr-probe.exe'):
         payload['bin/' + name] = (ROOT / 'build-frame/windows-native' / name).read_bytes()

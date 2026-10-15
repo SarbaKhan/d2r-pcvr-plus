@@ -3,7 +3,7 @@
   #error PayloadDir must point to a verified native Windows package with its private Python runtime.
 #endif
 #ifndef ModVersion
-  #define ModVersion "0.1.1"
+  #define ModVersion "0.1.2"
 #endif
 #ifndef InstallerOutput
   #define InstallerOutput "Output"
@@ -50,11 +50,12 @@ Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new sho
 
 [Code]
 var
-  EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage: TInputOptionWizardPage;
+  EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage, KeyboardPage, TextPage, AudioPage: TInputOptionWizardPage;
   PathsPage, RuntimePage, BackupPage: TInputDirWizardPage;
   ProfileIDs: TStringList;
-  PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition, BackupGame: String;
+  PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition, BackupGame, PreferencesGame: String;
   SetupFailed, BackendBusy: Boolean;
+  LocaleCodes: TArrayOfString;
 
 function Q(const Value: String): String;
 begin
@@ -145,12 +146,37 @@ begin
   end;
 end;
 
+procedure FillLanguages(Page: TInputOptionWizardPage);
+begin
+  Page.Add('Default (game language)');
+  Page.Add('English'); Page.Add('German'); Page.Add('Spanish (Spain)');
+  Page.Add('French'); Page.Add('Italian'); Page.Add('Korean'); Page.Add('Polish');
+  Page.Add('Russian'); Page.Add('Chinese (Simplified)'); Page.Add('Chinese (Traditional)');
+  Page.Add('Spanish (Latin America)'); Page.Add('Japanese'); Page.Add('Portuguese (Brazil)');
+  Page.SelectedValueIndex := 0;
+end;
+
+procedure LoadPreferences;
+var
+  I: Integer;
+begin
+  KeyboardPage.SelectedValueIndex := 0;
+  if GetIniString('detected', 'layout', 'WASD', ProbeFile) = 'ZQSD' then
+    KeyboardPage.SelectedValueIndex := 1;
+  TextPage.SelectedValueIndex := 0;
+  AudioPage.SelectedValueIndex := 0;
+  for I := 0 to GetArrayLength(LocaleCodes) - 1 do begin
+    if LocaleCodes[I] = GetIniString('detected', 'text_locale', '', ProbeFile) then TextPage.SelectedValueIndex := I;
+    if LocaleCodes[I] = GetIniString('detected', 'audio_locale', '', ProbeFile) then AudioPage.SelectedValueIndex := I;
+  end;
+end;
+
 procedure InitializeWizard;
 begin
   WizardForm.WelcomeLabel2.Caption :=
     'Play your own Diablo II: Resurrected in VR or on a flat screen.'#13#10#13#10 +
     'Supports SteamVR, Virtual Desktop and Flat Screen on Windows.'#13#10#13#10 +
-    'You must purchase and install the original game. No Blizzard game assets are included. Use an OFFLINE local character with this preview.'#13#10#13#10 +
+    'You must purchase and install the original game. No Blizzard game binaries or archives are included. Library artwork is credited separately. Use an OFFLINE local character with this preview.'#13#10#13#10 +
     'Launch the original game once and complete its account prompts before installing. Save and exit D2R, then fully exit Steam before clicking Install.';
   PayloadRoot := ExpandConstant('{tmp}\') + '{app}';
   ProbeFile := ExpandConstant('{tmp}\detected.ini');
@@ -189,7 +215,19 @@ begin
   RuntimePage.Add('SteamVR folder:');
   AccountPage := CreateInputOptionPage(RuntimePage.ID, 'Choose your Steam account',
     'Steam library shortcuts', 'Selected shortcuts will be added to this local account. Other games and shortcuts are kept.', True, True);
-  ModePage := CreateInputOptionPage(AccountPage.ID, 'Install or update',
+  LocaleCodes := ['', 'enUS', 'deDE', 'esES', 'frFR', 'itIT', 'koKR', 'plPL', 'ruRU', 'zhCN', 'zhTW', 'esMX', 'jaJP', 'ptBR'];
+  KeyboardPage := CreateInputOptionPage(AccountPage.ID, 'Choose your keyboard layout',
+    'Flat Screen movement', 'This changes Flat Screen movement only. VR controls are preserved.', True, False);
+  KeyboardPage.Add('QWERTY (WASD)');
+  KeyboardPage.Add('AZERTY (ZQSD)');
+  KeyboardPage.SelectedValueIndex := 0;
+  TextPage := CreateInputOptionPage(KeyboardPage.ID, 'Choose the text language',
+    'Game interface and subtitles', 'Default uses the game language configured in your launcher.', True, False);
+  FillLanguages(TextPage);
+  AudioPage := CreateInputOptionPage(TextPage.ID, 'Choose the audio language',
+    'Spoken dialogue', 'Text and audio can use different languages. Default keeps the game language.', True, False);
+  FillLanguages(AudioPage);
+  ModePage := CreateInputOptionPage(AudioPage.ID, 'Install or update',
     'Choose how to apply settings', 'Game files, settings and Steam configuration are backed up. Character progress is kept.', True, False);
   ModePage.Add('Update / repair and keep calibration and video settings');
   ModePage.Add('Full install with recommended settings (resets calibration)');
@@ -208,6 +246,8 @@ begin
   PathsPage.Values[2] := GetIniString('detected', 'saves', '', ProbeFile);
   RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
   PreviousEdition := 'steam';
+  PreferencesGame := PathsPage.Values[1];
+  LoadPreferences;
 end;
 
 function UsesSteamVR: Boolean;
@@ -252,6 +292,10 @@ begin
         MsgBox('Sign into Steam once on this PC so setup can find your Steam account, then retry.', mbError, MB_OK);
         Result := False;
       end;
+      if CompareText(PreferencesGame, PathsPage.Values[1]) <> 0 then begin
+        LoadPreferences;
+        PreferencesGame := PathsPage.Values[1];
+      end;
       if RuntimePage.Values[0] = '' then RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
       if FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then ModePage.SelectedValueIndex := 0
       else ModePage.SelectedValueIndex := 1;
@@ -278,18 +322,22 @@ end;
 
 procedure WriteChoices;
 var
-  Headsets, Connections, Modes, Lines: TArrayOfString;
+  Headsets, Connections, Modes, Layouts, Lines: TArrayOfString;
   Connection: String;
 begin
   Headsets := ['Steam Frame', 'Quest 3', 'Quest 2', 'Other SteamVR headset'];
   Connections := ['steamvr', 'vdxr', 'flat', 'steamvr,vdxr,flat'];
   Modes := ['repair', 'full', 'shortcuts'];
+  Layouts := ['WASD', 'ZQSD'];
   Connection := Connections[ConnectionPage.SelectedValueIndex];
   Lines := ['[setup]', 'store=' + PreviousEdition,
     'headset=' + Headsets[HeadsetPage.SelectedValueIndex], 'connections=' + Connection,
     'steam=' + PathsPage.Values[0], 'game=' + PathsPage.Values[1], 'saves=' + PathsPage.Values[2],
     'steamvr=' + RuntimePage.Values[0], 'profile=' + ProfileIDs[AccountPage.SelectedValueIndex],
-    'mode=' + Modes[ModePage.SelectedValueIndex], 'backups=' + BackupPage.Values[0]];
+    'mode=' + Modes[ModePage.SelectedValueIndex], 'backups=' + BackupPage.Values[0],
+    'layout=' + Layouts[KeyboardPage.SelectedValueIndex],
+    'text_locale=' + LocaleCodes[TextPage.SelectedValueIndex],
+    'audio_locale=' + LocaleCodes[AudioPage.SelectedValueIndex]];
   if not SaveStringsToUTF8File(ChoicesFile, Lines, False) then RaiseException('Could not save the setup choices.');
 end;
 
@@ -306,6 +354,9 @@ begin
   Result := 'Game: ' + EditionPage.CheckListBox.Items[EditionPage.SelectedValueIndex] + NewLine +
     'Headset: ' + HeadsetPage.CheckListBox.Items[HeadsetPage.SelectedValueIndex] + NewLine +
     'Connection: ' + Connection + NewLine +
+    'Keyboard: ' + KeyboardPage.CheckListBox.Items[KeyboardPage.SelectedValueIndex] + NewLine +
+    'Text language: ' + TextPage.CheckListBox.Items[TextPage.SelectedValueIndex] + NewLine +
+    'Audio language: ' + AudioPage.CheckListBox.Items[AudioPage.SelectedValueIndex] + NewLine +
     'Mode: ' + ModePage.CheckListBox.Items[ModePage.SelectedValueIndex] + NewLine + NewLine +
     'Game folder: ' + PathsPage.Values[1] + NewLine +
     'Saved Games: ' + PathsPage.Values[2] + NewLine +

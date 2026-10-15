@@ -1,6 +1,6 @@
-# D2R PCVR Plus — Setup 0.1.1
+# D2R PCVR Plus — Setup 0.1.2
 
-`D2R-PCVR-PLUS-Setup-0.1.1.exe` installe le mod complet sur une installation
+`D2R-PCVR-PLUS-Setup-0.1.2.exe` installe le mod complet sur une installation
 Windows x64 de Diablo II: Resurrected, sans installation PCVR préalable.
 Il contient le plugin Flat/VR, les profils, Python privé, le chargeur OpenXR
 et CascLib. Il télécharge automatiquement D2RLoader et ReShade depuis leurs
@@ -9,7 +9,7 @@ nécessaire pendant l'installation. Aucun Python ni compilateur à installer.
 Aucun fichier Blizzard n'est distribué ; les caches graphiques sont générés
 localement à partir du jeu acheté et installé.
 
-## Correctif 0.1.1 : lancement Flat depuis Steam
+## Correctif 0.1.2 : lancement Flat depuis Steam
 
 Le raccourci Flat utilise désormais le même relais par le bureau Windows que
 SteamVR, sans initialisation OpenXR. Le relais lance une seule instance, attend
@@ -102,3 +102,28 @@ apparition des trois entrées dans Steam, lancement de chacune et du jeu origina
 Flat sans runtime VR actif, commandes/fenêtres/PNJ du Quest 2 sous SteamVR et
 VDXR, réparation puis désinstallation. Les fixtures n'exécutent pas D2R et ne
 remplacent pas ces essais matériels. Les licences et crédits upstream sont conservés.
+
+## Version 0.1.2: preferences and library artwork
+
+The English wizard now offers QWERTY (WASD) or AZERTY (ZQSD) for Flat movement,
+and independent text/audio language choices. Both language lists include Default
+(game language), which writes an empty locale override. Existing preferences are
+read from the selected installation. Other loader settings and VR controls remain
+unchanged by these selections, including when updating or configuring shortcuts.
+
+The selected Steam shortcuts now use these names:
+
+- D2R PCVR Plus - Flat Screen
+- D2R PCVR Plus - SteamVR
+- D2R PCVR Plus - Virtual Desktop
+
+Each shortcut gets its matching icon, portrait/horizontal covers, hero and logo.
+Matching legacy shortcuts are renamed without duplicating them or changing their
+Steam IDs, history or tags. Steam and Battle.net editions remain independently
+tracked. Artwork and preference writes participate in setup's rollback handling.
+
+Before accepting this version, test an update from 0.1.1 and a clean installation,
+verify all three Steam shortcuts and visuals, test both keyboard layouts, choose
+different text/audio languages, then select Default again. Confirm unchanged VR
+controls and panel placement on the actual headset. Automated fixtures do not
+replace those checks.

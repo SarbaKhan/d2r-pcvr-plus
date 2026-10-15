@@ -14,6 +14,7 @@ jobs:
         run: |
           python3 -m unittest discover -s steamvr -p launch_linux_test.py
           python3 -m unittest discover -s steamvr -p setup_linux_test.py
+          python3 -m unittest discover -s steamvr -p plus_integration_test.py
           python3 -m unittest discover -s steamvr -p linux_tls_test.py
           python3 -m unittest discover -s steamvr -p session_test.py
           python3 -m unittest discover -s steamvr -p vr_baseline_test.py
@@ -65,7 +66,7 @@ jobs:
       - name: Test full installer and Steam shortcuts
         shell: powershell
         run: |
-          foreach ($suite in @('setup_native_test.py', 'setup_windows_test.py', 'install_test.py', 'uninstall_windows_test.py', 'plus_setup_test.py', 'battlenet_test.py')) {
+          foreach ($suite in @('setup_native_test.py', 'setup_windows_test.py', 'install_test.py', 'uninstall_windows_test.py', 'plus_setup_test.py', 'plus_integration_test.py', 'battlenet_test.py')) {
             & ./deps/python/python.exe -m unittest discover -s steamvr -p $suite
             if ($LASTEXITCODE -ne 0) { throw "Installer fixtures failed: $suite" }
           }
@@ -93,11 +94,11 @@ jobs:
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-PLUS-Setup-0.1.1
+          name: D2R-PCVR-PLUS-Setup-0.1.2
           path: |
-            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe
-            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe.sha256
-            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.1.exe.build.json
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.2.exe
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.2.exe.sha256
+            build-frame/installers/D2R-PCVR-PLUS-Setup-0.1.2.exe.build.json
             PCVR-PLUS-SETUP.md
           if-no-files-found: error
 
@@ -141,9 +142,9 @@ jobs:
         run: xvfb-run -a env QT_QPA_PLATFORM=xcb build-frame/linux-setup/dist/D2R-PCVR-Plus-Setup/D2R-PCVR-Plus-Setup --gui-smoke
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64
+          name: D2R-PCVR-PLUS-Setup-0.2.2-Linux-x86_64
           path: |
-            dist-plus/D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64.tar.gz
-            dist-plus/D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64.tar.gz.sha256
+            dist-plus/D2R-PCVR-PLUS-Setup-0.2.2-Linux-x86_64.tar.gz
+            dist-plus/D2R-PCVR-PLUS-Setup-0.2.2-Linux-x86_64.tar.gz.sha256
             LINUX-SETUP.md
           if-no-files-found: error

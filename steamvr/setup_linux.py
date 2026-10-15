@@ -19,12 +19,8 @@ from process_guard import require_game_closed
 APP = 'D2R-PCVR-Plus'
 NAMES = {'flat': 'D2R PCVR Plus - Flat Screen', 'steamvr': 'D2R PCVR Plus - SteamVR',
          'wivrn': 'D2R PCVR Plus - WiVRn'}
-LANGUAGES = {'': 'Default (game language)', 'enUS': 'English', 'deDE': 'German',
-             'esES': 'Spanish (Spain)', 'frFR': 'French', 'itIT': 'Italian',
-             'koKR': 'Korean', 'plPL': 'Polish', 'ruRU': 'Russian',
-             'zhCN': 'Chinese (Simplified)', 'zhTW': 'Chinese (Traditional)',
-             'esMX': 'Spanish (Latin America)', 'jaJP': 'Japanese', 'ptBR': 'Portuguese (Brazil)'}
-
+from plus_preferences import LANGUAGES, preferences, replace_value, preference_updates
+import plus_artwork
 
 def steam_profiles(steam):
     return sorted(p.parent.parent for p in (Path(steam) / 'userdata').glob('*/config/localconfig.vdf')
@@ -82,49 +78,6 @@ def current_options(profile):
                           'Steam', 'apps', vdf.APP_ID, 'LaunchOptions') or ''
 
 
-def preferences(game):
-    result = {'layout': 'WASD', 'text_locale': '', 'audio_locale': ''}
-    for rel, keys in [('d2rloader/plugins/d2r_pcvr_plus_flat.ini', ['flat_layout']),
-                      ('d2rloader/config/d2rloader.toml', ['text_locale', 'audio_locale'])]:
-        path = Path(game) / rel
-        if not path.is_file():
-            continue
-        for key in keys:
-            matches = re.findall(r'^\s*' + key + r'\s*=\s*([^\r\n;#]*)', path.read_text(), re.M)
-            if len(matches) == 1:
-                value = matches[0].strip().strip('\"\'')
-                if key == 'flat_layout' and value in ('WASD', 'ZQSD'):
-                    result['layout'] = value
-                elif key != 'flat_layout' and value in LANGUAGES:
-                    result[key] = value
-    return result
-
-
-def replace_value(text, key, value, section=None):
-    # Preserve comments, other settings and section placement; refuse ambiguity.
-    pattern = re.compile(r'^(\s*' + re.escape(key) + r'\s*=\s*)[^\r\n]*', re.M)
-    matches = list(pattern.finditer(text))
-    if len(matches) > 1:
-        raise ValueError('Duplicate configuration key: ' + key)
-    if matches:
-        return pattern.sub(lambda m: m[1] + value, text, count=1)
-    if section is None:
-        # TOML language keys belong at root, before any table.
-        return key + ' = ' + value + '\n' + text
-    header = re.search(r'^\[' + re.escape(section) + r'\]\s*$', text, re.M)
-    if header:
-        return text[:header.end()] + '\n' + key + '=' + value + text[header.end():]
-    return text.rstrip() + '\n\n[' + section + ']\n' + key + '=' + value + '\n'
-
-
-def preference_updates(game, choices, previous_loader=None):
-    flat = Path(game) / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini'
-    toml = Path(game) / 'd2rloader/config/d2rloader.toml'
-    content = previous_loader if previous_loader is not None else toml.read_text(encoding='utf-8-sig')
-    for key in ('text_locale', 'audio_locale'):
-        content = replace_value(content, key, json.dumps(choices[key]))
-    return {flat: replace_value(flat.read_text(encoding='utf-8-sig'), 'flat_layout', choices['layout'], 'input').encode(),
-            toml: content.encode()}
 
 
 def shortcuts(original, steam, game, modes):
@@ -140,7 +93,7 @@ def shortcuts(original, steam, game, modes):
         matches = [k for k, v in entries.items() if v.get('appname', v.get('AppName')) == name]
         if len(matches) > 1:
             raise ValueError('Remove duplicate Steam shortcuts named ' + name)
-        if matches and entries[matches[0]].get('icon') != str(Path(game) / 'D2R.exe'):
+        if matches and not plus_artwork.belongs(entries[matches[0]], game):
             raise ValueError('A shortcut with the same name belongs to another installation: ' + name)
         key = matches[0] if matches else str(max(map(int, entries), default=-1) + 1)
         exe = '"' + str(steam) + '"'
@@ -148,7 +101,7 @@ def shortcuts(original, steam, game, modes):
         item.pop('AppName', None)
         item.update({'appid': zlib.crc32((exe + name).encode()) | 0x80000000, 'appname': name,
                      'Exe': exe, 'StartDir': '"' + str(Path(steam).parent) + '"',
-                     'icon': str(Path(game) / 'D2R.exe'), 'ShortcutPath': '',
+                     'icon': str(Path(game) / 'D2R.exe'), 'D2RPCVRPlusGame': str(Path(game).resolve()), 'ShortcutPath': '',
                      'LaunchOptions': '-applaunch 2536520 --plus-' + mode,
                      'IsHidden': 0, 'AllowDesktopConfig': 0, 'AllowOverlay': 0,
                      'OpenVR': int(mode == 'steamvr'), 'Devkit': 0, 'DevkitGameID': '',
@@ -251,7 +204,7 @@ def install_choices(choices, source_bundle, payload, runner):
             for folder in ('installation-backups', 'configuration-backups', 'deps'):
                 if (destination / folder).is_dir():
                     shutil.copytree(destination / folder, stage / folder, dirs_exist_ok=True)
-        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.1', 'game': c['game']}))
+        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.2', 'game': c['game']}))
         if destination.exists():
             destination.rename(old)
         stage.rename(destination)
@@ -274,10 +227,14 @@ def install_choices(choices, source_bundle, payload, runner):
         updates[local] = vdf.set_launch_options(local.read_text(), options).encode()
         updates[shortcut_file] = shortcuts(shortcut_file.read_bytes() if shortcut_file.exists() else None,
                                            c['steam'], c['game'], c['modes'])
+        updates[shortcut_file], art_updates = plus_artwork.steam_updates(
+            updates[shortcut_file], profile, c['game'], c['modes'], installed_payload / 'artwork')
+        updates.update(art_updates)
+        updates.update(plus_artwork.desktop_updates(c['steam'], c['game'], c['modes'], installed_payload / 'artwork'))
         if current_options(profile) != c['reviewed_options']:
             raise ValueError('D2R launch options changed during installation. Run setup again.')
         commit_files(updates, destination / ('configuration-backups/' + uuid.uuid4().hex))
-        print('Setup complete. Start Steam and use the selected Plus shortcuts. The original D2R entry remains unmodded.', flush=True)
+        print('Setup complete. Start Steam and use the selected Plus shortcuts in Steam or the application menu. The original D2R entry remains unmodded.', flush=True)
         print('Characters and the existing Proton prefix remain in their original locations.', flush=True)
         if old.exists():
             print('Previous setup files retained at: ' + str(old), flush=True)

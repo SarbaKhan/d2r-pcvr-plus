@@ -107,7 +107,8 @@ class BattleNetTests(unittest.TestCase):
             self.assertEqual(entries['1'], originals['1'])
             self.assertEqual(len(entries), 4)
             for key in ('2', '3'):
-                self.assertIn('(Battle.net)', entries[key]['appname'])
+                self.assertEqual(entries[key]['appname'], steam.SHORTCUTS['steamvr' if key == '2' else 'vdxr'][0])
+                self.assertEqual(steam.entry_store(entries[key], ''), 'battlenet')
                 self.assertNotIn('-applaunch', entries[key]['LaunchOptions'])
                 self.assertIn('--battlenet-game=', entries[key]['LaunchOptions'])
             self.assertIn('--frame-openxr-runtime=', entries['2']['LaunchOptions'])

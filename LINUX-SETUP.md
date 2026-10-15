@@ -1,9 +1,9 @@
-# D2R PCVR Plus — Linux Qt Setup (0.2.1 preview)
+# D2R PCVR Plus — Linux Qt Setup (0.2.2 preview)
 
 An English-language setup wizard for the Steam edition of Diablo II: Resurrected.
 The portable archive includes Python, Qt and the Windows mod DLL. You do not need
-to install Python, Qt development tools or a compiler. No Blizzard files are
-included. Native Steam and a working Proton installation are required.
+to install Python, Qt development tools or a compiler. No Blizzard game binaries or archives are
+included. Promotional library artwork is credited in `artwork/README.md`. Native Steam and a working Proton installation are required.
 
 ## Supported scope
 
@@ -21,7 +21,7 @@ included. Native Steam and a working Proton installation are required.
 
 1. Install D2R through Steam, choose a working Proton version, launch it once,
    then exit. Keep the existing Proton prefix and Saved Games folder.
-2. Download the **D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64** Actions artifact.
+2. Download the **D2R-PCVR-PLUS-Setup-0.2.2-Linux-x86_64** Actions artifact.
    Extract the GitHub ZIP, then extract the `.tar.gz` inside it. Keep all files
    in the extracted folder together.
 3. Run `D2R-PCVR-Plus-Setup` from that folder (double-click it, or run
@@ -117,7 +117,7 @@ as a troubleshooting step for this setup.
 
 ## Troubleshooting and recovery
 
-Version 0.2.1 fixes HTTPS downloads from the frozen runtime on distributions such
+Version 0.2.2 fixes HTTPS downloads from the frozen runtime on distributions such
 as CachyOS/Arch: setup explicitly discovers the host CA bundle instead of relying
 on certificate paths compiled into the build machine's OpenSSL. Certificate and
 hostname verification remain mandatory, as do dependency SHA-256 checks.
@@ -182,3 +182,34 @@ for installation so the launcher never depends on a developer Python environment
 Qt/PySide and Python remain shared, replaceable components in `_internal`.
 See `THIRD_PARTY.md` and the packaged runtime notices for licenses, source links
 and rebuilding/replacement instructions.
+
+## Version 0.2.2: Steam artwork and application-menu entries
+
+Selected modes now receive their own icon, portrait cover, horizontal cover,
+hero background and transparent logo in the selected Steam account. Setup also
+creates application-menu entries in `$XDG_DATA_HOME/applications` (normally
+`~/.local/share/applications`), with absolute icon paths. These entries work
+with KDE and other desktops that implement the Desktop Entry Specification.
+
+The WiVRn entry includes `Categories=Game;X-WiVRn-VR;`, allowing it to appear in
+the headset launcher. It does not request SteamVR. If WiVRn has already cached
+its application list, restart WiVRn and reconnect the headset. The previously
+documented manual WiVRn entry is adopted on update.
+
+Menu entries use the same tested Steam routing as the library shortcuts. The
+wrapper continues to enable native Wayland only for Flat on a Wayland desktop;
+SteamVR and WiVRn continue to disable that Proton option. Rerunning setup updates
+selected entries without duplicating them or deleting unselected entries.
+Preferences, Steam artwork and desktop-entry edits are included in the existing
+configuration transaction and its rollback snapshots. Character saves are not
+backed up or relocated.
+
+### Acceptance checks for this update
+
+- Update an existing 0.2.1 installation with Steam closed; verify all selected
+  modes have their five matching visuals and no duplicate library entries.
+- Find Flat, SteamVR and WiVRn in KDE's application menu and launch each selected
+  mode. Confirm WiVRn is also listed in its headset launcher with the green icon.
+- Repeat setup, including an installation folder containing spaces or accents.
+- Confirm Flat mouse look on Wayland and the previously validated VR controls,
+  panel placement and NPC dialogue menus. These still require the real machine.

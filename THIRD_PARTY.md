@@ -151,3 +151,11 @@ packaging. Source: https://github.com/pyinstaller/pyinstaller/tree/v6.16.0 .
 The setup does not bundle Steam, Proton, WiVRn, SteamVR or Blizzard game assets.
 D2RLoader/ReShade/shader compiler downloads retain the existing verified URLs,
 hash checks and redistribution rules documented above.
+
+## Launcher artwork
+
+`artwork/` contains project-owner-supplied Diablo II: Resurrected promotional
+artwork with PCVR Plus badges, approved for integration by the project owner.
+The underlying illustrations and Diablo marks remain copyright Blizzard
+Entertainment; the repository's MIT license does not grant rights to that
+underlying artwork. See `artwork/README.md` for provenance and scope.

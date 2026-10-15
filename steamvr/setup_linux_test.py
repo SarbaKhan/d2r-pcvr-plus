@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import shutil
 import unittest
 from unittest.mock import patch
 
@@ -13,7 +14,10 @@ class SetupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='Plus setup é spaces ')
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
+        self.environment = patch.dict(os.environ, {'XDG_DATA_HOME': str(self.root / 'desktop-data')})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
         self.steam = self.root / 'Steam data'
         self.profile = self.steam / 'userdata/123'
         (self.profile / 'config').mkdir(parents=True)
@@ -109,6 +113,7 @@ class SetupTests(unittest.TestCase):
         bundle = self.root / 'download'
         payload = bundle / '_internal/payload'
         payload.mkdir(parents=True)
+        shutil.copytree(Path(__file__).resolve().parent.parent / 'artwork', payload / 'artwork')
         executable = bundle / 'D2R-PCVR-Plus-Setup'
         executable.write_text('fixture')
         executable.chmod(0o755)

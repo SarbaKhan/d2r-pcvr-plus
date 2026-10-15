@@ -57,6 +57,8 @@ def main():
         import install
         import setup_linux
         import launch_linux
+        import plus_artwork
+        assert len(plus_artwork.assets(root / 'artwork', list(setup_linux.NAMES))) == 3
         assert len(setup_linux.LANGUAGES) == 14
         assert (root / 'bin/d2rl-vrcam.dll').is_file()
         assert (root / 'd2r_pcvr_plus_flat.ini').is_file()

@@ -14,6 +14,8 @@ import sys
 import install
 import setup_windows as setup
 import steam_config
+import plus_artwork
+import plus_preferences
 import uninstall_windows as uninstall
 from game_install import storage_config, validate_game
 
@@ -101,7 +103,7 @@ def launch_helper_roots(game, accounts, steam_game):
             for entry in entries.values():
                 if not isinstance(entry, dict) or not isinstance(entry.get('icon'), str):
                     continue
-                if Path(entry['icon']).resolve() != (game / 'D2R.exe').resolve():
+                if not plus_artwork.belongs(entry, game):
                     continue
                 parts = command_arguments(entry.get('LaunchOptions'))
                 games = [part.split('=', 1)[1] for part in parts
@@ -198,6 +200,7 @@ def write_probe(path, root, steam=None, game=None, managed_root=None, source_roo
         'profiles': str(len(accounts)),
         'backup_required': '0', 'backup_message': '', 'backup_folder': '',
     }
+    values.update(plus_preferences.preferences(game or steam_game) if (game or steam_game) else {'layout': 'WASD', 'text_locale': '', 'audio_locale': ''})
     if game is not None:
         required, message, folder = probe_backups(game.resolve(), Path(managed_root or root),
             accounts, steam_game, source_root, backup_hint)
@@ -215,6 +218,10 @@ def write_probe(path, root, steam=None, game=None, managed_root=None, source_roo
 
 def validate_choices(values, root, managed_root=None):
     manifest = setup.verify_release(root)
+    prefs = plus_preferences.preferences(Path(values.get('game') or '.'))
+    prefs.update({key: values[key] for key in prefs if key in values})
+    if prefs['layout'] not in ('WASD', 'ZQSD') or any(prefs[key] not in plus_preferences.LANGUAGES for key in ('text_locale', 'audio_locale')):
+        raise ValueError('Invalid keyboard or language selection.')
     store, headset = values.get('store'), values.get('headset')
     if store not in ('steam', 'battlenet') or headset not in HEADSETS:
         raise ValueError('Choose a supported game edition and headset.')
@@ -269,7 +276,7 @@ def validate_choices(values, root, managed_root=None):
     check_backups(game, target, legacy)
     managed_state(target)
     return dict(manifest=manifest, store=store, version=version, headset=headset, connections=connections,
-                steam=steam, game=game, profile=profile, saves=saves, runtime=runtime, mode=mode)
+                steam=steam, game=game, profile=profile, saves=saves, runtime=runtime, mode=mode, preferences=prefs)
 
 
 def check_backups(game, root, legacy=None):
@@ -353,7 +360,8 @@ def install_selected(values, root):
     before = set(backups.glob('*/manifest.json'))
     atomic_json(root / STATE, state)
     committed_steam = {}
-    def steam_committed():
+    def steam_committed(changes=None):
+        originals.update(changes or {})
         for path in originals:
             if path != game / install.RECORD:
                 committed_steam[path] = path.read_bytes() if path.is_file() else None

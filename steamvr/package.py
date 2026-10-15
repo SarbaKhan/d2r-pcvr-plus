@@ -37,7 +37,8 @@ def main():
              'steamvr/launch_plus.py', 'steamvr/process_guard.py', 'steamvr/vr_baseline.json',
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
-             'steamvr/setup_windows.py', 'steamvr/steam_config.py',
+             'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/plus_artwork.py', 'steamvr/plus_preferences.py',
+             'artwork/manifest.json', 'artwork/README.md',
              'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
              'external/reshade/LICENSE.md', 'steamvr/install.py',
@@ -49,6 +50,8 @@ def main():
     paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
               'steamvr/game_install.py', 'steamvr/casc_assets.py']
     paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
+    paths += ['artwork/' + mode + '/' + kind + '.png' for mode in ('flat', 'steamvr', 'wivrn', 'virtual-desktop')
+              for kind in ('icon', 'cover', 'wide-cover', 'background', 'logo')]
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
