@@ -1,4 +1,5 @@
 #include "perspective_rig.h"
+#include "diorama_mr.h"
 #include "mouse_cursor.h"
 #include "../cleanroom/camera/mat4.h"
 #include <cassert>
@@ -9,6 +10,13 @@ void Same(math::Vec a,math::Vec b){Near(a.x,b.x);Near(a.y,b.y);Near(a.z,b.z);}
 math::Vec Camera(const float* m){return {-m[12]*m[0]-m[13]*m[1]-m[14]*m[2],-m[12]*m[4]-m[13]*m[5]-m[14]*m[6],-m[12]*m[8]-m[13]*m[9]-m[14]*m[10]};}
 int main(){
     using namespace perspective;
+    assert(dioramamr::Enabled(3,true,true,true,true,false));
+    for(int mode:{1,2,4})assert(!dioramamr::Enabled(mode,true,true,true,true,false));
+    assert(!dioramamr::Enabled(3,false,true,true,true,false));
+    assert(!dioramamr::Enabled(3,true,false,true,true,false));
+    assert(!dioramamr::Enabled(3,true,true,false,true,false));
+    assert(!dioramamr::Enabled(3,true,true,true,false,false));
+    assert(!dioramamr::Enabled(3,true,true,true,true,true));
     // Opaque white must stay white, not disappear as it would with color-keying.
     uint8_t pixel[4];const uint8_t white[]={255,255,255,0},black[]={0,0,0,0};
     mousecursor::Pixel(white,white,pixel);assert(pixel[0]==255&&pixel[1]==255&&pixel[2]==255&&pixel[3]==255);

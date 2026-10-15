@@ -1,4 +1,4 @@
-name: Diorama stage 2 - horizontal tabletop prototype
+name: Diorama - optional mixed reality prototype
 on:
   push:
     branches: [feature/diorama-vr]
@@ -46,7 +46,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
           & ./deps/python/python.exe -m unittest discover -s steamvr -p native_perspectives_test.py
           if ($LASTEXITCODE -ne 0) { throw 'First-person source regression' }
-      - name: Stage DLL-only test artifact
+      - name: Stage DLL and shader test artifact
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force dist-perspectives | Out-Null
@@ -58,6 +58,6 @@ jobs:
           "Source commit: $env:GITHUB_SHA" | Set-Content -Encoding ascii dist-perspectives/BUILD.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-Plus-Diorama-Prototype
+          name: D2R-PCVR-Plus-Diorama-MR-Prototype
           path: dist-perspectives/*
           if-no-files-found: error

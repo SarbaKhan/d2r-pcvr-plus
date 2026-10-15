@@ -830,6 +830,7 @@ void LoadSettings() {
     if (g_flatSession) LoadFlatBindings();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(!g_flatSession)LoadFlatBindings();
+    framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
     g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.2124f),.3f,3.f));
     g_dioramaRadius.store(std::clamp(IniF(L"diorama",L"radius_units",24.f),8.f,60.f));
     g_dioramaDistance.store(std::clamp(IniF(L"diorama",L"distance_m",.65f),.3f,2.f));
@@ -7309,6 +7310,7 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     const bool dioramaReady=g_tech[0].handle&&g_tech[1].handle&&rt->get_effects_state()&&
         rt->find_uniform_variable("D2R_DepthFog.fx", "DioramaOn").handle;
     g_dioramaShaderReady.store(dioramaReady);
+    framevr::DioramaShaderReady(dioramaReady&&rt->find_uniform_variable("D2R_DepthFog.fx", "DioramaMR").handle);
     if(NativeDiorama()&&!dioramaReady)g_nativeRequested.store(4);
 #endif
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
@@ -7531,6 +7533,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
     SetBool(rt, "DioramaOn", NativeDiorama() && TableKeyWanted());
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     SetFloat(rt, "DioramaRadius", g_dioramaRadius.load());
+    SetBool(rt, "DioramaMR", NativeDiorama() && TableKeyWanted() && framevr::DioramaPassthroughActive());
 #endif
     SetFloat(rt, "TableFloor", g_set.tableFloor.load());
     if (TableKeyWanted()) {   // the bounds: this eye's ray, and the game's own view to test the ground against
