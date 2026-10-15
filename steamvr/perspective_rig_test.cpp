@@ -1,4 +1,5 @@
 #include "perspective_rig.h"
+#include "mouse_cursor.h"
 #include "../cleanroom/camera/mat4.h"
 #include <cassert>
 #include <limits>
@@ -8,6 +9,20 @@ void Same(math::Vec a,math::Vec b){Near(a.x,b.x);Near(a.y,b.y);Near(a.z,b.z);}
 math::Vec Camera(const float* m){return {-m[12]*m[0]-m[13]*m[1]-m[14]*m[2],-m[12]*m[4]-m[13]*m[5]-m[14]*m[6],-m[12]*m[8]-m[13]*m[9]-m[14]*m[10]};}
 int main(){
     using namespace perspective;
+    // Opaque white must stay white, not disappear as it would with color-keying.
+    uint8_t pixel[4];const uint8_t white[]={255,255,255,0},black[]={0,0,0,0};
+    mousecursor::Pixel(white,white,pixel);assert(pixel[0]==255&&pixel[1]==255&&pixel[2]==255&&pixel[3]==255);
+    mousecursor::Pixel(black,white,pixel);assert(pixel[3]==0);
+    mousecursor::Pixel(black,black,pixel);assert(pixel[3]==255&&pixel[0]==0);
+    const uint8_t dark[]={10,20,30,0},light[]={137,147,157,0};
+    mousecursor::Pixel(dark,light,pixel);assert(pixel[3]==128&&pixel[0]==60&&pixel[1]==40&&pixel[2]==20);
+    // At any scale/orientation the hotspot must remain at the click, even on
+    // non-square art with an off-center fingertip.
+    for(float scale:{.001f,.02f})for(float yaw:{-.5f,1.f}) {
+        const auto q=math::Yaw(yaw);const math::Vec hit{1,2,-3};
+        const auto center=hit+math::Rotate(q,mousecursor::CenterOffset(96,80,7,3,scale));
+        const auto tip=center+math::Rotate(q,{(7-48)*scale,(40-3)*scale,0});Same(tip,hit);
+    }
     assert(KeyMode(1)==1&&KeyMode(2)==2&&KeyMode(3)==4&&KeyMode(4)==0);
     assert(Supported(4)&&!External(4)&&!Supported(3));
     assert(Next(4)==1&&Next(1)==2&&Next(2)==4);

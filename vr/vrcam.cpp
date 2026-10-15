@@ -4240,6 +4240,9 @@ HCURSOR Crosshair() {
 }
 
 HCURSOR WINAPI HookSetCursor(HCURSOR c) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal()&&c&&c!=Crosshair())framevr::ObserveMouseCursor(c);
+#endif
     if (c && CrosshairNow())
         if (HCURSOR x = Crosshair()) c = x;
     return OrigSetCursor(c);

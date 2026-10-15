@@ -81,13 +81,13 @@ and the first-person eye/projection/bow math against the validated main revision
 
 ## Native mouse pointer regression (F1/F2)
 
-The experimental DLL now draws a white mouse arrow in OpenXR. F1 uses a neutral
+The experimental DLL now draws the game mouse cursor in OpenXR. F1 uses a neutral
 orbit camera for mouse picking: head rotation/translation changes the view, not
 the mouse ray. F1 shows the pointer during gameplay and on menu panels. F2 shows
 it on menu panels/dialogues, hiding it during mouse-look gameplay. F3 does not
 add a mouse pointer; the existing tracked-controller laser remains unchanged.
 
-In F1 gameplay the arrow marks the mouse ray at the player's ground height.
+In F1 gameplay the cursor marks the mouse ray at the player's ground height.
 It is a compositor overlay, not a terrain decal. Stairs, slopes and elevated
 objects can therefore show a depth offset; the game retains its own terrain and
 object hit tests. No additional scene raycast or GPU readback is introduced.
@@ -104,3 +104,21 @@ Headset checks required (SteamVR, VDXR and WiVRn):
 - F3: verify no new mouse arrow, and original controller laser/actions still work.
 - Repeat F1/F2/F3 transitions, recenter, alt-tab and area transitions. Check that
   no stale pointer remains during loading or after returning to immersive VR.
+
+### Original game cursor
+
+The cursor is read from the game's live Windows cursor handle (also through
+Wine/Proton), including its alpha/mask and native hotspot. The fingertip stays
+on the pick point; the image center is offset accordingly. No Blizzard cursor
+asset is bundled, exported or saved to disk. The previous white arrow remains
+as a fallback if capturing the game cursor is unavailable.
+
+Capture/upload happens on cursor handle changes, with failed attempts limited
+to four per second. F3 performs no mouse capture. Same-handle animated cursor
+frames are not advanced by this prototype; frame zero is displayed.
+
+Check the metal gauntlet, transparent edges and fingertip alignment in F1 and
+F2 menus on both Windows and Proton. Verify cursor changes while interacting
+with inventory items. CPU tests cover alpha recovery (including opaque white)
+and off-center hotspots at multiple scales/orientations; actual game cursor
+capture still requires headset testing.
