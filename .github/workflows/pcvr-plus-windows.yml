@@ -125,7 +125,7 @@ jobs:
           cache: pip
           cache-dependency-path: installer/linux-requirements.txt
       - name: Install Qt host libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 xvfb xauth
       - name: Install pinned bundle tools
         run: python -m pip install -r installer/linux-requirements.txt
       - uses: actions/download-artifact@v4
@@ -134,6 +134,8 @@ jobs:
           path: dist-plus
       - name: Build and smoke-test standalone Qt setup
         run: python installer/build_linux_setup.py --kit dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
+      - name: Test packaged GUI through X11
+        run: xvfb-run -a env QT_QPA_PLATFORM=xcb build-frame/linux-setup/dist/D2R-PCVR-Plus-Setup/D2R-PCVR-Plus-Setup --gui-smoke
       - uses: actions/upload-artifact@v4
         with:
           name: D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64
