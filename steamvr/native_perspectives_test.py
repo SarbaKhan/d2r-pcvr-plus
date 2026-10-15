@@ -1,7 +1,8 @@
 """Experimental branch regression checks; not hardware/performance certification.
 
 The release manifest stays unchanged until a deliberate hardware-validated release.
-Only the six listed implementation adapters are permitted to differ from it here.
+Only the listed implementation adapters are permitted to differ from it here.
+The panel_input adapter adds a read-only native UI-mode observer for gamepads.
 """
 import hashlib
 import json
@@ -9,7 +10,7 @@ from pathlib import Path
 import unittest
 ROOT=Path(__file__).resolve().parent.parent
 ADAPTERS={'cleanroom/camera/d2rcam.cpp','cleanroom/camera/d2rcam.h',
-          'steamvr/transport.cpp','steamvr/transport.h','vr/dlss_mv.cpp','vr/dlss_mv.h'}
+          'vr/panel_input.cpp','vr/panel_input.h','steamvr/transport.cpp','steamvr/transport.h','vr/dlss_mv.cpp','vr/dlss_mv.h'}
 BLOCKS=[('steamvr/transport.cpp', 'bool View(float out[16],const float hero[3]', 'void Shutdown()', '95f62721f7751be019d4f2d5d157679eff76b8642bbd56778a067d4e890b0db6'), ('vr/vrcam.cpp', '    const bool nativeFirst =', '    const float hangA[3]', 'f087d80214b748cbdf4e9c78f3336b2ea7bc0d6bcfb0ee88c90c03fc55eb5d85')]
 class NativePerspectiveRegression(unittest.TestCase):
     def test_unmodified_runtime_dependencies(self):

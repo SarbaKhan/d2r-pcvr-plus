@@ -41,6 +41,7 @@ target_link_libraries(d2rl-vrcam PRIVATE d2rcam minhook user32 gdi32 framevr-run
 set_target_properties(d2rl-vrcam PROPERTIES PREFIX "")
 add_executable(perspective-rig-test perspective_rig_test.cpp)
 add_executable(flat-controls-test flat_controls_test.cpp)
+add_executable(classic-gamepad-test classic_gamepad_test.cpp)
 add_executable(memory-test memory_test.cpp)
 add_executable(memory-benchmark memory_benchmark.cpp)
 target_link_libraries(memory-benchmark PRIVATE framevr-runtime)
@@ -121,7 +122,7 @@ target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
-foreach(test_target IN ITEMS perspective-rig-test flat-controls-test memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
+foreach(test_target IN ITEMS classic-gamepad-test perspective-rig-test flat-controls-test memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test

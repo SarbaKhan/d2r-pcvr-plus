@@ -23,6 +23,7 @@
 #endif
 #include <windows.h>
 #include "../steamvr/flat_controls.h"
+#include "../steamvr/classic_gamepad.h"
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
@@ -285,6 +286,8 @@ struct Settings {
     std::atomic<bool>  flatKeyMove{true};   // [input] flat_keyboard_move: flat W A S D walk through the game's own keyboard move (0x8A960), no pad
     std::atomic<bool>  vrKeyWalk{true};     // [input] vr_keys_walk: VR view F2 without mouse look - W A S D walk where the camera looks, the mouse stays the game's
     std::atomic<bool>  directWalk{true};    // [input] direct_walk: VR F2-F4, BodyWalk's stick walks the hero straight (StickGet / KeyMove hooks), not through the pad
+    std::atomic<bool> padEnabled{true}, padInvertY{false};
+    std::atomic<float> padDeadzone{.2f}, padYawSpeed{120.f}, padPitchSpeed{90.f};
     std::atomic<bool>  flatNoPad{true};     // [input] flat_no_pad: with it, flat mode shows the game no pad at all (its UI never turns to A/B/X/Y)
     std::atomic<bool>  flatCrosshair{true};  // [input] flat_crosshair: flat mouse look, the pointer is our crosshair, not the game's gauntlet
     std::atomic<bool>  flatClickShoot{true}; // [input] flat_click_shoot: flat mouse look, a click with no target under the crosshair = a shot there, never a walk
@@ -1178,7 +1181,12 @@ void LoadSettings() {
     g_set.flatKeyMove.store(IniB(L"input", L"flat_keyboard_move", true));
     g_set.vrKeyWalk.store(IniB(L"input", L"vr_keys_walk", true));
     g_set.directWalk.store(IniB(L"input", L"direct_walk", true));
-    g_set.flatNoPad.store(IniB(L"input", L"flat_no_pad", true));
+    g_set.flatNoPad.store(IniB(L"input", L"flat_no_pad", true)); // legacy profile; superseded by gamepad.enabled
+    g_set.padEnabled.store(IniB(L"gamepad", L"enabled", true));
+    g_set.padInvertY.store(IniB(L"gamepad", L"invert_y", false));
+    g_set.padDeadzone.store(std::clamp(IniF(L"gamepad", L"deadzone", .2f), .05f, .8f));
+    g_set.padYawSpeed.store(std::clamp(IniF(L"gamepad", L"yaw_speed", 120.f), 1.f, 720.f));
+    g_set.padPitchSpeed.store(std::clamp(IniF(L"gamepad", L"pitch_speed", 90.f), 1.f, 360.f));
     g_set.flatClickShoot.store(IniB(L"input", L"flat_click_shoot", true));
     g_set.flatCrosshair.store(IniB(L"input", L"flat_crosshair", true));
     g_set.inventoryPad.store(IniF(L"input", L"inventory_button", 0.0f) != 0.0f ? 1 : 0);
@@ -3341,6 +3349,55 @@ bool ViewStickToGame(float* px, float* py) {
     return true;
 }
 
+bool ChatOpen();
+SRWLOCK g_classicPadLock=SRWLOCK_INIT;
+pcvrplus::gamepad::Camera g_classicPad;
+bool ClassicPadMode(){return g_flatSession||NativeExternal();}
+bool ClassicPadCamera(){return g_set.padEnabled.load()&&pcvrplus::gamepad::CameraView(g_flatSession,NativeExternal(),ViewNow());}
+int ClassicPadContext(){return (g_flatSession?100:200)+ViewNow();}
+bool ClassicPadAllowed(){
+    return ClassicPadCamera()&&g_enabled.load()&&g_inWorld.load()&&GameFocused()&&!gamestate::MenuOpen()&&!ChatOpen()
+#ifdef D2RVR_NATIVE_OPENXR
+        &&!framevr::SettingsOpen()
+#endif
+        ;
+}
+void ResetClassicPad(){
+    AcquireSRWLockExclusive(&g_classicPadLock);g_classicPad.Reset();ReleaseSRWLockExclusive(&g_classicPadLock);
+}
+void PollClassicPad(DWORD idx,DWORD result,const XINPUT_STATE* state){
+    const bool allowed=ClassicPadAllowed();
+    const auto p=(result==ERROR_SUCCESS&&state)?state->Gamepad:XINPUT_GAMEPAD{};
+    const float x=p.sThumbRX/32767.f,y=p.sThumbRY/32767.f;
+    const bool active=p.wButtons||p.bLeftTrigger>30||p.bRightTrigger>30||
+        std::abs(int(p.sThumbLX))>8000||std::abs(int(p.sThumbLY))>8000||
+        std::fabs(x)>g_set.padDeadzone.load()||std::fabs(y)>g_set.padDeadzone.load();
+    AcquireSRWLockExclusive(&g_classicPadLock);
+    if(!allowed)g_classicPad.Reset();
+    else g_classicPad.Poll(int(idx),result==ERROR_SUCCESS&&state,x,y,active,ClassicPadContext(),gamestate::MenuEpoch(),GetTickCount64());
+    ReleaseSRWLockExclusive(&g_classicPadLock);
+}
+// Runs on the same timer as MouseTick, writes the same yaw/pitch accumulators.
+// The existing stereo pair latch snapshots both together for the rendered pair.
+void ClassicPadTick(){
+    static double last=NowSeconds();const double now=NowSeconds();const float dt=float(now-last);last=now;
+    const bool allowed=ClassicPadAllowed();
+    AcquireSRWLockExclusive(&g_classicPadLock);
+    const auto delta=g_classicPad.Step(allowed,ClassicPadContext(),gamestate::MenuEpoch(),GetTickCount64(),dt,
+        g_set.padDeadzone.load(),g_set.padYawSpeed.load(),g_set.padPitchSpeed.load(),g_set.padInvertY.load());
+    ReleaseSRWLockExclusive(&g_classicPadLock);
+    if(delta.yaw||delta.pitch){
+        g_mouseYaw.store(WrapDeg(g_mouseYaw.load()+delta.yaw));
+        g_mousePitch.store(std::clamp(g_mousePitch.load()+delta.pitch,-90.f,90.f));g_gen.fetch_add(1);
+    }
+}
+bool ClassicControllerUI(){
+#ifdef D2RVR_NATIVE_OPENXR
+    return ClassicPadMode()&&panelinput::NativeControllerActive();
+#else
+    return false;
+#endif
+}
 bool DirectWalkNow();
 bool StickHookIn();
 void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
@@ -3362,16 +3419,13 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
     // moves its cursor on the screen, so turning it by the camera's yaw sent the
     // cursor the wrong way, and the right stick is the menu's too.
     if (gamestate::MenuOpen()) { if (own) g_rightX.store(0.0f); return; }
-    if(NativeExternal()) {
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-        g_nativePadAt.store(GetTickCount64());
-#endif
-        if(ViewNow()==2) {
-            g_rightX.store(std::fabs(in.sThumbRX/32767.f)>.2f?in.sThumbRX/32767.f:0.f);
-            s->Gamepad.sThumbRX=0;s->Gamepad.sThumbRY=0;
-            float x=in.sThumbLX/32767.f,y=in.sThumbLY/32767.f;
-            if(ViewStickToGame(&x,&y)){s->Gamepad.sThumbLX=SHORT(std::clamp(x*32767,-32768.f,32767.f));s->Gamepad.sThumbLY=SHORT(std::clamp(y*32767,-32768.f,32767.f));}
-        }
+    if(ClassicPadMode()) {
+        // F1 is completely native. In camera views only the two right axes
+        // and camera-relative left vector change; every button/trigger is intact.
+        if(!ClassicPadAllowed())return;
+        s->Gamepad.sThumbRX=0;s->Gamepad.sThumbRY=0;
+        float x=in.sThumbLX/32767.f,y=in.sThumbLY/32767.f;
+        if(ViewStickToGame(&x,&y)){s->Gamepad.sThumbLX=SHORT(std::clamp(x*32767,-32768.f,32767.f));s->Gamepad.sThumbLY=SHORT(std::clamp(y*32767,-32768.f,32767.f));}
         return;
     }
     AimByMouse(s);
@@ -3624,7 +3678,7 @@ std::atomic<uint32_t> g_keyMoveCalls{0};     // how often the game asked: still 
 // Flat play through the keyboard move: on while the hook is in or may still go in.
 bool FlatKeyMode() { return g_flatSession; }
 // ... and the game sees no pad at all.
-bool FlatNoPad() { return FlatKeyMode() && g_set.flatNoPad.load(); }
+bool FlatNoPad() { return FlatKeyMode() && !g_set.padEnabled.load(); }
 // VR third person (F2) played with the mouse and keyboard ([input] vr_keys_walk):
 // W A S D walk through the same keyboard move, ahead = where our camera looks.
 // With mouse look (F2 starts with it, F9 frees the pointer) it is flat's F2:
@@ -3899,7 +3953,7 @@ void FlatPadTick() {
     static int told = -1;
     const int now = FlatNoPad() ? 1 : 0;
     if (now != told) {
-        if (now == 1) Log("vrcam: flat: no pad for the game (W A S D and the mouse; [input] flat_no_pad=0 lets a real pad through)");
+        if (now == 1) Log("vrcam: flat: no pad for the game (W A S D and the mouse; [gamepad] enabled=1 lets a real pad through)");
         else if (told == 1) Log("vrcam: flat: the game sees its pads again");
         told = now;
     }
@@ -3962,7 +4016,8 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     ++t_xDepth;
     DWORD r = g_xhooks[I].orig(idx, s);
     --t_xDepth;
-    // Flat with a real pad let through (flat_no_pad=0): that pad only, its stick
+    if(t_xDepth==0&&ClassicPadMode())PollClassicPad(idx,r,s);
+    // Flat with a real pad let through (gamepad.enabled=1): that pad only, its stick
     // turned by the camera below; BodyWalk's stick walks through the keyboard move.
     bool mirror = false;
     BWPadMirror report{};
@@ -3983,7 +4038,7 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
             return r;
         }
 #endif
-        if (idx == 0 && !NativeExternal()) ApplyActions(s);
+        if (idx == 0 && !ClassicPadMode()) ApplyActions(s);
         {   // which entry polls what, with BodyWalk's pad or without (2026-10-07): at most 30 lines a session
             static std::atomic<int> lines{0};
             static ULONGLONG told[std::size(g_xhooks)] = {};
@@ -4292,7 +4347,7 @@ LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     // ray (d2rcam's ScreenToRay). Every mouse message carries the middle, so
     // the pointer's travel between two MouseTicks never moves the game's point.
     // Raw mouse input (the game registers none) is dropped as before.
-    if (ShooterActive() && KeyMoveMode()) {
+    if (ShooterActive() && KeyMoveMode() && !ClassicControllerUI()) {
         if (msg == WM_SETCURSOR && LOWORD(l) == HTCLIENT && CrosshairNow() && OrigSetCursor)
             if (HCURSOR x = Crosshair()) { OrigSetCursor(x); return TRUE; }
         RECT rc{};
@@ -4308,7 +4363,7 @@ LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     }
     // The mouse is ours too (KeysAsStick): the pointer kept in the middle would
     // flip the game to mouse mode - its pointer drawn there, a click a walk to it.
-    if (ShooterActive()) {
+    if (ShooterActive() && !ClassicControllerUI()) {
         if (msg == WM_SETCURSOR && LOWORD(l) == HTCLIENT) { SetCursor(nullptr); return TRUE; }
         if ((msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || msg == WM_MOUSEHOVER || msg == WM_MOUSELEAVE) return 0;
         if (msg == WM_INPUT) {   // raw input: the mouse's dropped, the keyboard's passed on
@@ -4338,6 +4393,7 @@ bool g_dragging = false;
 POINT g_dragLast{};
 
 void MouseTick() {
+    if(ClassicControllerUI()){g_dragging=false;return;} // never synthesize mouse motion while the native pad UI owns input
     if (!g_enabled.load() || !GameFocused() || ((g_flatSession || NativeExternal()) && (gamestate::MenuOpen() || ChatOpen()))) { g_dragging = false; return; }
     const bool shooter=ShooterActive(),drag=(GetAsyncKeyState(VK_MBUTTON)&0x8000)!=0;
     if(!shooter&&!drag){g_dragging=false;return;}
@@ -5006,6 +5062,7 @@ void CommitNativePerspective() {
     if(old==4){immersiveYaw=g_mouseYaw.load();immersiveTurn=g_turnYaw.load();immersivePitch=g_mousePitch.load();}
     g_mouseYaw.store(mode==4?immersiveYaw:0);g_turnYaw.store(mode==4?immersiveTurn:0);g_mousePitch.store(mode==4?immersivePitch:0);
     framevr::SetExternalPerspective(mode);
+    ResetClassicPad();
     g_nativeMode.store(mode);g_set.vrView.store(mode);g_nativeGeneration.fetch_add(1);
     g_rightX.store(0);g_aHeld.store(false);g_skillHeld.store(false);g_aimRay.store(false);
     if(g_aimDown||g_aimStage){SendKeysMouse(false);g_aimDown=false;}
@@ -5049,6 +5106,7 @@ void SetView(int v) {
         return;
     }
 #endif
+    ResetClassicPad();
     (vr ? g_set.vrView : g_set.flatView).store(v);
     wchar_t b[8];
     swprintf_s(b, L"%d", v);
@@ -5112,6 +5170,7 @@ SRWLOCK g_turnLock = SRWLOCK_INIT;
 std::atomic<uint32_t> g_meleeTurnEpoch{0};
 
 void TurnTick() {
+    if(ClassicPadMode()){g_rightX.store(0);return;} // classic camera uses MouseTick accumulators, never VR snap-turn
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(NativeExternal()&&GetTickCount64()-g_nativePadAt.load()>250)g_rightX.store(0);
 #endif
@@ -7954,6 +8013,7 @@ DWORD WINAPI UpdateThread(void*) {
         // our camera while on, and for the stereo view from above while off
         d2rcam::SetEnabled(g_enabled.load() || (g_set.topStereo.load() && g_set.afr.load()));
         MouseTick();
+        ClassicPadTick();
         TurnTick();
         PushArms();
 #ifdef D2RVR_NATIVE_OPENXR
@@ -8084,6 +8144,7 @@ DWORD WINAPI UpdateThread(void*) {
             billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
+            if(g_flatSession)panelinput::ObserveControllerMode();
             if (!g_flatSession) {
             projectiles::Install();
             panelinput::Install();
