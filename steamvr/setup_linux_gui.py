@@ -52,6 +52,10 @@ class Setup(QWizard):
                      QFileDialog.getOpenFileName(self, label, edit.text())[0])
             if value:
                 edit.setText(value)
+                if key == 'game':
+                    self.load_game()
+                elif key == 'steam_root':
+                    self.refresh_profiles()
         button.clicked.connect(browse)
         row.addWidget(button)
         form.addRow(label, row)
