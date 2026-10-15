@@ -110,7 +110,8 @@ an offline game. The intended result is the actual room around the miniature,
 with opaque game terrain and readable HUD. Check dark terrain, border fading,
 menus and native cursor, turning/leaning, repeated F3/F4 transitions and frame
 rate. Then compare with `passthrough=0` and an unsupported runtime's fallback.
-No hardware or GPU validation has been performed for this MR revision.
+The user has validated native MR successfully with WiVRn on Quest 2.
+The new Virtual Desktop color-key fallback still requires headset validation.
 
 Read `<game>/d2rloader/logs/d2r-vr-frame.log` for `Diorama MR:` lines:
 
@@ -135,8 +136,10 @@ This first MR implementation uses core `XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND`
 only; `XR_FB_passthrough` object/layer creation is not implemented yet.
 
 - WiVRn's public driver advertises alpha blend when the client reports passthrough;
-  its configuration documents encoding the alpha stream. First hardware target.
-- Public VDXR source advertises only OPAQUE. This build does not promise VDXR MR.
+  its configuration documents encoding the alpha stream. User-tested successfully
+  with Quest 2; preserve this native alpha path.
+- Public VDXR source advertises only OPAQUE. The optional client-side color-key
+  fallback below is a separate path, not native OpenXR alpha passthrough.
 - SteamVR on either OS must actually advertise ALPHA_BLEND for this path to run.
   A headset's camera or a separate compositor room-view feature is insufficient.
   No API layer is installed or enabled by this mod.
@@ -150,3 +153,68 @@ Primary references reviewed for the implementation:
 - https://github.com/WiVRn/WiVRn/blob/master/server/driver/wivrn_hmd.cpp
 - https://github.com/WiVRn/WiVRn/blob/master/docs/configuration.md
 - https://github.com/mbucchia/VirtualDesktop-OpenXR/blob/main/virtualdesktop-openxr/system.cpp
+
+
+### Virtual Desktop / VDXR: optional color-key test
+
+Virtual Desktop's official v1.29.0 release notes introduce **VR Passthrough**
+in the headset's **Streaming** tab with configurable chroma keying. This happens
+on the client: OpenXR may still report OPAQUE. It is not an OpenXR extension
+that the DLL can enable remotely.
+
+Replace both the DLL and shader from this build. Keep all existing placement
+settings. In the existing `[diorama]` section, add:
+
+```ini
+passthrough=1
+chroma_key=1
+chroma_color=#FF00FF
+```
+
+In Virtual Desktop on the headset, enable **VR Passthrough** and select the same
+key color: magenta, RGB **255, 0, 255**. UI wording may vary by client version.
+Launch using the existing Virtual Desktop/VDXR shortcut and press F4 in a game.
+The DLL paints only the area outside the miniature with that color; Virtual
+Desktop replaces it with the real room. Without the client feature enabled,
+a magenta background is expected. `chroma_key=0` restores the ordinary dark
+background when native alpha is unavailable. No runtime/layer is installed.
+
+Native alpha takes priority: the WiVRn path stays unchanged even if the key
+option is left enabled. The new color output is restricted to native VR F4;
+F1/F2/F3 and Flat are unchanged. However, Virtual Desktop's **client setting**
+can affect every view while it is enabled. Turn it off when leaving F4 if it
+removes matching colors from the game or menus.
+
+Unlike native alpha, color keying may remove matching magenta game/UI pixels,
+show compression fringes, or require threshold adjustment. Start with a narrow
+threshold and widen only as needed. A different `#RRGGBB` color can be used,
+matched in the client. The keyed border is a hard cut to avoid blending magenta
+into the miniature; native alpha retains its smooth border. Test both eyes,
+HUD, native cursor, inventory/dialogues, dark areas, colorful spell effects,
+F3/F4 transitions, and frame rate. User-added shaders that alter the key color
+can interfere. An `opaque fallback` log is normal for client-side keying and
+does not prove that the client passthrough is disabled.
+
+### SteamVR: connection and camera availability matter
+
+- **SteamVR through Virtual Desktop on Windows:** test the same client-side key
+  procedure above with the SteamVR launcher. This is a separate headset test;
+  success in VDXR alone does not validate it.
+- **Quest through Steam Link / SteamVR:** the mod has no verified native
+  passthrough path for this combination. With `chroma_key=0` it remains ordinary
+  VR unless the actual OpenXR stack advertises ALPHA_BLEND. Setting a magenta
+  background alone cannot give Steam Link access to the headset's cameras.
+- **SteamVR on Linux:** no new camera bridge or API layer is provided here.
+  WiVRn is the user-validated native MR route on Linux. SteamVR's capability
+  query still governs the native-alpha path.
+- Rectus' third-party OpenXR SteamVR Passthrough API layer can supply passthrough
+  using SteamVR camera feeds or a configured external camera. Its documentation
+  requires an accessible camera feed (SteamVR Room View for HMD cameras).
+  A Quest camera's existence is not proof that Steam Link exposes it. This
+  Windows-oriented layer is neither bundled nor automatically installed, and
+  is not a verified Quest/Steam Link or Linux solution for this project.
+
+References:
+
+- https://github.com/guygodin/VirtualDesktop/releases/tag/v1.29.0
+- https://github.com/Rectus/openxr-steamvr-passthrough/blob/main/readme.md

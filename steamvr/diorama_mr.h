@@ -4,4 +4,8 @@ namespace framevr::dioramamr {
 constexpr bool Enabled(int mode,bool requested,bool supported,bool alphaTexture,bool shader,bool blocked) {
     return mode==3&&requested&&supported&&alphaTexture&&shader&&!blocked;
 }
+// Explicit client-side color key fallback. Native alpha always takes priority.
+constexpr bool ChromaEnabled(bool nativeDiorama,bool requested,bool nativeAlpha) {
+    return nativeDiorama&&requested&&!nativeAlpha;
+}
 }

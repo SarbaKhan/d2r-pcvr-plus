@@ -1709,6 +1709,9 @@ float4 PS_StampR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { r
 // pixel and its neighbours two pixels out with no depth AND dark - what the
 // interface draws over the void is bright and stays.
 uniform bool DioramaOn < hidden = true; > = false;
+// Optional Virtual Desktop client color key; never used with native alpha.
+uniform bool DioramaChromaKey < hidden = true; > = false;
+uniform float3 DioramaChromaColor < hidden = true; > = float3(1.0, 0.0, 1.0);
 uniform float DioramaRadius < hidden = true; > = 24.0;
 uniform bool TableKeyOn < hidden = true; > = false;
 uniform float TableFloor < hidden = true; > = 0.05;   // vrcam, [table] floor: how far off black the game is lifted
@@ -1784,6 +1787,11 @@ float3 TableKey(float2 uv, int eye)
     const float2 px = 2.0 * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT);
     float d = DepthAt(duv).x;
     if (DioramaOn) {
+        if (DioramaChromaKey && !DioramaMR) {
+            // A solid key avoids a magenta halo from the normal border fade.
+            // This changes only the void; HUD/cursor and world colors stay intact.
+            return DioramaCoverage(uv, d, eye) >= 0.5 ? c : DioramaChromaColor;
+        }
         if (d <= 0.0) return float3(0.012, 0.014, 0.02);
         const float keep = DioramaCoverage(uv, d, eye);
         if (DioramaMR) return c; // straight alpha; do not premultiply or darken the edge twice
