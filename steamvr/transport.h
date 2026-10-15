@@ -48,7 +48,7 @@ void ObserveMouseCursor(void* cursor);
 bool PerspectiveReady();
 void RecenterTable();
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
-    float width,float radius,float distance,float drop,float follow,int eye);
+    float width,float radius,float distance,float drop,float follow,float heading,int eye);
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye);
 #endif

@@ -2225,13 +2225,13 @@ void SetExternalPerspective(int mode) {
 }
 void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
-    float width,float radius,float distance,float drop,float follow,int eye) {
+    float width,float radius,float distance,float drop,float follow,float heading,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(!externalRigValid) {
         if(!tablePlaced) {
             const float yaw=math::Heading(Q(head.orientation));
             tableAnchor=V(head.position)+math::Rotate(math::Yaw(yaw),{0,-drop,-distance});
-            tableHeading=-yaw;tablePlaced=true;
+            tableHeading=heading-yaw;tablePlaced=true;
         }
         const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
         if(!tableFollowing||now-tableAt>500)tableCenter=target;

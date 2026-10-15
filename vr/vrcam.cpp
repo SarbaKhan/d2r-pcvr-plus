@@ -2405,7 +2405,7 @@ bool NativeAlternativeView(const d2rcam::WorldView& in,float out[16]) {
     float sampled[3]={in.lookAt[0],in.lookAt[1],in.lookAt[2]};
     const bool table=NativeDiorama();
     const bool ready=table?framevr::DioramaView(out,center,sampled,in.lookAt,
-        g_dioramaWidth.load(),g_dioramaRadius.load(),g_dioramaDistance.load(),g_dioramaDrop.load(),g_dioramaFollow.load(),g_eye.load()):
+        g_dioramaWidth.load(),g_dioramaRadius.load(),g_dioramaDistance.load(),g_dioramaDrop.load(),g_dioramaFollow.load(),heading,g_eye.load()):
         framevr::AlternativeView(out,center,in.lookAt,top?0.f:g_set.thirdHeight.load(),
         top?g_nativeTopDistance.load():g_nativeThirdDistance.load(),heading,down,units,g_nativeGeneration.load(),g_eye.load());
     if(!ready) {
