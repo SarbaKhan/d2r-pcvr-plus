@@ -23,9 +23,9 @@ int main(){
         const auto center=hit+math::Rotate(q,mousecursor::CenterOffset(96,80,7,3,scale));
         const auto tip=center+math::Rotate(q,{(7-48)*scale,(40-3)*scale,0});Same(tip,hit);
     }
-    assert(KeyMode(1)==1&&KeyMode(2)==2&&KeyMode(3)==4&&KeyMode(4)==0);
-    assert(Supported(4)&&!External(4)&&!Supported(3));
-    assert(Next(4)==1&&Next(1)==2&&Next(2)==4);
+    assert(KeyMode(1)==1&&KeyMode(2)==2&&KeyMode(3)==4&&KeyMode(4)==3);
+    assert(Supported(4)&&!External(4)&&Supported(3)&&External(3));
+    assert(Next(4)==1&&Next(1)==2&&Next(2)==3&&Next(3)==4);
     for(int mode:{1,2,4})for(bool panel:{false,true})
         assert(MouseVisible(mode,panel)==(mode==1||(mode==2&&panel)));
     for(float units:{1.f,3.8f,20.f})for(float yaw:{-2.f,0.f,1.2f})for(float down:{-.4f,.25f,.95f}){
@@ -76,6 +76,25 @@ int main(){
         const auto b=MouseDirection(mouse,projection[0],projection[5],.8f,.5f);
         assert(math::Dot(a-b,a-b)>.1f);
     }
+    // A horizontal tabletop stays fixed while the eye translates/rotates and
+    // while sampled game content follows the hero. Real IPD scales with the world.
+    const math::Vec table{1,.9f,-.65f},world{40,3,20};
+    for(float yaw:{-1.f,0.f,1.2f}) {
+        const auto r=Table(world,table,yaw,48/.7f);
+        assert(Valid(r));Same(ToTracking(r,world),table);
+        Same(math::Rotate(r.rotation,{0,1,0}),{0,1,0});
+        const auto l=Transform(r,{{-.032f,1.4f,0},{0,0,0,1}});
+        const auto h=Transform(r,{{.032f,1.4f,0},{0,0,0,1}});
+        Near(std::sqrt(math::Dot(h.p-l.p,h.p-l.p)),.064f*r.units);
+        const auto moved=Table(world+math::Vec{2,0,3},table,yaw,r.units);
+        Same(ToTracking(moved,world+math::Vec{2,0,3}),table);
+    }
+    const math::Vec target{1,0,0};math::Vec a{},b{};
+    for(int i=0;i<60;++i)a=Follow(a,target,1.f/60,.15f,5);
+    for(int i=0;i<120;++i)b=Follow(b,target,1.f/120,.15f,5);
+    Same(a,b);Same(Follow({}, {100,0,0},.01f,.15f,5),{100,0,0});
+    const auto limited=Follow({}, {10,0,0},0,.15f,3);
+    Near(limited.x,7);
     auto invalid=Orbit({0,0,0},6,12,0,0,1,{0,0,0},0);
     invalid.units=0;assert(!Valid(invalid));invalid.units=std::numeric_limits<float>::quiet_NaN();assert(!Valid(invalid));
     invalid.units=1;invalid.rotation.w=0;assert(!Valid(invalid));

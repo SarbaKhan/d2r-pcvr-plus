@@ -1,7 +1,7 @@
-name: Diorama stage 1 - native gamepad cameras
+name: Diorama stage 2 - horizontal tabletop prototype
 on:
   push:
-    branches: [feature/diorama-gamepad]
+    branches: [feature/diorama-vr]
   workflow_dispatch:
 permissions:
   contents: read
@@ -51,12 +51,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist-perspectives | Out-Null
           Copy-Item build-frame/windows-native/d2rl-vrcam.dll dist-perspectives/
-          Copy-Item docs/diorama-gamepad-testing.md dist-perspectives/README.md
+          Copy-Item reshade/D2R_DepthFog.fx dist-perspectives/
+          Copy-Item docs/diorama-prototype-testing.md dist-perspectives/README.md
           $hash = (Get-FileHash dist-perspectives/d2rl-vrcam.dll -Algorithm SHA256).Hash.ToLower()
           "$hash  d2rl-vrcam.dll" | Set-Content -Encoding ascii dist-perspectives/SHA256SUMS.txt
           "Source commit: $env:GITHUB_SHA" | Set-Content -Encoding ascii dist-perspectives/BUILD.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-Plus-Gamepad-Stage1-Experimental
+          name: D2R-PCVR-Plus-Diorama-Prototype
           path: dist-perspectives/*
           if-no-files-found: error

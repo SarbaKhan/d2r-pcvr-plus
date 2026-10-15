@@ -106,6 +106,10 @@ int mouseWidth=64,mouseHeight=64,mouseHotX=32,mouseHotY=32;
 ULONGLONG mouseRetryAt=0;
 constexpr int MouseAtlasSide=256;
 perspective::Rig externalRig{};
+math::Vec tableAnchor{},tableCenter{};
+float tableHeading=0;
+bool tablePlaced=false,tableFollowing=false;
+ULONGLONG tableAt=0;
 bool externalRigValid=false;
 #endif
 gameplay::Engine motion;
@@ -2219,6 +2223,30 @@ void SetExternalPerspective(int mode) {
     // Cancel pending casts, gestures and pointer presses before changing ownership.
     ClearInput();motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;
 }
+void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
+bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
+    float width,float radius,float distance,float drop,float follow,int eye) {
+    std::lock_guard lock(mutex);if(!Active())return false;
+    if(!externalRigValid) {
+        if(!tablePlaced) {
+            const float yaw=math::Heading(Q(head.orientation));
+            tableAnchor=V(head.position)+math::Rotate(math::Yaw(yaw),{0,-drop,-distance});
+            tableHeading=-yaw;tablePlaced=true;
+        }
+        const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
+        if(!tableFollowing||now-tableAt>500)tableCenter=target;
+        else tableCenter=perspective::Follow(tableCenter,target,float(now-tableAt)*.001f,follow,radius*.2f);
+        tableAt=now;tableFollowing=true;
+        externalRig=perspective::Table(tableCenter,tableAnchor,tableHeading,2*radius/width);
+        externalRigValid=perspective::Valid(externalRig);
+    }
+    if(!externalRigValid){render=false;return false;}
+    sampled[0]=tableCenter.x;sampled[1]=tableCenter.y;sampled[2]=tableCenter.z;
+    const auto& pose=views[eye&1].pose;
+    const auto e=perspective::Transform(externalRig,{V(pose.position),Q(pose.orientation)});
+    const auto c=perspective::Transform(externalRig,{V(head.position),Q(head.orientation)});
+    math::View(e.p,e.q,out);math::View(c.p,c.q,center);return true;
+}
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
@@ -2298,7 +2326,7 @@ void Shutdown() {
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
-    externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
+    tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
     mouseWidth=mouseHeight=64;mouseHotX=mouseHotY=32;
 #endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;

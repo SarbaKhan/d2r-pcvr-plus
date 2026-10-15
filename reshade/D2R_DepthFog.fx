@@ -1707,6 +1707,8 @@ float3 PS_StampR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { r
 // TableFloor, so its own shadows and night are never cut. The void is the
 // pixel and its neighbours two pixels out with no depth AND dark - what the
 // interface draws over the void is bright and stays.
+uniform bool DioramaOn < hidden = true; > = false;
+uniform float DioramaRadius < hidden = true; > = 24.0;
 uniform bool TableKeyOn < hidden = true; > = false;
 uniform float TableFloor < hidden = true; > = 0.05;   // vrcam, [table] floor: how far off black the game is lifted
 // vrcam, [table] background: what the void is filled with - black for the bridge's
@@ -1767,6 +1769,18 @@ float3 TableKey(float2 uv, int eye)
     const float2 duv = UpsideDown ? float2(uv.x, 1.0 - uv.y) : uv;
     const float2 px = 2.0 * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT);
     float d = DepthAt(duv).x;
+    if (DioramaOn) {
+        if (d <= 0.0) return float3(0.012, 0.014, 0.02);
+        const float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+        const float4 sp = eye == 0 ? SkyProj0 : SkyProj1;
+        const float3 v = float3((ndc.x + sp.z) / sp.x, (ndc.y + sp.w) / sp.y, -1.0);
+        const float3 ray = eye == 0 ? v.x * CamRight0 + v.y * CamUp0 + v.z * CamBack0
+                                   : v.x * CamRight1 + v.y * CamUp1 + v.z * CamBack1;
+        const float3 p = (eye == 0 ? TableEye0 : TableEye1) + ray * (NearPlane / d);
+        const float edge = length(p.xz) / max(DioramaRadius, 1.0);
+        const float keep = 1.0 - smoothstep(0.88, 1.0, edge);
+        return lerp(float3(0.012, 0.014, 0.02), c, keep);
+    }
     d = max(d, DepthAt(duv + float2(px.x, 0)).x);
     d = max(d, DepthAt(duv - float2(px.x, 0)).x);
     d = max(d, DepthAt(duv + float2(0, px.y)).x);
