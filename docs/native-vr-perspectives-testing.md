@@ -78,3 +78,29 @@ experimental workflow distributes only this DLL and these test instructions.
 The original release source-baseline manifest is retained unchanged; the dedicated
 experimental source test allows the explicit adapters and checks untouched sources
 and the first-person eye/projection/bow math against the validated main revision.
+
+## Native mouse pointer regression (F1/F2)
+
+The experimental DLL now draws a white mouse arrow in OpenXR. F1 uses a neutral
+orbit camera for mouse picking: head rotation/translation changes the view, not
+the mouse ray. F1 shows the pointer during gameplay and on menu panels. F2 shows
+it on menu panels/dialogues, hiding it during mouse-look gameplay. F3 does not
+add a mouse pointer; the existing tracked-controller laser remains unchanged.
+
+In F1 gameplay the arrow marks the mouse ray at the player's ground height.
+It is a compositor overlay, not a terrain decal. Stairs, slopes and elevated
+objects can therefore show a depth offset; the game retains its own terrain and
+object hit tests. No additional scene raycast or GPU readback is introduced.
+
+Headset checks required (SteamVR, VDXR and WiVRn):
+
+- F1: keep the mouse stationary while turning/leaning the head. Verify that a
+  held movement click does not change direction just because the head moves.
+- F1: move the mouse across the ground, click enemies/items/doors, and compare
+  arrow position and selection on flat ground and stairs. Report depth offsets.
+- F1/F2: open inventory, character panel, vendor and NPC dialogue; verify the
+  arrow and actual hovered option coincide across the entire panel.
+- F2: close the panel; the mouse arrow disappears and mouse-look resumes.
+- F3: verify no new mouse arrow, and original controller laser/actions still work.
+- Repeat F1/F2/F3 transitions, recenter, alt-tab and area transitions. Check that
+  no stale pointer remains during loading or after returning to immersive VR.

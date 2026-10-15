@@ -5002,7 +5002,7 @@ void CommitNativePerspective() {
     static float immersiveYaw=0,immersiveTurn=0,immersivePitch=0;
     if(old==4){immersiveYaw=g_mouseYaw.load();immersiveTurn=g_turnYaw.load();immersivePitch=g_mousePitch.load();}
     g_mouseYaw.store(mode==4?immersiveYaw:0);g_turnYaw.store(mode==4?immersiveTurn:0);g_mousePitch.store(mode==4?immersivePitch:0);
-    framevr::SetExternalPerspective(framevr::perspective::External(mode));
+    framevr::SetExternalPerspective(mode);
     g_nativeMode.store(mode);g_set.vrView.store(mode);g_nativeGeneration.fetch_add(1);
     g_rightX.store(0);g_aHeld.store(false);g_skillHeld.store(false);g_aimRay.store(false);
     if(g_aimDown||g_aimStage){SendKeysMouse(false);g_aimDown=false;}

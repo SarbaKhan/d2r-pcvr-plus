@@ -95,7 +95,9 @@ std::atomic<bool> motionControls{false};
 std::atomic<bool> externalPerspective{false};
 uint32_t externalGeneration=~0u;
 math::Vec externalReference{};
-float externalReferenceYaw=0;
+float externalReferenceYaw=0,externalGroundY=0,externalDistance=40;
+int externalMode=4;
+XrSwapchain mouseChain=XR_NULL_HANDLE;
 perspective::Rig externalRig{};
 bool externalRigValid=false;
 #endif
@@ -618,7 +620,21 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
         const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
         p[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
     }
-    return UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+    const bool ready=UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    // Independent mouse glyph; do not change the immersive laser's atlas.
+    // The arrow tip is the center of the quad, i.e. the actual click position.
+    std::vector<uint8_t> mouse(64*64*4);
+    for(int y=32;y<59;++y)for(int x=32;x<52;++x) {
+        const int dx=x-32,dy=y-32;
+        if(dx>dy*2/3||dy>24|| (dy>16&&dx<dy-16))continue;
+        auto* p=mouse.data()+(y*64+x)*4;
+        const bool edge=dx==0||dx>=dy*2/3-1||dy>=23||(dy>16&&dx<=dy-15);
+        p[0]=p[1]=p[2]=edge?15:255;p[3]=255;
+    }
+    if(!UploadAtlas(mouseChain,eyeFormat,64,64,mouse))Say("Native perspectives: mouse atlas unavailable");
+#endif
+    return ready;
 }
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
@@ -1937,6 +1953,36 @@ void EndPair() {
         motionQuad(laser,beamPose,.003f,beamLength,{{0,0},{64,32}},pointerChain);
         if(pointerHit)motionQuad(dot,dotPose,.018f,.018f,{{0,32},{64,64}},pointerChain);
     }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    XrCompositionLayerQuad mouseCursor{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(layer&&externalPerspective&&mouseChain&&perspective::MouseVisible(externalMode,panelMode)&&
+       !settingsModel.open&&!bodyCalibration.Active()) {
+        POINT cursor{};RECT client{};
+        if(gameWindow&&GetCursorPos(&cursor)&&ScreenToClient(gameWindow,&cursor)&&GetClientRect(gameWindow,&client)&&
+           client.right>0&&client.bottom>0&&cursor.x>=0&&cursor.y>=0&&cursor.x<client.right&&cursor.y<client.bottom) {
+            const float u=float(cursor.x)/client.right,v=float(cursor.y)/client.bottom;
+            XrPosef pose{};float size=0;
+            if(panelMode&&menuPlaced) {
+                pose=menuPose;
+                const auto offset=math::Rotate(Q(menuPose.orientation),{(u-.5f)*panelWidth,(.5f-v)*panelWidth*height/width,.002f});
+                const auto at=V(menuPose.position)+offset;pose.position={at.x,at.y,at.z};
+                size=panelWidth*64.f/client.right;
+            } else if(!panelMode&&externalRigValid&&externalMode==1) {
+                const auto camera=perspective::MouseCamera(externalRig,externalReferenceYaw);
+                float projection[16];const auto f=views[0].fov;
+                math::Projection(f.angleLeft,f.angleRight,f.angleDown,f.angleUp,.15f,projection);
+                const auto direction=perspective::MouseDirection(camera,projection[0],projection[5],u,v);
+                const auto point=perspective::MouseMarker(camera,direction,externalGroundY,externalDistance);
+                const auto at=perspective::ToTracking(externalRig,point);
+                pose.position={at.x,at.y,at.z};pose.orientation=head.orientation;
+                // Constant angular size, independent of world scale/distance.
+                const auto delta=at-V(head.position);
+                size=std::clamp(std::sqrt(math::Dot(delta,delta))*.035f,.02f,.5f);
+            }
+            if(size>0)motionQuad(mouseCursor,pose,size,size,{{0,0},{64,64}},mouseChain);
+        }
+    }
+#endif
     XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
         static bool reported=false;
@@ -2108,10 +2154,10 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
 }
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
 bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&!bodyCalibration.Active()&&state==XR_SESSION_STATE_FOCUSED;}
-void SetExternalPerspective(bool external) {
+void SetExternalPerspective(int mode) {
     std::lock_guard lock(mutex);
     // Cancel pending casts, gestures and pointer presses before changing ownership.
-    ClearInput();motionInput={};interactionInput={};externalPerspective=external;externalGeneration=~0u;
+    ClearInput();motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;
 }
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye) {
@@ -2123,11 +2169,14 @@ bool AlternativeView(float out[16],float center[16],const float hero[3],float he
         }
         externalRig=perspective::Orbit({hero[0],hero[1],hero[2]},height,distance,heading,down,
             units,externalReference,externalReferenceYaw);
+        externalGroundY=hero[1];externalDistance=distance;
         externalRigValid=perspective::Valid(externalRig);
     }
     if(!externalRigValid){render=false;return false;} // never submit an inconsistent eye pair
     const auto& rig=externalRig;
-    const auto c=perspective::Transform(rig,{V(head.position),Q(head.orientation)});
+    // F1's pick camera stays fixed while both rendered eyes retain full 6DoF.
+    const auto c=externalMode==1?perspective::MouseCamera(rig,externalReferenceYaw):
+        perspective::Transform(rig,{V(head.position),Q(head.orientation)});
     const auto& pose=views[eye&1].pose;
     const auto e=perspective::Transform(rig,{V(pose.position),Q(pose.orientation)});
     math::View(c.p,c.q,center);math::View(e.p,e.q,out);return true;
@@ -2187,6 +2236,10 @@ void Shutdown() {
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
+    externalRigValid=false;
+#endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();

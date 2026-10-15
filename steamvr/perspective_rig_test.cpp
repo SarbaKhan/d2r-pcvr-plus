@@ -11,6 +11,8 @@ int main(){
     assert(KeyMode(1)==1&&KeyMode(2)==2&&KeyMode(3)==4&&KeyMode(4)==0);
     assert(Supported(4)&&!External(4)&&!Supported(3));
     assert(Next(4)==1&&Next(1)==2&&Next(2)==4);
+    for(int mode:{1,2,4})for(bool panel:{false,true})
+        assert(MouseVisible(mode,panel)==(mode==1||(mode==2&&panel)));
     for(float units:{1.f,3.8f,20.f})for(float yaw:{-2.f,0.f,1.2f})for(float down:{-.4f,.25f,.95f}){
         const math::Vec reference{2,1.6f,3},hero{42,4,-7};
         const auto rig=Orbit(hero,6,12,yaw,down,units,reference,.3f);
@@ -35,6 +37,29 @@ int main(){
         auto turned=head;turned.q=math::Multiply(head.q,Pitch(.4f));
         Same(Transform(rig,turned).p,c.p);
         Same(rig.anchor,c.p);
+        // Neither head rotation nor translation enters the mouse camera.
+        const auto mouse=MouseCamera(rig,.3f);
+        math::View(mouse.p,mouse.q,v);assert(d2rcam::m4::Inverse(v,inverse));
+        for(float u:{.1f,.5f,.9f})for(float sy:{.1f,.5f,.9f}) {
+            const auto direction=MouseDirection(mouse,projection[0],projection[5],u,sy);
+            assert(d2rcam::m4::RayThrough(inverse,projection,1600,1200,u*1600,sy*1200,o,d));
+            Same({o[0],o[1],o[2]},mouse.p);Same({d[0],d[1],d[2]},direction);
+            const auto marker=MouseMarker(mouse,direction,hero.y,12);
+            // The displayed marker is on exactly the same world ray as picking.
+            Same(math::Normalized(marker-mouse.p),direction);
+            const auto tracking=ToTracking(rig,marker);
+            Same(Transform(rig,{tracking,head.q}).p,marker);
+            // Moving/turning the headset changes the rendered view of the marker,
+            // but cannot change its world position or the mouse's picking ray.
+            const auto movedEye=Transform(rig,moved),turnedEye=Transform(rig,turned);
+            assert(math::Dot(movedEye.p-mouse.p,movedEye.p-mouse.p)>.001f);
+            assert(math::Dot(math::Rotate(turnedEye.q,{0,0,-1})-math::Rotate(mouse.q,{0,0,-1}),
+                             math::Rotate(turnedEye.q,{0,0,-1})-math::Rotate(mouse.q,{0,0,-1}))>.01f);
+            Same(MouseCamera(rig,.3f).p,mouse.p);
+        }
+        const auto a=MouseDirection(mouse,projection[0],projection[5],.2f,.5f);
+        const auto b=MouseDirection(mouse,projection[0],projection[5],.8f,.5f);
+        assert(math::Dot(a-b,a-b)>.1f);
     }
     auto invalid=Orbit({0,0,0},6,12,0,0,1,{0,0,0},0);
     invalid.units=0;assert(!Valid(invalid));invalid.units=std::numeric_limits<float>::quiet_NaN();assert(!Valid(invalid));
