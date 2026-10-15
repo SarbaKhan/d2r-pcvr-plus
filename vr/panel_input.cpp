@@ -24,7 +24,7 @@ Focus originalFocus=nullptr;
 Activity originalPointer[6]{};
 bool pointerIn[6]{},activityIn=false,requestIn=false,controllerIn=false,dispatchIn=false,focusIn=false,cursorSnapIn=false;
 std::atomic<bool> ready{false},reported{false};
-std::atomic<bool> pointerFocus{false};
+std::atomic<bool> pointerFocus{false},nativeController{false};
 thread_local bool pointerContext=false;
 thread_local bool bindingContext=false;
 
@@ -65,7 +65,11 @@ constexpr uint8_t MoveSig[]={0x40,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0xf9,0xe8,0
 constexpr uint8_t ButtonSig[]={0x48,0x89,0x74,0x24,0x20,0x55,0x48,0x8d,0xac,0x24,0xe0,0xfd,0xff,0xff,0x48,0x81,0xec,0x20,0x03,0x00,0x00};
 
 bool Owns(){return ready.load(std::memory_order_acquire)&&lease.Active(GetTickCount64());}
-bool ControllerMode(){return bindingContext?true:pointerContext?false:isController();}
+bool ControllerMode(){
+    if(bindingContext)return true;
+    if(pointerContext)return false;
+    const bool mode=isController();nativeController.store(mode);return mode;
+}
 bool CursorSnap(){return framevr::panels::CursorSnapAllowed(pointerContext,bindingContext)&&originalCursorSnap();}
 template<int I> bool OnPointer(void* event) {
     return framevr::panels::RoutePointer(Owns(),pointerContext,[&]{return originalPointer[I](event);});
@@ -124,6 +128,11 @@ bool ControllerReady(){
     if(isController())return true;
     originalRequest(1); // native transition; its UI update commits/reloads layouts
     return false;
+}
+bool NativeControllerActive(){return nativeController.load();}
+void ObserveControllerMode(){
+    if(!controllerIn&&d2rsig::Check(ControllerRva,ControllerSig,sizeof ControllerSig))
+        controllerIn=d2rsig::Hook(ControllerRva,ControllerSig,sizeof ControllerSig,reinterpret_cast<void*>(&ControllerMode),reinterpret_cast<void**>(&isController));
 }
 void Install() {
     if(ready.load())return;
