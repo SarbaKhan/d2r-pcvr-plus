@@ -1,4 +1,4 @@
-name: PCVR Plus Windows setup and portable
+name: PCVR Plus Windows and Linux setup
 on:
   push:
     branches: [feature/flat-plus, feature/linux-launch-validation]
@@ -13,6 +13,7 @@ jobs:
       - name: Linux launch and baseline tests
         run: |
           python3 -m unittest discover -s steamvr -p launch_linux_test.py
+          python3 -m unittest discover -s steamvr -p setup_linux_test.py
           python3 -m unittest discover -s steamvr -p session_test.py
           python3 -m unittest discover -s steamvr -p vr_baseline_test.py
           python3 -m unittest discover -s steamvr -p install_test.py
@@ -110,4 +111,34 @@ jobs:
           path: |
             dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
             dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz.sha256
+          if-no-files-found: error
+
+  linux-qt-setup:
+    needs: windows
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: installer/linux-requirements.txt
+      - name: Install Qt host libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+      - name: Install pinned bundle tools
+        run: python -m pip install -r installer/linux-requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-Linux-Test
+          path: dist-plus
+      - name: Build and smoke-test standalone Qt setup
+        run: python installer/build_linux_setup.py --kit dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64
+          path: |
+            dist-plus/D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64.tar.gz
+            dist-plus/D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64.tar.gz.sha256
+            LINUX-SETUP.md
           if-no-files-found: error

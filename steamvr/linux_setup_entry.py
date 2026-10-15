@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Shared entry point for the portable Qt setup and the installed Steam wrapper."""
+import json
+import os
+from pathlib import Path
+import sys
+
+
+def payload_root():
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS) / 'payload'
+    return Path(__file__).resolve().parent.parent
+
+
+def clean_external_environment():
+    if getattr(sys, 'frozen', False):
+        original = os.environ.get('LD_LIBRARY_PATH_ORIG')
+        if original is None:
+            os.environ.pop('LD_LIBRARY_PATH', None)
+        else:
+            os.environ['LD_LIBRARY_PATH'] = original
+
+
+def main():
+    root = payload_root()
+    args = sys.argv[1:]
+    if args and args[0] == '--route':
+        clean_external_environment()
+        import launch_linux
+        launch_linux.ROOT = root
+        return launch_linux.main(args[1:])
+    if args and args[0] == '--install-game':
+        clean_external_environment()
+        import install
+        install.ROOT = root
+        sys.argv = ['install.py'] + args[1:]
+        install.main()
+        return 0
+    if args and args[0] == '--install-choices':
+        import setup_linux
+        setup_linux.install_choices(json.loads(Path(args[1]).read_text()), Path(sys.executable).parent,
+                                    root, Path(sys.executable))
+        return 0
+    if args and args[0] == '--self-test':
+        # Imports exercise frozen dependencies without touching Steam/game files.
+        import install
+        import setup_linux
+        import launch_linux
+        assert len(setup_linux.LANGUAGES) == 14
+        assert (root / 'bin/d2rl-vrcam.dll').is_file()
+        assert (root / 'd2r_pcvr_plus_flat.ini').is_file()
+        assert launch_linux.route(['/bin/true'], {}, {}) == (['/bin/true'], {}, None)
+        print('Embedded runtime, installation modules and payload: OK')
+        return 0
+    from setup_linux_gui import run
+    return run(root, smoke='--gui-smoke' in args)
+
+
+if __name__ == '__main__':
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError, KeyError) as error:
+        print('D2R PCVR Plus: ' + str(error), file=sys.stderr)
+        raise SystemExit(1)

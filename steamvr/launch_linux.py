@@ -65,6 +65,11 @@ def route(arguments, config, environment):
     env['PROTON_LOG'] = '1'
     env['PROTON_LOG_DIR'] = str(log_dir)
     env['WINEDEBUG'] = '-all,+timestamp,+pid,+tid,err+all'
+    # Use native Wayland for Flat mouse capture only; VR uses XWayland.
+    if mode == 'flat' and environment.get('XDG_SESSION_TYPE', '').lower() == 'wayland':
+        env['PROTON_ENABLE_WAYLAND'] = '1'
+    else:
+        env.pop('PROTON_ENABLE_WAYLAND', None)
     if mode == 'flat':
         for key in ('XR_RUNTIME_JSON', 'PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES'):
             env.pop(key, None)
@@ -72,7 +77,13 @@ def route(arguments, config, environment):
         selected = config.get(mode + '_runtime')
         if not selected:
             raise ValueError(f'Configure --{mode}-runtime with the Linux OpenXR JSON first')
-        env['XR_RUNTIME_JSON'] = runtime_manifest(selected, mode)
+        manifest = runtime_manifest(selected, mode)
+        if mode == 'wivrn':
+            # WiVRn selects the system runtime when the headset connects.
+            # A host /usr manifest override breaks Steam's container import.
+            env.pop('XR_RUNTIME_JSON', None)
+        else:
+            env['XR_RUNTIME_JSON'] = manifest
         env['PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES'] = '1'
     command[index] = str(game / 'D2RLoader.exe')
     if probe:

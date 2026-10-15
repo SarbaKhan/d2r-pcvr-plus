@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
-    files = ['LICENSE', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'd2r_vr.ini',
+    files = ['LICENSE', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'LINUX-SETUP.md', 'd2r_vr.ini',
              'd2r_pcvr_plus_flat.ini', 'reshade/D2R_DepthFog.fx']
     modules = ['launch_linux', 'linux_test', 'launch_plus', 'install', 'game_install',
                'process_guard', 'prepare_icons', 'steam_assets', 'game_assets', 'casc_assets',
@@ -24,7 +24,7 @@ def main():
     for name in ('d2rl-vrcam.dll', 'openxr-probe.exe'):
         payload['bin/' + name] = (ROOT / 'build-frame/windows-native' / name).read_bytes()
     manifest = {'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-                'status': 'experimental; Linux hardware NOT validated',
+                'status': 'CLI routes validated on CachyOS/Quest 2; new setup requires acceptance testing',
                 'sha256': {name: hashlib.sha256(data).hexdigest() for name, data in payload.items()}}
     payload['manifest.json'] = (json.dumps(manifest, indent=2) + '\n').encode()
     output = ROOT / 'dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz'

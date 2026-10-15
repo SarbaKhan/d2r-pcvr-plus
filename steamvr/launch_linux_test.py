@@ -57,9 +57,23 @@ class LinuxLaunchTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 manifest = self.runtime(mode)
                 command, env, info = launch.route(self.command + ['--plus-' + mode], self.config, self.env)
-                self.assertEqual(env['XR_RUNTIME_JSON'], str(manifest.resolve()))
+                if mode == 'steamvr':
+                    self.assertEqual(env['XR_RUNTIME_JSON'], str(manifest.resolve()))
+                else:
+                    self.assertNotIn('XR_RUNTIME_JSON', env)
                 self.assertEqual(env['D2R_PCVR_PLUS_MODE'], 'vr')
                 self.assertEqual(env['PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES'], '1')
+
+    def test_wayland_is_mode_specific(self):
+        inherited = dict(self.env, XDG_SESSION_TYPE='wayland', PROTON_ENABLE_WAYLAND='1', XR_RUNTIME_JSON='/wrong')
+        _, env, _ = launch.route(self.command + ['--plus-flat'], self.config, inherited)
+        self.assertEqual(env['PROTON_ENABLE_WAYLAND'], '1')
+        for mode in ('steamvr', 'wivrn'):
+            self.runtime(mode)
+            _, env, _ = launch.route(self.command + ['--plus-' + mode], self.config, inherited)
+            self.assertNotIn('PROTON_ENABLE_WAYLAND', env)
+        _, env, _ = launch.route(self.command + ['--plus-flat'], self.config, dict(self.env, XDG_SESSION_TYPE='x11'))
+        self.assertNotIn('PROTON_ENABLE_WAYLAND', env)
 
     def test_probe_replaces_game_and_uses_windows_log_path(self):
         self.runtime('wivrn')

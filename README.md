@@ -1,3 +1,7 @@
+> **D2R PCVR Plus — Linux preview:** an English Qt setup for Flat Screen,
+> SteamVR and WiVRn is documented in [LINUX-SETUP.md](LINUX-SETUP.md).
+> The original Windows installation remains available.
+
 # D2R PCVR Plus
 
 Candidate expérimentale ajoutant les vues Flat à la base D2R PCVR. **Compilation vérifiée, essais en jeu et au casque encore nécessaires.**
