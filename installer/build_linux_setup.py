@@ -78,6 +78,32 @@ def main():
     result = subprocess.run([str(executable), '--route', '/bin/sh', '-c', 'exit 17'])
     if result.returncode != 17:
         raise ValueError('Frozen stock launcher smoke test failed')
+    # Exercise direct routing and executable-name dispatch with an inert fake
+    # Proton, never a real prefix/game/Steam installation.
+    frozen_payload = bundle / '_internal/payload'
+    with tempfile.TemporaryDirectory(prefix='plus-direct-smoke-') as temporary:
+        fixture = Path(temporary)
+        game = fixture / 'steamapps/common/Game with spaces'
+        plugin = game / 'd2rloader/plugins'; plugin.mkdir(parents=True)
+        for name in ('D2R.exe', 'D2RLoader.exe'): (game / name).touch()
+        (plugin / 'd2rl-vrcam.dll').touch()
+        (plugin / 'd2r_pcvr_plus_flat.ini').write_text('[mode]\nplatform=0\n')
+        prefix = fixture / 'compatdata/2536520'; (prefix / 'pfx').mkdir(parents=True)
+        proton = fixture / 'proton'; proton.write_text('#!/bin/sh\nexit 17\n'); proton.chmod(0o755)
+        launch_config = frozen_payload / 'linux-launch.json'
+        context = frozen_payload / 'direct-proton.json'
+        alias = bundle / 'D2R-PCVR-Plus-Flat'
+        try:
+            launch_config.write_text(json.dumps({'game': str(game)}))
+            context.write_text(json.dumps({'version': 1, 'game': str(game),
+                'command': [str(proton), 'waitforexitandrun', str(game / 'D2R.exe')],
+                'environment': {'STEAM_COMPAT_DATA_PATH': str(prefix)}}))
+            alias.symlink_to(executable.name)
+            for command in ([str(executable), '--play', 'flat'], [str(alias)]):
+                if subprocess.run(command, timeout=30).returncode != 17:
+                    raise ValueError('Frozen direct Proton launcher smoke test failed')
+        finally:
+            alias.unlink(missing_ok=True); launch_config.unlink(missing_ok=True); context.unlink(missing_ok=True)
     shutil.copy2(ROOT / 'LINUX-SETUP.md', bundle / 'README.md')
     (bundle / 'build.json').write_text(json.dumps({'source_commit': commit, 'version': '0.2.4-preview',
         'python': sys.version, 'packages': {p: importlib.metadata.version(p) for p in ('PySide6', 'PyInstaller')},

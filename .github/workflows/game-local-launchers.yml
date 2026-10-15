@@ -19,6 +19,7 @@ jobs:
           python3 -m unittest discover -s steamvr -p linux_tls_test.py
           python3 -m unittest discover -s steamvr -p session_test.py
           python3 -m unittest discover -s steamvr -p native_perspectives_test.py
+          python3 -m unittest discover -s steamvr -p vr_baseline_test.py
           python3 -m unittest discover -s steamvr -p install_test.py
   windows:
     needs: linux-launch-tests
@@ -57,7 +58,7 @@ jobs:
       - name: Verify shipped VR source baseline
         shell: powershell
         run: |
-          & ./deps/python/python.exe -m unittest discover -s steamvr -p native_perspectives_test.py
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p vr_baseline_test.py
           if ($LASTEXITCODE -ne 0) { throw 'VR source baseline changed' }
       - name: Run reversible updater fixtures
         shell: powershell

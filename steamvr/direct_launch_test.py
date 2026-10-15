@@ -56,6 +56,19 @@ class DirectLaunchTests(unittest.TestCase):
             proton.unlink()
             with self.assertRaisesRegex(ValueError, 'Proton was removed'): linux.launch(root, 'flat')
 
+    def test_desktop_entries_use_direct_bundle_and_keep_wivrn_category(self):
+        import plus_artwork
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            artwork = Path(__file__).resolve().parent.parent / 'artwork'
+            updates = plus_artwork.desktop_updates('/usr/bin/steam', root / 'Game',
+                ['flat', 'steamvr', 'wivrn'], artwork, applications=root / 'applications',
+                direct_runner=root / 'Game/D2R-PCVR-Plus/D2R-PCVR-Plus-Setup')
+            for path, payload in updates.items():
+                text = payload.decode()
+                self.assertIn('--play ', text); self.assertNotIn('-applaunch', text)
+                if 'wivrn' in path.name: self.assertIn('Categories=Game;X-WiVRn-VR;', text)
+
     def test_missing_context_requires_one_time_learning_not_new_prefix(self):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, 'One-time setup'): linux.launch(temp, 'flat')

@@ -242,6 +242,8 @@ def validate_choices(values, root, managed_root=None):
     if requested_target == game / 'D2R-PCVR-Plus' and target != requested_target:
         raise ValueError('The game-local helper folder must not redirect to another location.')
     local = target == (game / 'D2R-PCVR-Plus').absolute()
+    if local and target.is_dir() and any(target.iterdir()) and not any((target / name).is_file() for name in (STATE, 'release-manifest.json')):
+        raise ValueError('The game-local helper folder is not a managed Plus installation. Keep its files and choose another game folder.')
     if (game / 'D2R-PCVR-Plus').is_symlink():
         raise ValueError('The game-local helper folder must not be a symlink.')
     for key, path in paths.items():
