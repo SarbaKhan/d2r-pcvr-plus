@@ -1,6 +1,8 @@
 # Native OpenXR alternative perspectives: feasibility study
 
-Status: analysis only; no implementation or guard removal.
+Status: pre-implementation study, retained as the design record.
+The subsequent opt-in prototype and its limits are documented in
+[native-vr-perspectives-testing.md](native-vr-perspectives-testing.md).
 Baseline: main at `96e8e2bed91e1d41e5dfc68916226f56554789cd`.
 Working branch: `feature/native-vr-perspectives`.
 

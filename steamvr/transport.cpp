@@ -92,7 +92,7 @@ std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-bool externalPerspective=false;
+std::atomic<bool> externalPerspective{false};
 uint32_t externalGeneration=~0u;
 math::Vec externalReference{};
 float externalReferenceYaw=0;

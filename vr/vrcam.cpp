@@ -2402,6 +2402,7 @@ bool NativeAlternativeView(const d2rcam::WorldView& in,float out[16]) {
 bool NativeAlternativeProjection(const d2rcam::WorldView& in,float out[16]) {
     if(!g_inWorld.load()||!framevr::Projection(out,.15f,g_eye.load()))return false;
     g_lastNear.store(.15f);g_projSx.store(out[0]);g_projSy.store(out[5]);
+    if(in.viewportH>0&&in.viewportW>0)g_lastAspect.store(in.viewportW/in.viewportH);
     AcquireSRWLockExclusive(&g_nativePickLock);
     g_nativePickValid=d2rcam::m4::Inverse(g_nativeCenter,g_nativePickView);
     memcpy(g_nativePickProj,out,sizeof g_nativePickProj);ReleaseSRWLockExclusive(&g_nativePickLock);
@@ -4992,7 +4993,7 @@ void CommitNativePerspective() {
     if(g_flatSession)return;
     const int mode=g_nativeRequested.load(),old=g_nativeMode.load();
     if(mode==old&&!g_nativeRecenter.load())return; // no transport lock in steady-state F3
-    if(!g_inWorld.load()||gamestate::MenuOpen()||framevr::SettingsOpen())return;
+    if(!g_inWorld.load()||gamestate::MenuOpen()||framevr::SettingsOpen()||!PairWanted())return;
     if(NativeExternal()&&g_nativeRecenter.exchange(false)) {
         g_nativeGeneration.fetch_add(1);dlssmv::CameraCut();
         Log("Native VR: external camera recentered");
