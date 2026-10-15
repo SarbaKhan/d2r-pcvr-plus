@@ -107,7 +107,7 @@ class IntegrationTests(unittest.TestCase):
                     text=data.decode()
                     self.assertEqual('X-WiVRn-VR;' in text, path == manual)
                     self.assertNotIn('PROTON_ENABLE_WAYLAND', text)
-                    self.assertIn('Icon='+str(ART), text)
+                    self.assertIn('Icon='+art.desktop_string(ART), text)
                     path.write_bytes(data)
                 self.assertEqual(updates, art.desktop_updates('/usr/bin/steam', root/'game', ['flat','steamvr','wivrn'], ART))
                 manual.write_text('[Desktop Entry]\nName=Another application\nExec=unrelated\n')
