@@ -1,3 +1,4 @@
+#include "perspective_rig.h"
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
@@ -90,6 +91,14 @@ std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+bool externalPerspective=false;
+uint32_t externalGeneration=~0u;
+math::Vec externalReference{};
+float externalReferenceYaw=0;
+perspective::Rig externalRig{};
+bool externalRigValid=false;
+#endif
 gameplay::Engine motion;
 skills::QuickCast quickCast;
 gameplay::Input motionInput;
@@ -1054,6 +1063,21 @@ void Input() {
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(externalPerspective) {
+        // Keep 6DoF tracking, but publish no synthetic pad, mouse or combat input.
+        auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;s.handsValid=0;
+        const auto q=Q(head.orientation);const auto forward=math::Rotate(q,{0,0,-1});
+        s.headYawDeg=math::Heading(q)*kRadToDeg;
+        s.headPitchDeg=std::asin(std::clamp(forward.y,-1.f,1.f))*kRadToDeg;
+        s.headRollDeg=0;s.pitchValid=s.rollValid=1;s.headHeightM=head.position.y;
+        s.sampleStamp=D2RVRStampNow();s.sampleStampMagic=D2RVR_SAMPLE_STAMP_MAGIC;
+        s.roomMagic=D2RVR_ROOM_MAGIC;s.headRoom[0]=head.position.x;s.headRoom[1]=head.position.y;s.headRoom[2]=head.position.z;
+        s.headYawRoomDeg=s.headYawDeg;++s.counter;
+        if(actions.data){actions.data->held=0;++actions.data->counter;}
+        return;
+    }
+#endif
     const bool nativeUi=panelMode||spatialMode;
     const uint32_t inputEpoch=gamestate::MenuEpoch();
     menus::Pad physical;
@@ -1436,7 +1460,11 @@ bool Begin() {
         // Latch once per pair: camera matrices, foveation and xrEndFrame must
         // all describe the same frustum, including a live settings change.
         // LocateViews refreshes the original runtime FOVs on every frame.
-        const bool centered=symmetricProjection.load();
+        const bool centered=symmetricProjection.load()
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+            ||externalPerspective
+#endif
+            ;
         if(centered) {
             const auto& l=views[0].fov;const auto& r=views[1].fov;
             const auto f=math::EnclosingSymmetricFov(
@@ -1677,7 +1705,11 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     foveation::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
-bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
+bool SpatialMenu(){
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(externalPerspective)return false; // full native UI panel for physical mouse/gamepad
+#endif
+    return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
@@ -1729,6 +1761,9 @@ void BeginPair() {
     lastTiming={};
     if(session&&!failed){
         if(frame)EndPair();Begin();pairDrawing=true;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        externalRigValid=false;
+#endif
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         if(Active())profile::BeginPair();else profile::SkipPair();
         if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
@@ -2071,6 +2106,33 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;}
+void SetExternalPerspective(bool external) {
+    std::lock_guard lock(mutex);
+    // Cancel pending casts, gestures and pointer presses before changing ownership.
+    ClearInput();motionInput={};externalPerspective=external;externalGeneration=~0u;
+}
+bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
+    float distance,float heading,float down,float units,uint32_t generation,int eye) {
+    std::lock_guard lock(mutex);if(!Active())return false;
+    if(!externalRigValid) {
+        if(externalGeneration!=generation) {
+            externalGeneration=generation;externalReference=V(head.position);
+            externalReferenceYaw=math::Heading(Q(head.orientation));
+        }
+        externalRig=perspective::Orbit({hero[0],hero[1],hero[2]},height,distance,heading,down,
+            units,externalReference,externalReferenceYaw);
+        externalRigValid=perspective::Valid(externalRig);
+    }
+    if(!externalRigValid){render=false;return false;} // never submit an inconsistent eye pair
+    const auto& rig=externalRig;
+    const auto c=perspective::Transform(rig,{V(head.position),Q(head.orientation)});
+    const auto& pose=views[eye&1].pose;
+    const auto e=perspective::Transform(rig,{V(pose.position),Q(pose.orientation)});
+    math::View(c.p,c.q,center);math::View(e.p,e.q,out);return true;
+}
+#endif
 bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}

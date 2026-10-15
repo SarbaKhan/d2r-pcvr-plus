@@ -40,6 +40,13 @@ struct FrameTiming {
     uint32_t pipelines=0;bool gpuValid=false;
 };
 FrameTiming LastTiming();
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+// Called only at a game stereo-pair boundary. Does not recreate the XR session.
+void SetExternalPerspective(bool external);
+bool PerspectiveReady();
+bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
+    float distance,float heading,float down,float units,uint32_t generation,int eye);
+#endif
 void Shutdown();
 void BeginPair();
 void BeginEye(int eye);

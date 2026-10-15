@@ -94,6 +94,9 @@ std::atomic<ViewFn> g_viewFn { nullptr };
 std::atomic<ProjFn> g_projFn { nullptr };
 std::atomic<FrameFn> g_frameFn { nullptr };
 std::atomic<RayFn>  g_rayFn { nullptr };
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<ScreenRayFn> g_screenRayFn{nullptr};
+#endif
 std::atomic<ULONGLONG> g_lastSync { 0 };
 
 // ---- Per-frame snapshot ----------------------------------------------------
@@ -406,6 +409,9 @@ void __fastcall HookScreenToRay(void* cam, const float* px, float* origin, float
 		original(copy, px, origin, dir);
 		return;
 	}
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(const auto ray=g_screenRayFn.load();ray&&ray(px[0],px[1],At<float>(cam,camf::ViewportW),At<float>(cam,camf::ViewportH),origin,dir))return;
+#endif
 	if (const RayFn rayFn = g_rayFn.load(std::memory_order_relaxed); rayFn != nullptr && rayFn(origin, dir)) {
 		return;
 	}
@@ -636,6 +642,9 @@ void SetCallbacks(ViewFn view, ProjFn proj) {
 
 void SetFrameCallback(FrameFn frame) { g_frameFn.store(frame); }
 void SetRayOverride(RayFn ray) { g_rayFn.store(ray); }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void SetScreenRayOverride(ScreenRayFn ray){g_screenRayFn.store(ray);}
+#endif
 
 bool Refresh() {
 	void* cam = g_t.cam;
@@ -672,6 +681,9 @@ bool PickRay(float sx, float sy, float origin[3], float dir[3]) {
 	if (f.cam == nullptr) {
 		return false;
 	}
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(const auto ray=g_screenRayFn.load();ray&&ray(sx,sy,At<float>(f.cam,camf::ViewportW),At<float>(f.cam,camf::ViewportH),origin,dir))return true;
+#endif
 	return m4::RayThrough(f.invView, f.proj, At<float>(f.cam, camf::ViewportW), At<float>(f.cam, camf::ViewportH), sx, sy, origin, dir);
 }
 
