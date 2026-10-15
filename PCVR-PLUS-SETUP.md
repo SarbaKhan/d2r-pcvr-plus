@@ -1,107 +1,42 @@
-# D2R PCVR Plus — Setup 0.1.2
+# D2R PCVR Plus — Windows Setup 0.1.3 preview
 
-`D2R-PCVR-PLUS-Setup-0.1.2.exe` installe le mod complet sur une installation
-Windows x64 de Diablo II: Resurrected, sans installation PCVR préalable.
-Il contient le plugin Flat/VR, les profils, Python privé, le chargeur OpenXR
-et CascLib. Il télécharge automatiquement D2RLoader et ReShade depuis leurs
-sites officiels, avec vérification des empreintes approuvées : Internet est
-nécessaire pendant l'installation. Aucun Python ni compilateur à installer.
-Aucun fichier Blizzard n'est distribué ; les caches graphiques sont générés
-localement à partir du jeu acheté et installé.
-
-## Correctif 0.1.2 : lancement Flat depuis Steam
-
-Le raccourci Flat utilise désormais le même relais par le bureau Windows que
-SteamVR, sans initialisation OpenXR. Le relais lance une seule instance, attend
-sa fermeture et ne tente aucun second lancement en cas d'échec. Les erreurs et
-codes de sortie Flat sont enregistrés dans `d2rloader/logs/pcvr-launch.log` du jeu.
-
-Pour mettre à jour une installation Plus 0.1, fermer le jeu et Steam, relancer
-ce setup et choisir **Update / repair**. Aucune réinstallation de D2R nécessaire ;
-les réglages VR et Flat sont conservés. Ce correctif concerne les scripts de
-lancement, pas les sources de la DLL. La disparition du problème observé reste
-à confirmer sur un PC réel.
+`D2R-PCVR-PLUS-Setup-0.1.3.exe` installs the complete mod into a clean Windows
+x64 copy of Diablo II: Resurrected. It bundles the Flat/native OpenXR plugin,
+profiles, private Python, OpenXR loader and CascLib. D2RLoader and ReShade are
+downloaded from their official sources and checked against pinned hashes.
+Internet access is required during setup; no system Python/compiler is needed.
+No Blizzard game binaries, archives or extracted caches are distributed.
 
 ## Installation
 
-1. Installer D2R via Steam ou Battle.net, lancer le jeu original une fois pour
-   terminer les étapes de compte et créer `Settings.json`, puis le fermer.
-2. Fermer complètement Steam et lancer le setup Plus.
-3. Choisir l'édition, puis le casque utilisé pour les sessions VR. En Flat seul,
-   ce choix n'active aucun matériel et peut rester sur sa valeur par défaut.
-4. Choisir le mode :
+1. Install the purchased Steam or Battle.net game, launch it once to complete
+   account prompts and create Settings.json, then exit the game and Steam.
+2. Run Setup and select the store, headset and connection: SteamVR, Virtual
+   Desktop / VDXR, Flat Screen, or All. Flat requires no headset or OpenXR runtime.
+3. Verify the detected Steam, game, Saved Games and optional SteamVR paths.
+   Saved Games is used for settings only; characters are not copied or relocated.
+4. Select the local Steam account, keyboard layout and text/audio languages.
+   Default languages follow the original game configuration.
+5. Use Full install for a clean game, or Update / repair to keep calibration
+   and existing profiles. Shortcuts only requires an already complete mod.
+6. Run the direct EXEs from the game's `D2R-PCVR-Plus` folder or the Windows
+   Start menu. The selected Steam library shortcuts remain available too.
 
-   | Choix | Raccourcis ajoutés à Steam | Prérequis VR |
-   |---|---|---|
-   | Steam Link / SteamVR | SteamVR | SteamVR installé |
-   | Virtual Desktop / VDXR | Virtual Desktop | Streamer et application casque |
-   | Flat Screen (no VR) | Flat Screen | Aucun |
-   | All (create three Steam library shortcuts) | Les trois | SteamVR et Virtual Desktop |
+The original Steam/Battle.net game entry remains unmodded. Setup does not change
+the global OpenXR runtime. VR profiles and Flat profiles are separate:
+`d2rloader/plugins/d2r_vr.ini` and `d2rloader/plugins/d2r_pcvr_plus_flat.ini`.
+The installer on this branch includes the native F1/F2/F3 VR perspectives merged
+into main after user hardware validation. F3 remains immersive VR by default.
 
-5. Vérifier les dossiers préremplis : Steam, jeu, Saved Games et, si nécessaire,
-   SteamVR. Saved Games sert uniquement à lire/appliquer les réglages vidéo du
-   jeu. Les personnages restent à leur emplacement natif, sans copie ni redirection.
-6. Sélectionner le compte Steam local, puis **Full install** pour un jeu neuf.
-   L'option **Update / repair** conserve les réglages existants. **Only configure
-   Steam shortcuts** exige une installation Plus déjà complète.
-7. Après installation, ouvrir Steam et utiliser les entrées SteamVR, Virtual
-   Desktop ou Flat Screen dans la bibliothèque. Aucun CMD de lancement du jeu
-   n'est créé. Le bouton Jouer du jeu original conserve le lancement sans mod.
+## Repair and removal
 
-Les fichiers auxiliaires restent dans `%LOCALAPPDATA%\Programs\D2R PCVR Plus`.
-Ne pas déplacer ce dossier : les raccourcis y référencent Python et le lanceur.
-Le setup ne change pas le runtime OpenXR global. Flat ne charge pas de runtime VR.
-Il ne crée que les raccourcis sélectionnés ; une réparation met à jour les
-entrées correspondantes sans doublons et conserve les autres raccourcis Steam.
-
-## Modes et configuration
-
-Le runtime VR reste celui validé sur Quest 2, issu de PCVR `918bd5e`.
-Les profils du jeu sont `d2rloader/plugins/d2r_vr.ini` et
-`d2rloader/plugins/d2r_pcvr_plus_flat.ini`. Flat utilise WASD par défaut,
-F1/F2/F3 pour isométrique/troisième/première personne et F9 pour libérer la souris.
-ZQSD et les touches personnalisées restent configurables dans le profil Flat.
-
-Versions actuellement reconnues : Steam 3.3.93787 et Battle.net 3.3.93847
-(expérimental). Les contrôles de version restent actifs. Utiliser des personnages
-locaux hors ligne. Battle.net utilise lui aussi des raccourcis non-Steam dans Steam.
-
-## Réparation et désinstallation
-
-Le setup journalise les fichiers de mod remplacés, les réglages vidéo et les
-modifications Steam pour permettre un retour arrière. Ces copies ne contiennent
-pas les personnages. La désinstallation depuis les applications Windows restaure
-les fichiers suivis et retire les raccourcis correspondants ; elle conserve les
-personnages, la progression et les réglages vidéo actuels.
-
-Pour une ancienne installation PCVR, conserver ses copies d'installation : le
-setup peut en demander l'emplacement pour assurer une désinstallation complète.
-Cette première version vise d'abord une installation propre. Un overlay Plus
-portable antérieur doit être annulé avec son `Rollback.cmd` avant migration.
-
-## Compilation et validation
-
-Sur `feature/flat-plus`, avec Git et PowerShell :
-
-```powershell
-./steamvr/setup_windows_tools.ps1
-./steamvr/build_windows.ps1
-./installer/build_plus_release.ps1
-```
-
-Le dernier script compile les dépendances natives, vérifie et installe Inno Setup
-7.1.0 dans les outils de compilation, construit l'EXE et contrôle son contenu.
-Il exécute aussi le cycle Inno installation/désinstallation avec une application
-factice isolée. La CI exécute en plus les tests du backend, du routage des trois
-modes, de réparation et de retrait des raccourcis, ainsi que les tests Flat/VR
-existants. L'EXE, son SHA-256 et son rapport de provenance sont publiés comme
-artifact GitHub Actions. L'EXE n'est pas signé avec un certificat éditeur Plus.
-
-À valider sur PC réel : installation depuis un D2R propre pour chaque édition,
-apparition des trois entrées dans Steam, lancement de chacune et du jeu original,
-Flat sans runtime VR actif, commandes/fenêtres/PNJ du Quest 2 sous SteamVR et
-VDXR, réparation puis désinstallation. Les fixtures n'exécutent pas D2R et ne
-remplacent pas ces essais matériels. Les licences et crédits upstream sont conservés.
+Setup journals replaced mod files, video settings and Steam configuration for
+rollback. Those snapshots exclude character progress. The registered Windows
+uninstaller restores tracked files and removes managed Steam shortcuts while
+retaining characters, current video settings and installation backups.
+Keep the original installation backups when upgrading an older PCVR installation;
+the wizard can adopt a verified backup chain. Save and exit D2R and fully exit
+Steam before installation, repair or removal. Test with offline local characters.
 
 ## Version 0.1.2: preferences and library artwork
 
@@ -127,3 +62,37 @@ verify all three Steam shortcuts and visuals, test both keyboard layouts, choose
 different text/audio languages, then select Default again. Confirm unchanged VR
 controls and panel placement on the actual headset. Automated fixtures do not
 replace those checks.
+
+## Game-local installation and direct Windows launchers (0.1.3 preview)
+
+Setup now places its private runtime, scripts and installation records in
+`<Diablo II Resurrected>/D2R-PCVR-Plus`. There is no additional destination to
+choose. Select **Update / repair** to retain VR calibration and existing profiles.
+The game-local folder must not be a symlink or junction.
+
+Open that folder or the D2R PCVR Plus Start menu group and run:
+
+- `D2R-PCVR-Plus-Flat.exe`
+- `D2R-PCVR-Plus-SteamVR.exe`
+- `D2R-PCVR-Plus-VDXR.exe`
+
+These native executables use the included private Python and existing D2RLoader
+routes. They do not launch the game through a Steam library shortcut. Only modes
+selected during setup are enabled. Steam shortcuts and artwork remain available.
+No system Python or build tools are needed.
+
+This does not remove storefront authentication: the Steam edition may still
+require the Steam client/account, and SteamVR still requires its runtime. VDXR
+requires Virtual Desktop Streamer. Launch the original purchased game once to
+complete its normal sign-in requirements. There is no DRM bypass or new prefix.
+
+When upgrading an older AppData installation, setup adopts verified installation
+backups and repoints Steam shortcuts to the new helper directory. It deliberately
+retains the old AppData files. Do not run the old copy's uninstaller; use the new
+registered uninstaller. Keep the old folder until the new installation is tested.
+Characters remain in the game's original Saved Games folder.
+
+Acceptance checks: install/repair in a Steam library with spaces/non-ASCII paths;
+launch all selected EXEs without opening the Steam library; verify profiles,
+controller calibration and menus; repair again; test removal on a disposable
+installation. Automated fixtures do not certify storefront/headset behavior.

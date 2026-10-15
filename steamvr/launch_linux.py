@@ -105,6 +105,13 @@ def main(arguments=None):
     command, env, info = route(arguments, config, os.environ)
     if info is None:
         os.execvpe(command[0], command, env)
+    # Capture only a real Steam-provided route. Direct launches call route()
+    # directly, so cannot overwrite this template with already rewritten paths.
+    try:
+        from direct_linux import remember
+        remember(ROOT, arguments, os.environ, info['game'])
+    except (OSError, ValueError) as error:
+        print('Direct launcher context was not saved: ' + str(error), file=sys.stderr)
     logs = Path(info['log_dir'])
     logs.mkdir(parents=True, exist_ok=True)
     with (logs / 'plus-linux-launch.jsonl').open('a') as log:

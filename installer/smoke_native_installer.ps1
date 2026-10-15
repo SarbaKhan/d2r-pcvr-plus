@@ -13,7 +13,8 @@ if (!(Test-Path -LiteralPath $ISCCPath) -or !(Test-Path -LiteralPath (Join-Path 
 }
 $qaRoot = Join-Path $repoRoot ('build-frame/installer-qa-' + [guid]::NewGuid().ToString('N'))
 $payload = Join-Path $qaRoot 'payload'
-$target = Join-Path $qaRoot 'installed'
+$game = Join-Path $qaRoot 'Game with spaces'
+$target = Join-Path $game 'D2R-PCVR-Plus'
 New-Item -ItemType Directory -Path "$payload/steamvr","$payload/.runtime" -Force | Out-Null
 Copy-Item -LiteralPath $PythonDirectory -Destination "$payload/.runtime/python" -Recurse
 foreach ($name in @('LICENSE','PCVR-PLUS-SETUP.md','CONTROLS.md')) {
@@ -57,7 +58,7 @@ $scriptPath = Join-Path $qaRoot 'Fixture.iss'
 & $ISCCPath /Qp "/DPayloadDir=$payload" /DModVersion=0.0.1 "/DInstallerOutput=$qaRoot" $scriptPath
 if ($LASTEXITCODE -ne 0) { throw 'Fixture compilation failed' }
 $choices = Join-Path $qaRoot 'choices.ini'
-[IO.File]::WriteAllText($choices,"[setup]`r`nmode=repair`r`n")
+[IO.File]::WriteAllText($choices,"[setup]`r`nmode=repair`r`ngame=$game`r`n")
 $registryKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\D2R-PCVR-Installer-Fixture_is1'
 if (Test-Path -LiteralPath $registryKey) { throw 'A previous fixture remains registered; remove it before testing.' }
 $setup = Start-Process -FilePath (Join-Path $qaRoot 'D2R-PCVR-PLUS-Setup-0.0.1.exe') -ArgumentList @(
@@ -82,7 +83,7 @@ $removal = Start-Process -FilePath "$target/unins000.exe" -ArgumentList @(
 ) -WindowStyle Hidden -PassThru -Wait
 if ($removal.ExitCode -ne 0 -or (Test-Path -LiteralPath $registryKey) -or
     (Test-Path -LiteralPath "$target/.runtime/python/python.exe") -or
-    !(Test-Path -LiteralPath "$qaRoot/removal-ran-before-helper-deletion.txt")) {
+    !(Test-Path -LiteralPath "$game/removal-ran-before-helper-deletion.txt")) {
     throw "Fixture removal failed (exit $($removal.ExitCode)). Logs: $qaRoot"
 }
 [PSCustomObject]@{Result='Passed'; Scope='Inno file install, Windows Apps registration, failed removal retains helpers, successful removal';

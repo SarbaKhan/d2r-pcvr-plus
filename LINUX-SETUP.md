@@ -1,4 +1,4 @@
-# D2R PCVR Plus — Linux Qt Setup (0.2.3 preview)
+# D2R PCVR Plus — Linux Qt Setup (0.2.4 preview)
 
 An English-language setup wizard for the Steam edition of Diablo II: Resurrected.
 The portable archive includes Python, Qt and the Windows mod DLL. You do not need
@@ -21,7 +21,7 @@ included. Promotional library artwork is credited in `artwork/README.md`. Native
 
 1. Install D2R through Steam, choose a working Proton version, launch it once,
    then exit. Keep the existing Proton prefix and Saved Games folder.
-2. Download the **D2R-PCVR-PLUS-Setup-0.2.3-Linux-x86_64** Actions artifact.
+2. Download the **D2R-PCVR-PLUS-Setup-0.2.4-Linux-x86_64** Actions artifact.
    Extract the GitHub ZIP, then extract the `.tar.gz` inside it. Keep all files
    in the extracted folder together.
 3. Run `D2R-PCVR-Plus-Setup` from that folder (double-click it, or run
@@ -234,3 +234,32 @@ Validation: automated fixtures cover automatic destination selection, paths with
 spaces and Unicode, unmanaged-folder/symlink rejection, launcher routing and
 failed-update restoration. Confirm Flat, SteamVR and WiVRn on the real machine
 after upgrading; CI cannot validate headset launches.
+
+## Direct launchers (0.2.4 preview)
+
+The installed `D2R-PCVR-Plus` folder contains executable launchers for the selected
+modes: `D2R-PCVR-Plus-Flat`, `D2R-PCVR-Plus-SteamVR`, `D2R-PCVR-Plus-WiVRn`.
+The KDE/application menu and WiVRn entries now call the bundled executable
+with `--play flat`, `--play steamvr` or `--play wivrn`, not Steam `-applaunch`.
+
+**One-time preparation after upgrading:** launch any Plus mode from its Steam
+shortcut once. The wrapper records the actual Proton executable, container and
+existing prefix in `direct-proton.json` inside the installed payload. This is
+necessary even if you previously tested an older release. Subsequent direct
+launches reuse that configuration while stripping Steam's reaper/launch wrapper.
+No new Wine prefix is created. Only allowlisted compatibility paths/IDs are
+stored, never the full environment or authentication data.
+
+If Proton is removed/replaced or its container moves, launch through Steam once
+again to refresh the context. Keep Steam launch options configured by setup.
+Flat uses native Wayland on Wayland desktops; VR removes that override. Connect
+the headset and start the selected SteamVR/WiVRn runtime before launching VR.
+
+A direct launcher is not a storefront bypass: the Steam edition may still need
+the client running/authenticated. Compatibility without a running Steam client,
+including controller routing, requires testing on the actual machine. Runtime
+failure logs are in `d2rloader/logs/plus-direct-launch.log`.
+
+Test all selected direct modes after learning the route, including from KDE and
+WiVRn. Compare the Proton prefix, saves, mouse and controller behavior against
+the working Steam launch. Verify an update preserves the learned context.

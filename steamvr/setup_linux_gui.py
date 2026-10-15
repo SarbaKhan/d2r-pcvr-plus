@@ -16,7 +16,7 @@ class Setup(QWizard):
     def __init__(self, root):
         super().__init__()
         self.root = root
-        self.setWindowTitle('D2R PCVR Plus — Linux Setup 0.2.3 (Preview)')
+        self.setWindowTitle('D2R PCVR Plus — Linux Setup 0.2.4 (Preview)')
         self.resize(850, 680)
         self.setOption(QWizard.NoBackButtonOnStartPage)
         self.setOption(QWizard.NoBackButtonOnLastPage)

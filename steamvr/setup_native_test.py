@@ -325,6 +325,22 @@ class NativeSetupTests(unittest.TestCase):
                 native.main()
         verify.assert_not_called()
 
+    def test_game_local_helpers_allow_nested_steam_library_but_not_arbitrary_overlap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
+            game = self.steam_game(game, client); values['game'] = str(game)
+            local = game / 'D2R-PCVR-Plus'
+            with patch.object(setup, 'verify_release', return_value={'sha256': {}}):
+                self.assertEqual(native.validate_choices(values, app, managed_root=local)['game'], game)
+                for bad in (game, game / 'Other', client):
+                    with self.assertRaisesRegex(ValueError, 'separate'):
+                        native.validate_choices(values, app, managed_root=bad)
+            local.mkdir()
+            native.atomic_json(local / native.STATE, {'installations': [{'game': str(game), 'steam': str(client), 'saves': str(saves), 'store': 'steam'}]})
+            # Empty receipt: exercises overlap guard without changing game files.
+            with patch.object(setup, 'profiles', return_value=[]):
+                self.assertEqual(native.removal_plan(local), {})
+
     def test_selection_validates_both_editions_profiles_and_headset_connections(self):
         for store in ('steam', 'battlenet'):
             with self.subTest(store=store), tempfile.TemporaryDirectory() as directory:

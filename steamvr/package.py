@@ -46,13 +46,16 @@ def main():
     if args.platform == 'linux-proton':
         paths += ['INSTALL-LINUX.md', 'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py']
     else:
-        paths += ['steamvr/setup_native.py']
+        paths += ['steamvr/setup_native.py', 'steamvr/direct_windows.py']
     paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
               'steamvr/game_install.py', 'steamvr/casc_assets.py']
     paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
     paths += ['artwork/' + mode + '/' + kind + '.png' for mode in ('flat', 'steamvr', 'wivrn', 'virtual-desktop')
               for kind in ('icon', 'cover', 'wide-cover', 'background', 'logo')]
     files = {path: ROOT / path for path in paths}
+    if args.platform != 'linux-proton':
+        for mode in ('Flat', 'SteamVR', 'VDXR'):
+            files['D2R-PCVR-Plus-' + mode + '.exe'] = args.build / 'plus-desktop-launcher.exe'
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
             files[path.relative_to(ROOT).as_posix()] = path

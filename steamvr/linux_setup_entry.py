@@ -25,6 +25,19 @@ def clean_external_environment():
 def main():
     root = payload_root()
     args = sys.argv[1:]
+    from direct_linux import MODES, launch as direct_launch
+    mode = MODES.get(Path(sys.argv[0]).name)
+    if args and args[0] == '--play':
+        mode = args[1] if len(args) == 2 else 'invalid'
+    if mode:
+        clean_external_environment()
+        try:
+            return direct_launch(root, mode)
+        except (OSError, ValueError, KeyError) as error:
+            from PySide6.QtWidgets import QApplication, QMessageBox
+            app = QApplication.instance() or QApplication(sys.argv)
+            QMessageBox.critical(None, 'D2R PCVR Plus launcher', str(error))
+            return 1
     if args and args[0] == '--route':
         clean_external_environment()
         import launch_linux

@@ -207,13 +207,25 @@ def install_choices(choices, source_bundle, payload, runner):
             for folder in ('installation-backups', 'configuration-backups', 'deps'):
                 if (destination / folder).is_dir():
                     shutil.copytree(destination / folder, stage / folder, dirs_exist_ok=True)
-        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.3', 'game': c['game']}))
+        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.4', 'game': c['game']}))
         if destination.exists():
             destination.rename(old)
         stage.rename(destination)
         promoted = True
         installed_payload = destination / Path(payload).relative_to(source_bundle)
         executable = destination / Path(runner).relative_to(source_bundle)
+        from direct_linux import MODES, CONTEXT
+        for name, mode in MODES.items():
+            link = destination / name
+            if link.is_symlink(): link.unlink()
+            if mode in c['modes']:
+                link.symlink_to(executable.name)
+        # Retain the same-game learned Proton route across setup updates.
+        previous_context = old / Path(payload).relative_to(source_bundle) / CONTEXT
+        if previous_context.is_file():
+            record = json.loads(previous_context.read_text())
+            if Path(record.get('game', '')).resolve() == Path(c['game']).resolve():
+                shutil.copy2(previous_context, installed_payload / CONTEXT)
         config = {k: c[k] for k in ('game', 'steam', 'saves', 'steamvr_runtime', 'wivrn_runtime') if c.get(k)}
         (installed_payload / 'linux-launch.json').write_text(json.dumps(config, indent=2) + '\n')
         loader_config = Path(c['game']) / 'd2rloader/config/d2rloader.toml'
@@ -233,7 +245,7 @@ def install_choices(choices, source_bundle, payload, runner):
         updates[shortcut_file], art_updates = plus_artwork.steam_updates(
             updates[shortcut_file], profile, c['game'], c['modes'], installed_payload / 'artwork')
         updates.update(art_updates)
-        updates.update(plus_artwork.desktop_updates(c['steam'], c['game'], c['modes'], installed_payload / 'artwork'))
+        updates.update(plus_artwork.desktop_updates(c['steam'], c['game'], c['modes'], installed_payload / 'artwork', direct_runner=executable))
         if current_options(profile) != c['reviewed_options']:
             raise ValueError('D2R launch options changed during installation. Run setup again.')
         commit_files(updates, destination / ('configuration-backups/' + uuid.uuid4().hex))

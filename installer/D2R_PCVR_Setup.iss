@@ -3,7 +3,7 @@
   #error PayloadDir must point to a verified native Windows package with its private Python runtime.
 #endif
 #ifndef ModVersion
-  #define ModVersion "0.1.2"
+  #define ModVersion "0.1.3"
 #endif
 #ifndef InstallerOutput
   #define InstallerOutput "Output"
@@ -16,7 +16,9 @@ AppVersion={#ModVersion}
 AppPublisher=D2R PCVR Plus contributors
 AppPublisherURL=https://github.com/SarbaKhan/d2r-pcvr-plus
 AppSupportURL=https://github.com/SarbaKhan/d2r-pcvr-plus/issues
-DefaultDirName={localappdata}\Programs\D2R PCVR Plus
+; Replaced by the chosen game path before validation or copying files.
+DefaultDirName={autopf}\D2R-PCVR-Plus
+UsePreviousAppDir=no
 DefaultGroupName=D2R PCVR Plus
 DisableDirPage=yes
 DisableProgramGroupPage=yes
@@ -41,6 +43,9 @@ UninstallDisplayIcon={app}\.runtime\python\python.exe
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
+Name: "{group}\D2R PCVR Plus - Flat Screen"; Filename: "{app}\D2R-PCVR-Plus-Flat.exe"
+Name: "{group}\D2R PCVR Plus - SteamVR"; Filename: "{app}\D2R-PCVR-Plus-SteamVR.exe"
+Name: "{group}\D2R PCVR Plus - Virtual Desktop"; Filename: "{app}\D2R-PCVR-Plus-VDXR.exe"
 Name: "{group}\Installation help"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\PCVR-PLUS-SETUP.md"""
 Name: "{group}\Controller mappings"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\CONTROLS.md"""
 Name: "{group}\Uninstall D2R PCVR Plus"; Filename: "{uninstallexe}"
@@ -246,6 +251,9 @@ begin
   PathsPage.Values[2] := GetIniString('detected', 'saves', '', ProbeFile);
   RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
   PreviousEdition := 'steam';
+  WizardForm.DirEdit.Text := AddBackslash(PathsPage.Values[1]) + 'D2R-PCVR-Plus';
+  if ExpandConstant('{param:CONFIG|}') <> '' then
+    WizardForm.DirEdit.Text := AddBackslash(GetIniString('setup', 'game', '', ExpandConstant('{param:CONFIG|}'))) + 'D2R-PCVR-Plus';
   PreferencesGame := PathsPage.Values[1];
   LoadPreferences;
 end;
@@ -280,6 +288,7 @@ begin
     PreviousEdition := Edition;
   end;
   if CurPageID = PathsPage.ID then begin
+    WizardForm.DirEdit.Text := AddBackslash(PathsPage.Values[1]) + 'D2R-PCVR-Plus';
     if not FileExists(PathsPage.Values[0] + '\steam.exe') or
        not FileExists(PathsPage.Values[1] + '\D2R.exe') or
        not FileExists(PathsPage.Values[2] + '\Settings.json') then begin
@@ -373,6 +382,7 @@ begin
   Result := '';
   if ExpandConstant('{param:CONFIG|}') <> '' then ChoicesFile := ExpandConstant('{param:CONFIG|}')
   else WriteChoices;
+  WizardForm.DirEdit.Text := AddBackslash(GetIniString('setup', 'game', '', ChoicesFile)) + 'D2R-PCVR-Plus';
   if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then
     Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
 end;
@@ -400,7 +410,7 @@ begin
       WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR Plus setup needs attention';
       WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
     end else WizardForm.FinishedLabel.Caption :=
-      'Your shortcuts are ready in Steam. Use SteamVR, Virtual Desktop or Flat Screen with an OFFLINE character.'#13#10#13#10 +
+      'Your direct EXE launchers are in the game folder under D2R-PCVR-Plus. Steam shortcuts are also ready. Use SteamVR, Virtual Desktop or Flat Screen with an OFFLINE character.'#13#10#13#10 +
       'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Plus Start menu folder.';
   end;
 end;

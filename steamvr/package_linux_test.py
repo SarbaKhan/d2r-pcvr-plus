@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def main():
     files = ['LICENSE', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'LINUX-SETUP.md', 'd2r_vr.ini',
              'd2r_pcvr_plus_flat.ini', 'reshade/D2R_DepthFog.fx']
-    modules = ['launch_linux', 'linux_test', 'launch_plus', 'install', 'game_install',
+    modules = ['direct_linux', 'launch_linux', 'linux_test', 'launch_plus', 'install', 'game_install',
                'process_guard', 'prepare_icons', 'steam_assets', 'game_assets', 'casc_assets',
                'prepare_potions', 'potion_assets', 'vendor/bitknit']
     files += ['steamvr/' + name + '.py' for name in modules]

@@ -69,7 +69,7 @@ def desktop_exec(value):
     return desktop_string('"' + text + '"')
 
 
-def desktop_updates(steam, game, modes, directory, applications=None):
+def desktop_updates(steam, game, modes, directory, applications=None, direct_runner=None):
     available = assets(directory, modes)
     if applications is None:
         home = os.environ.get('XDG_DATA_HOME', '')
@@ -89,6 +89,8 @@ def desktop_updates(steam, game, modes, directory, applications=None):
                       and fields.get('Icon') == 'steam' and fields.get('Categories') == 'Game;X-WiVRn-VR;')
             if not owned and not manual:
                 raise ValueError('An unrelated desktop entry already exists: ' + str(path))
+        if direct_runner is not None:
+            command = desktop_exec(direct_runner) + ' --play ' + mode
         text = '\n'.join(['[Desktop Entry]', 'Type=Application', 'Version=1.0',
             'Name=' + NAMES[mode], 'Exec=' + command,
             'Icon=' + desktop_string(available[mode]['icon'][0]), 'Terminal=false',

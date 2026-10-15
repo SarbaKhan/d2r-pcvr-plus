@@ -237,8 +237,16 @@ def validate_choices(values, root, managed_root=None):
             raise ValueError(f'Select the {key} folder.')
         paths[key] = Path(values[key]).expanduser().resolve()
     steam, game, saves = paths['steam'], paths['game'], paths['saves']
-    target = Path(managed_root or root).resolve()
-    for path in paths.values():
+    requested_target = Path(managed_root or root).absolute()
+    target = requested_target.resolve()
+    if requested_target == game / 'D2R-PCVR-Plus' and target != requested_target:
+        raise ValueError('The game-local helper folder must not redirect to another location.')
+    local = target == (game / 'D2R-PCVR-Plus').absolute()
+    if (game / 'D2R-PCVR-Plus').is_symlink():
+        raise ValueError('The game-local helper folder must not be a symlink.')
+    for key, path in paths.items():
+        if local and (key == 'game' or (key == 'steam' and game.is_relative_to(steam))):
+            continue
         if path.is_relative_to(target) or target.is_relative_to(path):
             raise ValueError('The mod helper folder must be separate from the game, Steam and Saved Games folders.')
     if not (steam / 'steam.exe').is_file():
@@ -368,6 +376,8 @@ def install_selected(values, root):
     try:
         print('Installing the mod and configuring Steam shortcuts...', flush=True)
         result = setup.apply_setup(**selection, root=root, on_steam_configured=steam_committed, hide_console=True)
+        atomic_json(root / 'direct-launch.json', {'game': str(game), 'store': selection['store'],
+            'modes': selection['connections'], 'steamvr_runtime': str(selection['runtime'] or '')})
         entry.update(status='installed', receipt=install.read_record(game))
         atomic_json(root / STATE, state)
         print('Setup complete. Start Steam and use the matching SteamVR, Virtual Desktop or Flat shortcut with an offline character.', flush=True)
@@ -397,7 +407,7 @@ def removal_plan(root):
     state = managed_state(root)
     for entry in state['installations']:
         game, steam = Path(entry['game']).resolve(), Path(entry['steam']).resolve()
-        if game.is_relative_to(root.resolve()) or root.resolve().is_relative_to(game):
+        if game.is_relative_to(root.resolve()) or (root.resolve().is_relative_to(game) and root.resolve() != game / 'D2R-PCVR-Plus'):
             raise ValueError('The managed game path overlaps the helper folder.')
         record = install.read_record(game) or entry.get('receipt', {})
         if (game / install.RECORD).exists() or (game / uninstall.PLUGIN).exists():
