@@ -14,6 +14,7 @@ jobs:
         run: |
           python3 -m unittest discover -s steamvr -p launch_linux_test.py
           python3 -m unittest discover -s steamvr -p setup_linux_test.py
+          python3 -m unittest discover -s steamvr -p linux_tls_test.py
           python3 -m unittest discover -s steamvr -p session_test.py
           python3 -m unittest discover -s steamvr -p vr_baseline_test.py
           python3 -m unittest discover -s steamvr -p install_test.py
@@ -134,13 +135,15 @@ jobs:
           path: dist-plus
       - name: Build and smoke-test standalone Qt setup
         run: python installer/build_linux_setup.py --kit dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
+      - name: Verify dependency HTTPS with embedded Python
+        run: build-frame/linux-setup/dist/D2R-PCVR-Plus-Setup/D2R-PCVR-Plus-Setup --tls-check
       - name: Test packaged GUI through X11
         run: xvfb-run -a env QT_QPA_PLATFORM=xcb build-frame/linux-setup/dist/D2R-PCVR-Plus-Setup/D2R-PCVR-Plus-Setup --gui-smoke
       - uses: actions/upload-artifact@v4
         with:
-          name: D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64
+          name: D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64
           path: |
-            dist-plus/D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64.tar.gz
-            dist-plus/D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64.tar.gz.sha256
+            dist-plus/D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64.tar.gz
+            dist-plus/D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64.tar.gz.sha256
             LINUX-SETUP.md
           if-no-files-found: error

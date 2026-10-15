@@ -1,4 +1,4 @@
-# D2R PCVR Plus — Linux Qt Setup (0.2.0 preview)
+# D2R PCVR Plus — Linux Qt Setup (0.2.1 preview)
 
 An English-language setup wizard for the Steam edition of Diablo II: Resurrected.
 The portable archive includes Python, Qt and the Windows mod DLL. You do not need
@@ -21,7 +21,7 @@ included. Native Steam and a working Proton installation are required.
 
 1. Install D2R through Steam, choose a working Proton version, launch it once,
    then exit. Keep the existing Proton prefix and Saved Games folder.
-2. Download the **D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64** Actions artifact.
+2. Download the **D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64** Actions artifact.
    Extract the GitHub ZIP, then extract the `.tar.gz` inside it. Keep all files
    in the extracted folder together.
 3. Run `D2R-PCVR-Plus-Setup` from that folder (double-click it, or run
@@ -116,6 +116,19 @@ Use local offline characters for acceptance testing. Never delete a Proton prefi
 as a troubleshooting step for this setup.
 
 ## Troubleshooting and recovery
+
+Version 0.2.1 fixes HTTPS downloads from the frozen runtime on distributions such
+as CachyOS/Arch: setup explicitly discovers the host CA bundle instead of relying
+on certificate paths compiled into the build machine's OpenSSL. Certificate and
+hostname verification remain mandatory, as do dependency SHA-256 checks.
+Explicit `SSL_CERT_FILE` / `SSL_CERT_DIR` overrides are respected and validated.
+No trust-store changes are made to the operating system or game launch environment.
+
+If an earlier installation failed at the first HTTPS download, extract the new
+setup and run it with the same permanent destination; no game cleanup is needed.
+For TLS diagnostics, run `./D2R-PCVR-Plus-Setup --tls-check`. If system certificates
+are missing, repair your distribution's `ca-certificates` package; never disable
+certificate verification.
 
 The progress page shows the installation worker's output. Copy it before closing
 if setup fails. Game-side logs are under `d2rloader/logs`, including

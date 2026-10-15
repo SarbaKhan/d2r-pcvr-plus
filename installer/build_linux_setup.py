@@ -43,7 +43,7 @@ def main():
         if hashlib.sha256((payload / name).read_bytes()).hexdigest() != digest:
             raise ValueError('Linux kit integrity check failed: ' + name)
     # Include editable setup sources and notices alongside the bundled modules.
-    for name in ('setup_linux', 'setup_linux_gui', 'linux_setup_entry', 'steam_config'):
+    for name in ('setup_linux', 'setup_linux_gui', 'linux_setup_entry', 'linux_tls', 'steam_config'):
         shutil.copy2(ROOT / 'steamvr' / (name + '.py'), payload / 'steamvr')
     shutil.copy2(ROOT / 'LINUX-SETUP.md', payload)
     licenses = payload / 'runtime-licenses'
@@ -71,6 +71,7 @@ def main():
     bundle = build / 'dist' / NAME
     executable = bundle / NAME
     subprocess.run([str(executable), '--self-test'], check=True)
+    subprocess.run([sys.executable, str(ROOT / 'installer/linux_tls_smoke.py'), str(executable)], check=True)
     env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
     subprocess.run([str(executable), '--gui-smoke'], env=env, check=True)
     # A stock route must execute its child and propagate status without game config.
@@ -78,10 +79,10 @@ def main():
     if result.returncode != 17:
         raise ValueError('Frozen stock launcher smoke test failed')
     shutil.copy2(ROOT / 'LINUX-SETUP.md', bundle / 'README.md')
-    (bundle / 'build.json').write_text(json.dumps({'source_commit': commit, 'version': '0.2.0-preview',
+    (bundle / 'build.json').write_text(json.dumps({'source_commit': commit, 'version': '0.2.1-preview',
         'python': sys.version, 'packages': {p: importlib.metadata.version(p) for p in ('PySide6', 'PyInstaller')},
         'hardware_validation': 'Earlier CLI routes validated on CachyOS/Quest 2; Qt installation requires acceptance testing.'}, indent=2))
-    output = ROOT / 'dist-plus/D2R-PCVR-PLUS-Setup-0.2.0-Linux-x86_64.tar.gz'
+    output = ROOT / 'dist-plus/D2R-PCVR-PLUS-Setup-0.2.1-Linux-x86_64.tar.gz'
     output.parent.mkdir(exist_ok=True)
     with tarfile.open(output, 'w:gz') as archive:
         archive.add(bundle, arcname=NAME)

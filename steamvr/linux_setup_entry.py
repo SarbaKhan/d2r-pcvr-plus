@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 
 
 def payload_root():
@@ -31,6 +32,9 @@ def main():
         return launch_linux.main(args[1:])
     if args and args[0] == '--install-game':
         clean_external_environment()
+        if '--download-deps' in args:
+            import linux_tls
+            linux_tls.configure()
         import install
         install.ROOT = root
         sys.argv = ['install.py'] + args[1:]
@@ -40,6 +44,13 @@ def main():
         import setup_linux
         setup_linux.install_choices(json.loads(Path(args[1]).read_text()), Path(sys.executable).parent,
                                     root, Path(sys.executable))
+        return 0
+    if args and args[0] == '--tls-check':
+        import linux_tls
+        linux_tls.check(args[1:] or [
+            'https://d2rloader.net/downloads/D2RLoader-1.3.1-beta.zip',
+            'https://reshade.me/downloads/ReShade_Setup_6.8.0_Addon.exe',
+            'https://api.nuget.org/v3/index.json'])
         return 0
     if args and args[0] == '--self-test':
         # Imports exercise frozen dependencies without touching Steam/game files.
@@ -59,6 +70,11 @@ def main():
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
+    except subprocess.CalledProcessError as error:
+        print(f'D2R PCVR Plus: Installation worker failed (exit {error.returncode}). '
+              'See the download or installation error above. You can retry setup with the same folders.',
+              file=sys.stderr)
+        raise SystemExit(error.returncode or 1)
     except (OSError, ValueError, KeyError) as error:
         print('D2R PCVR Plus: ' + str(error), file=sys.stderr)
         raise SystemExit(1)
