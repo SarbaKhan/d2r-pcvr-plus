@@ -1,6 +1,6 @@
-# D2R PCVR Plus — Windows Setup 0.1.3 preview
+# D2R PCVR Plus — Windows Setup 0.1.4 preview
 
-`D2R-PCVR-PLUS-Setup-0.1.3.exe` installs the complete mod into a clean Windows
+`D2R-PCVR-PLUS-Setup-0.1.4.exe` installs the complete mod into a clean Windows
 x64 copy of Diablo II: Resurrected. It bundles the Flat/native OpenXR plugin,
 profiles, private Python, OpenXR loader and CascLib. D2RLoader and ReShade are
 downloaded from their official sources and checked against pinned hashes.
@@ -63,7 +63,7 @@ different text/audio languages, then select Default again. Confirm unchanged VR
 controls and panel placement on the actual headset. Automated fixtures do not
 replace those checks.
 
-## Game-local installation and direct Windows launchers (0.1.3 preview)
+## Game-local installation and direct Windows launchers (0.1.4 preview)
 
 Setup now places its private runtime, scripts and installation records in
 `<Diablo II Resurrected>/D2R-PCVR-Plus`. There is no additional destination to

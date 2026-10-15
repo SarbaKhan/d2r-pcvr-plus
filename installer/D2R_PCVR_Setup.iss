@@ -3,7 +3,7 @@
   #error PayloadDir must point to a verified native Windows package with its private Python runtime.
 #endif
 #ifndef ModVersion
-  #define ModVersion "0.1.3"
+  #define ModVersion "0.1.4"
 #endif
 #ifndef InstallerOutput
   #define InstallerOutput "Output"
@@ -176,6 +176,31 @@ begin
   end;
 end;
 
+function SelectGameDestination(const Game: String): Boolean;
+var
+  Drive, Rest: String;
+  Separator: Integer;
+begin
+  { Never replace Inno's absolute default with an empty/relative probe result.
+    The hidden directory page is validated before installation. }
+  Result := False;
+  if Length(Game) >= 3 then begin
+    Drive := Uppercase(Copy(Game, 1, 1));
+    Result := (Drive >= 'A') and (Drive <= 'Z') and
+      (Copy(Game, 2, 2) = ':\');
+  end;
+  if Copy(Game, 1, 2) = '\\' then begin
+    Rest := Copy(Game, 3, Length(Game));
+    Separator := Pos('\', Rest);
+    if Separator > 1 then begin
+      Rest := Copy(Rest, Separator + 1, Length(Rest));
+      Result := (Rest <> '') and (Copy(Rest, 1, 1) <> '\');
+    end;
+  end;
+  if Result then
+    WizardForm.DirEdit.Text := AddBackslash(Game) + 'D2R-PCVR-Plus';
+end;
+
 procedure InitializeWizard;
 begin
   WizardForm.WelcomeLabel2.Caption :=
@@ -251,9 +276,9 @@ begin
   PathsPage.Values[2] := GetIniString('detected', 'saves', '', ProbeFile);
   RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
   PreviousEdition := 'steam';
-  WizardForm.DirEdit.Text := AddBackslash(PathsPage.Values[1]) + 'D2R-PCVR-Plus';
+  SelectGameDestination(PathsPage.Values[1]);
   if ExpandConstant('{param:CONFIG|}') <> '' then
-    WizardForm.DirEdit.Text := AddBackslash(GetIniString('setup', 'game', '', ExpandConstant('{param:CONFIG|}'))) + 'D2R-PCVR-Plus';
+    SelectGameDestination(GetIniString('setup', 'game', '', ExpandConstant('{param:CONFIG|}')));
   PreferencesGame := PathsPage.Values[1];
   LoadPreferences;
 end;
@@ -288,7 +313,11 @@ begin
     PreviousEdition := Edition;
   end;
   if CurPageID = PathsPage.ID then begin
-    WizardForm.DirEdit.Text := AddBackslash(PathsPage.Values[1]) + 'D2R-PCVR-Plus';
+    if not SelectGameDestination(PathsPage.Values[1]) then begin
+      MsgBox('Select an absolute game folder, including its drive letter or UNC share.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
     if not FileExists(PathsPage.Values[0] + '\steam.exe') or
        not FileExists(PathsPage.Values[1] + '\D2R.exe') or
        not FileExists(PathsPage.Values[2] + '\Settings.json') then begin
@@ -378,11 +407,22 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Game: String;
 begin
   Result := '';
-  if ExpandConstant('{param:CONFIG|}') <> '' then ChoicesFile := ExpandConstant('{param:CONFIG|}')
-  else WriteChoices;
-  WizardForm.DirEdit.Text := AddBackslash(GetIniString('setup', 'game', '', ChoicesFile)) + 'D2R-PCVR-Plus';
+  if ExpandConstant('{param:CONFIG|}') <> '' then begin
+    ChoicesFile := ExpandConstant('{param:CONFIG|}');
+    Game := GetIniString('setup', 'game', '', ChoicesFile);
+  end else begin
+    WriteChoices;
+    { Keep the Unicode wizard value; do not reread the UTF-8 INI using WinAPI. }
+    Game := PathsPage.Values[1];
+  end;
+  if not SelectGameDestination(Game) then begin
+    Result := 'Select an absolute Diablo II: Resurrected folder before installing. No files were changed.';
+    Exit;
+  end;
   if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then
     Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
 end;

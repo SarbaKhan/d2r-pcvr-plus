@@ -53,6 +53,39 @@ $script = $script.Replace('D2R-PCVR-Managed-Operation','D2R-PCVR-Installer-Fixtu
 $script = $script.Replace('DefaultGroupName=D2R PCVR Plus','DefaultGroupName=D2R PCVR Installer Fixture')
 $script = $script.Replace('AppName=D2R PCVR Plus','AppName=D2R PCVR Installer Fixture')
 $script = $script.Replace('UninstallDisplayName=D2R PCVR Plus (Windows Flat/VR mod)','UninstallDisplayName=D2R PCVR Installer Fixture')
+# The probe deliberately returns no game. Exercise that interactive startup
+# state BEFORE /CONFIG supplies the fixture game (silent-only coverage hid it).
+$pathChecks = @'
+procedure CheckGameDestinationFixture;
+var
+  Original: String;
+begin
+  Original := WizardForm.DirEdit.Text;
+  if (Length(Original) < 3) or (Copy(Original, 2, 2) <> ':\') then
+    RaiseException('Missing game detection left Inno with a relative directory');
+  if SelectGameDestination('') or SelectGameDestination('relative\game') or
+     SelectGameDestination('C:game') or SelectGameDestination('\game') or
+     SelectGameDestination('\\server') or SelectGameDestination('\\server\') then
+    RaiseException('Invalid game destination accepted');
+  if WizardForm.DirEdit.Text <> Original then
+    RaiseException('Invalid input overwrote the last absolute directory');
+  if not SelectGameDestination('C:\Games\Diablo II Résurrected') then
+    RaiseException('Absolute Unicode game destination rejected');
+  if WizardForm.DirEdit.Text <> 'C:\Games\Diablo II Résurrected\D2R-PCVR-Plus' then
+    RaiseException('Unicode game destination changed');
+  if not SelectGameDestination('\\server\share\Game with spaces') then
+    RaiseException('UNC game destination rejected');
+  if WizardForm.DirEdit.Text <> '\\server\share\Game with spaces\D2R-PCVR-Plus' then
+    RaiseException('UNC game destination changed');
+  WizardForm.DirEdit.Text := Original;
+  Log('Game destination regression checks passed (missing detection, invalid, Unicode, UNC).');
+end;
+
+'@
+$script = $script.Replace('procedure InitializeWizard;', $pathChecks + 'procedure InitializeWizard;')
+$pathHook = '  SelectGameDestination(PathsPage.Values[1]);'
+if (!$script.Contains($pathHook)) { throw 'Game destination regression hook is missing' }
+$script = $script.Replace($pathHook, $pathHook + "`r`n  CheckGameDestinationFixture;")
 $scriptPath = Join-Path $qaRoot 'Fixture.iss'
 [IO.File]::WriteAllText($scriptPath, $script)
 & $ISCCPath /Qp "/DPayloadDir=$payload" /DModVersion=0.0.1 "/DInstallerOutput=$qaRoot" $scriptPath
