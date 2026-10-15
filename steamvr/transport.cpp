@@ -1,3 +1,5 @@
+#include "perspective_rig.h"
+#include "mouse_cursor.h"
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
@@ -90,6 +92,22 @@ std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<bool> externalPerspective{false};
+uint32_t externalGeneration=~0u;
+math::Vec externalReference{};
+float externalReferenceYaw=0,externalGroundY=0,externalDistance=40;
+int externalMode=4;
+XrSwapchain mouseChain=XR_NULL_HANDLE;
+std::atomic<void*> observedMouseCursor{nullptr};
+HCURSOR uploadedMouseCursor=nullptr;
+bool mouseAtlasPending=false,mouseImageReady=false;
+int mouseWidth=64,mouseHeight=64,mouseHotX=32,mouseHotY=32;
+ULONGLONG mouseRetryAt=0;
+constexpr int MouseAtlasSide=256;
+perspective::Rig externalRig{};
+bool externalRigValid=false;
+#endif
 gameplay::Engine motion;
 skills::QuickCast quickCast;
 gameplay::Input motionInput;
@@ -609,8 +627,60 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
         const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
         p[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
     }
-    return UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+    const bool ready=UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+
+    return ready;
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+// Capture only when the game's cursor handle changes. No game artwork is
+// shipped or written to disk, and no per-frame texture readback is needed.
+void RefreshMouseCursor() {
+    if(!externalPerspective||!perspective::MouseVisible(externalMode,panelMode))return;
+    if(!mouseChain) {
+        // Retain the proven arrow until the runtime exposes a readable game cursor.
+        std::vector<uint8_t> fallback(MouseAtlasSide*MouseAtlasSide*4);
+        for(int y=32;y<59;++y)for(int x=32;x<52;++x) {
+            const int dx=x-32,dy=y-32;
+            if(dx>dy*2/3||dy>24||(dy>16&&dx<dy-16))continue;
+            auto* p=fallback.data()+(y*MouseAtlasSide+x)*4;
+            const bool edge=dx==0||dx>=dy*2/3-1||dy>=23||(dy>16&&dx<=dy-15);
+            p[0]=p[1]=p[2]=edge?15:255;p[3]=255;
+        }
+        UploadAtlas(mouseChain,atlasFormat,MouseAtlasSide,MouseAtlasSide,fallback,true,&mouseAtlasPending);
+        return;
+    }
+    auto cursor=static_cast<HCURSOR>(observedMouseCursor.load());
+    if(!cursor){CURSORINFO info{sizeof(CURSORINFO)};if(GetCursorInfo(&info))cursor=info.hCursor;}
+    if(!cursor||cursor==uploadedMouseCursor||GetTickCount64()<mouseRetryAt)return;
+    mouseRetryAt=GetTickCount64()+250; // bound failed captures / rapidly changing handles
+    ICONINFO icon{};if(!GetIconInfo(cursor,&icon))return;
+    BITMAP bitmap{};
+    const bool got=GetObjectW(icon.hbmColor?icon.hbmColor:icon.hbmMask,sizeof bitmap,&bitmap)!=0;
+    const int w=bitmap.bmWidth,h=icon.hbmColor?bitmap.bmHeight:bitmap.bmHeight/2;
+    if(icon.hbmColor)DeleteObject(icon.hbmColor);if(icon.hbmMask)DeleteObject(icon.hbmMask);
+    if(!got||w<=0||h<=0||w>MouseAtlasSide||h>MouseAtlasSide||icon.xHotspot>=unsigned(w)||icon.yHotspot>=unsigned(h))return;
+    BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=w;
+    bi.bmiHeader.biHeight=-h;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+    HDC dc=CreateCompatibleDC(nullptr);if(!dc)return;
+    void* bits=nullptr;HBITMAP dib=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&bits,nullptr,0);
+    if(!dib){DeleteDC(dc);return;}
+    HGDIOBJ old=SelectObject(dc,dib);
+    const size_t bytes=size_t(w)*h*4;
+    std::vector<uint8_t> black(bytes),pixels(MouseAtlasSide*MouseAtlasSide*4);
+    std::memset(bits,0,bytes);
+    bool ok=DrawIconEx(dc,0,0,cursor,w,h,0,nullptr,DI_NORMAL|DI_NOMIRROR)!=0;GdiFlush();
+    std::memcpy(black.data(),bits,bytes);std::memset(bits,255,bytes);
+    ok=DrawIconEx(dc,0,0,cursor,w,h,0,nullptr,DI_NORMAL|DI_NOMIRROR)!=0&&ok;GdiFlush();
+    if(ok)for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+        const size_t at=(size_t(y)*w+x)*4;
+        mousecursor::Pixel(black.data()+at,static_cast<const uint8_t*>(bits)+at,pixels.data()+(size_t(y)*MouseAtlasSide+x)*4);
+    }
+    SelectObject(dc,old);DeleteObject(dib);DeleteDC(dc);
+    if(ok&&UploadAtlas(mouseChain,atlasFormat,MouseAtlasSide,MouseAtlasSide,pixels,true,&mouseAtlasPending)) {
+        uploadedMouseCursor=cursor;mouseWidth=w;mouseHeight=h;mouseHotX=int(icon.xHotspot);mouseHotY=int(icon.yHotspot);
+    }
+}
+#endif
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
@@ -1054,6 +1124,21 @@ void Input() {
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(externalPerspective) {
+        // Keep 6DoF tracking, but publish no synthetic pad, mouse or combat input.
+        auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;s.handsValid=0;
+        const auto q=Q(head.orientation);const auto forward=math::Rotate(q,{0,0,-1});
+        s.headYawDeg=math::Heading(q)*kRadToDeg;
+        s.headPitchDeg=std::asin(std::clamp(forward.y,-1.f,1.f))*kRadToDeg;
+        s.headRollDeg=0;s.pitchValid=s.rollValid=1;s.headHeightM=head.position.y;
+        s.sampleStamp=D2RVRStampNow();s.sampleStampMagic=D2RVR_SAMPLE_STAMP_MAGIC;
+        s.roomMagic=D2RVR_ROOM_MAGIC;s.headRoom[0]=head.position.x;s.headRoom[1]=head.position.y;s.headRoom[2]=head.position.z;
+        s.headYawRoomDeg=s.headYawDeg;++s.counter;
+        if(actions.data){actions.data->held=0;++actions.data->counter;}
+        return;
+    }
+#endif
     const bool nativeUi=panelMode||spatialMode;
     const uint32_t inputEpoch=gamestate::MenuEpoch();
     menus::Pad physical;
@@ -1436,7 +1521,11 @@ bool Begin() {
         // Latch once per pair: camera matrices, foveation and xrEndFrame must
         // all describe the same frustum, including a live settings change.
         // LocateViews refreshes the original runtime FOVs on every frame.
-        const bool centered=symmetricProjection.load();
+        const bool centered=symmetricProjection.load()
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+            ||externalPerspective
+#endif
+            ;
         if(centered) {
             const auto& l=views[0].fov;const auto& r=views[1].fov;
             const auto f=math::EnclosingSymmetricFov(
@@ -1677,7 +1766,11 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     foveation::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
-bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
+bool SpatialMenu(){
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(externalPerspective)return false; // full native UI panel for physical mouse/gamepad
+#endif
+    return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
@@ -1729,6 +1822,10 @@ void BeginPair() {
     lastTiming={};
     if(session&&!failed){
         if(frame)EndPair();Begin();pairDrawing=true;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        externalRigValid=false;
+        if(Active())RefreshMouseCursor();
+#endif
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         if(Active())profile::BeginPair();else profile::SkipPair();
         if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
@@ -1776,6 +1873,12 @@ void EndPair() {
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=frameState.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     std::array<const XrCompositionLayerBaseHeader*,32> layers{};uint32_t count=0;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mouseAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        mouseImageReady=Check(pReleaseSwapchainImage(mouseChain,&release),"release native mouse atlas");mouseAtlasPending=false;
+    }
+#endif
     if(settingsAtlasPending){
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         settingsImageReady=Check(pReleaseSwapchainImage(settingsChain,&release),"release settings atlas");settingsAtlasPending=false;
@@ -1902,6 +2005,43 @@ void EndPair() {
         motionQuad(laser,beamPose,.003f,beamLength,{{0,0},{64,32}},pointerChain);
         if(pointerHit)motionQuad(dot,dotPose,.018f,.018f,{{0,32},{64,64}},pointerChain);
     }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    XrCompositionLayerQuad mouseCursor{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(layer&&externalPerspective&&mouseChain&&mouseImageReady&&perspective::MouseVisible(externalMode,panelMode)&&
+       !settingsModel.open&&!bodyCalibration.Active()) {
+        POINT cursor{};RECT client{};
+        if(gameWindow&&GetCursorPos(&cursor)&&ScreenToClient(gameWindow,&cursor)&&GetClientRect(gameWindow,&client)&&
+           client.right>0&&client.bottom>0&&cursor.x>=0&&cursor.y>=0&&cursor.x<client.right&&cursor.y<client.bottom) {
+            const float u=float(cursor.x)/client.right,v=float(cursor.y)/client.bottom;
+            XrPosef pose{};float size=0;
+            if(panelMode&&menuPlaced) {
+                pose=menuPose;
+                const auto offset=math::Rotate(Q(menuPose.orientation),{(u-.5f)*panelWidth,(.5f-v)*panelWidth*height/width,.002f});
+                const auto at=V(menuPose.position)+offset;pose.position={at.x,at.y,at.z};
+                size=panelWidth*64.f/client.right;
+            } else if(!panelMode&&externalRigValid&&externalMode==1) {
+                const auto camera=perspective::MouseCamera(externalRig,externalReferenceYaw);
+                float projection[16];const auto f=views[0].fov;
+                math::Projection(f.angleLeft,f.angleRight,f.angleDown,f.angleUp,.15f,projection);
+                const auto direction=perspective::MouseDirection(camera,projection[0],projection[5],u,v);
+                const auto point=perspective::MouseMarker(camera,direction,externalGroundY,externalDistance);
+                const auto at=perspective::ToTracking(externalRig,point);
+                pose.position={at.x,at.y,at.z};pose.orientation=head.orientation;
+                // Constant angular size, independent of world scale/distance.
+                const auto delta=at-V(head.position);
+                size=std::clamp(std::sqrt(math::Dot(delta,delta))*.035f,.02f,.5f);
+            }
+            if(size>0) {
+                const float scale=size/64.f;
+                // Position the tip/hotspot at the pick point, not the bitmap center.
+                const auto offset=math::Rotate(Q(pose.orientation),mousecursor::CenterOffset(
+                    float(mouseWidth),float(mouseHeight),float(mouseHotX),float(mouseHotY),scale));
+                pose.position.x+=offset.x;pose.position.y+=offset.y;pose.position.z+=offset.z;
+                motionQuad(mouseCursor,pose,mouseWidth*scale,mouseHeight*scale,{{0,0},{mouseWidth,mouseHeight}},mouseChain);
+            }
+        }
+    }
+#endif
     XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
         static bool reported=false;
@@ -2071,6 +2211,37 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void ObserveMouseCursor(void* cursor){if(cursor)observedMouseCursor.store(cursor);}
+bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&!bodyCalibration.Active()&&state==XR_SESSION_STATE_FOCUSED;}
+void SetExternalPerspective(int mode) {
+    std::lock_guard lock(mutex);
+    // Cancel pending casts, gestures and pointer presses before changing ownership.
+    ClearInput();motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;
+}
+bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
+    float distance,float heading,float down,float units,uint32_t generation,int eye) {
+    std::lock_guard lock(mutex);if(!Active())return false;
+    if(!externalRigValid) {
+        if(externalGeneration!=generation) {
+            externalGeneration=generation;externalReference=V(head.position);
+            externalReferenceYaw=math::Heading(Q(head.orientation));
+        }
+        externalRig=perspective::Orbit({hero[0],hero[1],hero[2]},height,distance,heading,down,
+            units,externalReference,externalReferenceYaw);
+        externalGroundY=hero[1];externalDistance=distance;
+        externalRigValid=perspective::Valid(externalRig);
+    }
+    if(!externalRigValid){render=false;return false;} // never submit an inconsistent eye pair
+    const auto& rig=externalRig;
+    // F1's pick camera stays fixed while both rendered eyes retain full 6DoF.
+    const auto c=externalMode==1?perspective::MouseCamera(rig,externalReferenceYaw):
+        perspective::Transform(rig,{V(head.position),Q(head.orientation)});
+    const auto& pose=views[eye&1].pose;
+    const auto e=perspective::Transform(rig,{V(pose.position),Q(pose.orientation)});
+    math::View(c.p,c.q,center);math::View(e.p,e.q,out);return true;
+}
+#endif
 bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
@@ -2125,6 +2296,11 @@ void Shutdown() {
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
+    externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
+    mouseWidth=mouseHeight=64;mouseHotX=mouseHotY=32;
+#endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();

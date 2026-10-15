@@ -21,6 +21,10 @@ endif()
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX D2RVR_FIRST_PERSON=1)
 add_compile_definitions(D2RVR_NATIVE_OPENXR=1)
+option(D2RVR_EXPERIMENTAL_PERSPECTIVES "Build experimental native VR cameras" OFF)
+if(D2RVR_EXPERIMENTAL_PERSPECTIVES)
+  add_compile_definitions(D2RVR_EXPERIMENTAL_PERSPECTIVES=1)
+endif()
 add_library(minhook STATIC ${ROOT}/third_party/minhook/src/buffer.c ${ROOT}/third_party/minhook/src/hook.c ${ROOT}/third_party/minhook/src/trampoline.c ${ROOT}/third_party/minhook/src/hde/hde64.c)
 target_include_directories(minhook PUBLIC ${ROOT}/third_party/minhook/include)
 add_library(d2rcam STATIC ${ROOT}/cleanroom/camera/d2rcam.cpp ${ROOT}/cleanroom/drawdist/drawdist.cpp ${ROOT}/cleanroom/sigscan/sigscan.cpp)
@@ -35,6 +39,7 @@ target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/settings_menu.cpp ${CMAKE_CURRENT_S
 target_include_directories(d2rl-vrcam PRIVATE ${ROOT}/shared ${ROOT}/external/flatvr ${ROOT}/external/bodywalk ${ROOT}/external/reshade/include ${CMAKE_CURRENT_SOURCE_DIR} ${OPENXR_SDK}/include)
 target_link_libraries(d2rl-vrcam PRIVATE d2rcam minhook user32 gdi32 framevr-runtime)
 set_target_properties(d2rl-vrcam PROPERTIES PREFIX "")
+add_executable(perspective-rig-test perspective_rig_test.cpp)
 add_executable(flat-controls-test flat_controls_test.cpp)
 add_executable(memory-test memory_test.cpp)
 add_executable(memory-benchmark memory_benchmark.cpp)
@@ -116,7 +121,7 @@ target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
-foreach(test_target IN ITEMS flat-controls-test memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
+foreach(test_target IN ITEMS perspective-rig-test flat-controls-test memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test

@@ -72,6 +72,10 @@ bool Refresh();
 // game's pick with it (e.g. aiming along a hand). Shadow fitting never asks.
 using RayFn = bool (*)(float origin[3], float dir[3]);
 void SetRayOverride(RayFn ray);
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+using ScreenRayFn=bool (*)(float x,float y,float w,float h,float origin[3],float dir[3]);
+void SetScreenRayOverride(ScreenRayFn ray);
+#endif
 
 // The point the game camera aims at (the hero), read from the camera now.
 bool LookAtNow(float out[3]);

@@ -90,6 +90,8 @@ namespace gamestate {bool LeftShield();}
 #include "afr_eye_shared.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
+#include "perspective_rig.h"
+#include "ngx_parameter.h"
 #include "menu_controls.h"
 #include "spell_aim.h"
 #include "spell_aim_signatures.h"
@@ -772,20 +774,38 @@ void StartMatrixWatch();   // [debug] matrix_writer, below PickHeroMatrix
 // Selected once before hooks/threads start. A runtime change requires a restart.
 bool g_flatSession = false;
 std::atomic<unsigned> g_flatBindings{pcvrplus::PackKeys('W', 'A', 'S', 'D')};
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<int> g_nativeMode{4},g_nativeRequested{4};
+std::atomic<uint32_t> g_nativeGeneration{1};
+std::atomic<bool> g_nativeRecenter{false};
+std::atomic<ULONGLONG> g_nativePadAt{0};
+std::atomic<float> g_nativeTopDistance{40},g_nativeThirdDistance{12};
+#endif
+bool NativeExternal() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    return !g_flatSession&&framevr::perspective::External(g_nativeMode.load());
+#else
+    return false;
+#endif
+}
 int MoveKey(int index) {
     static constexpr int vrKeys[] = {'W', 'A', 'S', 'D'};
-    return g_flatSession ? pcvrplus::Key(g_flatBindings.load(), index) : vrKeys[index];
+    return (g_flatSession || NativeExternal()) ? pcvrplus::Key(g_flatBindings.load(), index) : vrKeys[index];
 }
 void LoadFlatBindings() {
+    std::wstring bindingsPath=g_iniPath;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession)bindingsPath=bindingsPath.substr(0,bindingsPath.find_last_of(L"\\/")+1)+L"d2r_pcvr_plus_flat.ini";
+#endif
     wchar_t layout[16]{};
-    GetPrivateProfileStringW(L"input", L"flat_layout", L"WASD", layout, 16, g_iniPath);
+    GetPrivateProfileStringW(L"input", L"flat_layout", L"WASD", layout, 16, bindingsPath.c_str());
     const bool azerty = _wcsicmp(layout, L"ZQSD") == 0;
     const wchar_t* names[] = {L"flat_forward", L"flat_left", L"flat_back", L"flat_right"};
     const int defaults[] = {azerty ? 'Z' : 'W', azerty ? 'Q' : 'A', 'S', 'D'};
     unsigned packed = 0;
     for (int i = 0; i < 4; ++i) {
         wchar_t value[16]{}, fallback[2] = {wchar_t(defaults[i]), 0};
-        GetPrivateProfileStringW(L"input", names[i], fallback, value, 16, g_iniPath);
+        GetPrivateProfileStringW(L"input", names[i], fallback, value, 16, bindingsPath.c_str());
         const int key = pcvrplus::LetterKey(value[0], value[1], defaults[i]);
         packed |= unsigned(key) << (i * 8);
     }
@@ -796,6 +816,11 @@ void LoadFlatBindings() {
 void LoadSettings() {
     g_set.platform.store(g_flatSession ? 0 : 1);
     if (g_flatSession) LoadFlatBindings();
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession)LoadFlatBindings();
+    g_nativeTopDistance.store(std::clamp(IniF(L"native_views",L"top_distance",40.f),10.f,150.f));
+    g_nativeThirdDistance.store(std::clamp(IniF(L"native_views",L"third_distance",12.f),3.f,60.f));
+#endif
     #ifdef D2RVR_NATIVE_OPENXR
     framevr::profile::Request(GetPrivateProfileIntW(L"debug",L"profile_capture",0,g_iniPath));
     billboards::ConfigurePortalCenters(IniB(L"debug",L"portal_centers",true));
@@ -853,11 +878,15 @@ void LoadSettings() {
         // Only first person uses the native OpenXR eye poses. The legacy
         // FlatVR orbit/table cameras cannot be submitted with those poses:
         // a saved third-person mode persisted that mismatch across launches.
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        if(!g_flatSession){v=g_nativeMode.load();write=false;} // runtime selection; always starts at 4
+#else
         if (!g_flatSession && v != 4) {
             Log("Frame OpenXR: restoring first person; other VR cameras require the legacy FlatVR transport");
             v = 4;
             write = true;
         }
+#endif
 #endif
         if (write) {
             wchar_t b[8]; swprintf_s(b, L"%d", v);
@@ -1399,16 +1428,26 @@ StickFrame g_stickFrame{};
 std::atomic<int> g_view{1};   // while on: 1 first person, 2 third person
 bool ThirdPerson() { return g_view.load() == 2; }
 // [mode]: the view the Home page, F1..F4 or F12 picked (Settings::platform).
-int ViewNow() { return g_set.platform.load() == 1 ? g_set.vrView.load() : g_set.flatView.load(); }
+int ViewNow() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession)return g_nativeMode.load();
+#endif
+    return g_set.platform.load() == 1 ? g_set.vrView.load() : g_set.flatView.load();
+}
 #if D2RVR_FIRST_PERSON
-int ViewCount() { return g_set.platform.load() == 1 ? 4 : 3; }
+int ViewCount() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession)return 3; // hotkeys; persisted immersive mode is still 4
+#endif
+    return g_set.platform.load() == 1 ? 4 : 3;
+}
 #else
 int ViewCount() { return g_set.platform.load() == 1 ? 3 : 2; }   // F4 and flat F3 are first person: coming soon
 #endif
 // VR first person with the body on the player's: arms on the controllers, the
 // trunk held - everything that was here before the Home page.
 #if D2RVR_FIRST_PERSON
-bool FullBody() { return g_set.platform.load() == 1 && g_set.vrView.load() == 4; }
+bool FullBody() { return g_set.platform.load() == 1 && ViewNow() == 4; }
 #else
 bool FullBody() { return false; }
 #endif
@@ -1422,10 +1461,10 @@ bool InsideFree() { return false; }
 // VR view 5: the game laid on the room's floor and looked at from above - our
 // own camera where the head is in the room ([table] hero_cm, TableCamera), the
 // hero whole as the game animates him, the void black for the headset to key.
-bool TableView() { return g_set.platform.load() == 1 && g_set.vrView.load() == 3; }
+bool TableView() { return g_set.platform.load() == 1 && ViewNow() == 3; }
 // VR view 1 with [top] perspective: the game's view from above, but through our
 // camera - the FlatVR screen's field of view and real stereo (TopCamera).
-bool TopPersp() { return g_set.platform.load() == 1 && g_set.vrView.load() == 1 && g_set.topPersp.load(); }
+bool TopPersp() { return g_set.platform.load() == 1 && ViewNow() == 1 && (g_set.topPersp.load() || NativeExternal()); }
 // Our camera looking down on a hero the game animates whole, turned by nobody: F1 in perspective and the floor.
 std::atomic<float> g_topUnitsPerM{0.0f};   // F1 in perspective: world units per metre on the screen's plane (TopCamera), 0 = not known yet
 bool Overhead() { return TableView() || TopPersp(); }
@@ -1444,6 +1483,7 @@ bool MouseLookForView() {
 }
 // The interface in the picture (not taken out for FlatVR), per view.
 bool ClassicNow() {
+    if(NativeExternal())return true;
     if (g_set.platform.load() == 0) return true;   // no FlatVR to take it
     if (!g_enabled.load() || TopPersp()) return g_set.classicTop.load() == 0;
     if (TableView()) return g_set.classicFloor.load() == 0;   // before ThirdPerson: ApplyView runs the floor as view 2
@@ -2319,6 +2359,59 @@ void Tick() {
 }
 }  // namespace prevscan
 
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+SRWLOCK g_nativePickLock=SRWLOCK_INIT;
+float g_nativeCenter[16]{},g_nativePickView[16]{},g_nativePickProj[16]{};
+bool g_nativePickValid=false;
+bool NativeScreenRay(float x,float y,float w,float h,float origin[3],float dir[3]) {
+    if(!NativeExternal()||gamestate::MenuOpen())return false;
+    AcquireSRWLockShared(&g_nativePickLock);
+    const bool ok=g_nativePickValid&&d2rcam::m4::RayThrough(g_nativePickView,g_nativePickProj,w,h,x,y,origin,dir);
+    ReleaseSRWLockShared(&g_nativePickLock);return ok;
+}
+bool NativeAlternativeView(const d2rcam::WorldView& in,float out[16]) {
+    if(!g_enabled.load()||!in.lookAtValid||!framevr::Active())return false;
+    const float* G=in.gameView;const bool top=g_nativeMode.load()==1;
+    const float yaw=g_pairNow.load()?g_heldYaw.load():g_mouseYaw.load()+g_turnYaw.load();
+    const float pitch=g_pairNow.load()?g_heldPitch.load():g_mousePitch.load();
+    const float heading=atan2f(G[2],G[10])-yaw*.0174532925f;
+    const float down=(top?55.f:std::clamp(15.f+pitch,-60.f,75.f))*.0174532925f;
+    const float units=std::max(1.f,g_set.height.load())/UserEyeHeightM();
+    float center[16];
+    if(!framevr::AlternativeView(out,center,in.lookAt,top?0.f:g_set.thirdHeight.load(),
+        top?g_nativeTopDistance.load():g_nativeThirdDistance.load(),heading,down,units,g_nativeGeneration.load(),g_eye.load())) {
+        g_nativeRequested.store(4);return false;
+    }
+    memcpy(g_nativeCenter,center,sizeof center); // render thread only
+    const V3 eye={-out[12]*out[0]-out[13]*out[1]-out[14]*out[2],
+        -out[12]*out[4]-out[13]*out[5]-out[14]*out[6],-out[12]*out[8]-out[13]*out[9]-out[14]*out[10]};
+    const float position[]={eye.x,eye.y,eye.z};
+    for(int k=0;k<3;++k){g_eyeWorld[k].store(position[k]);g_eyeFromLook[k].store(position[k]-in.lookAt[k]);}
+    g_eyeOk.store(true);g_viewBuilds.fetch_add(1);g_camYaw.store(yaw);g_viewFwdY.store(-center[6]);
+    AcquireSRWLockExclusive(&g_skyLock);auto& sky=g_skyView[g_eye.load()&1];
+    for(int k=0;k<3;++k){sky.axes[k]=out[k*4];sky.axes[k+3]=out[k*4+1];sky.axes[k+6]=out[k*4+2];sky.eyeRel[k]=position[k]-in.lookAt[k];sky.hero[k]=in.lookAt[k];}
+    sky.axes_ok=true;ReleaseSRWLockExclusive(&g_skyLock);
+    // Navigation follows the rig, never an incidental head turn.
+    StickFrame f{};f.camR[0]=cosf(heading);f.camR[2]=-sinf(heading);
+    f.camF[0]=-sinf(heading);f.camF[2]=-cosf(heading);
+    for(int k=0;k<3;++k){f.scrR[k]=G[k*4];f.scrU[k]=G[k*4+1];}
+    f.mirX=in.gameProj[0]<0?-1.f:1.f;f.mirY=in.gameProj[5]<0?-1.f:1.f;f.yawAtBuild=yaw;f.valid=true;
+    AcquireSRWLockExclusive(&g_stickLock);g_stickFrame=f;ReleaseSRWLockExclusive(&g_stickLock);
+    return true;
+}
+bool NativeAlternativeProjection(const d2rcam::WorldView& in,float out[16]) {
+    if(!g_inWorld.load()||!framevr::Projection(out,.15f,g_eye.load()))return false;
+    g_lastNear.store(.15f);g_projSx.store(out[0]);g_projSy.store(out[5]);
+    if(in.viewportH>0&&in.viewportW>0)g_lastAspect.store(in.viewportW/in.viewportH);
+    AcquireSRWLockExclusive(&g_nativePickLock);
+    g_nativePickValid=d2rcam::m4::Inverse(g_nativeCenter,g_nativePickView);
+    memcpy(g_nativePickProj,out,sizeof g_nativePickProj);ReleaseSRWLockExclusive(&g_nativePickLock);
+    AcquireSRWLockExclusive(&g_skyLock);auto& sky=g_skyView[g_eye.load()&1];
+    sky.proj[0]=out[0];sky.proj[1]=out[5];sky.proj[2]=out[8];sky.proj[3]=out[9];sky.proj_ok=true;
+    ReleaseSRWLockExclusive(&g_skyLock);return true;
+}
+#endif
+
 bool VrViewInner(const d2rcam::WorldView& in, float out[16]);
 extern std::atomic<bool> g_inWorld;
 bool VrView(const d2rcam::WorldView& in, float out[16]) {
@@ -2343,6 +2436,9 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     if (!g_inWorld.load()) return false;
 #ifdef D2RVR_NATIVE_OPENXR
     if(!g_flatSession&&gamestate::MenuOpen()&&!framevr::SpatialMenu())return false; // ordinary flat UI panel
+#endif
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal())return NativeAlternativeView(in,out);
 #endif
     if (TopStereoOn()) return TopStereoView(in, out);
     if (!g_enabled.load() || !in.lookAtValid) return false;
@@ -2523,6 +2619,9 @@ bool VrProj(const d2rcam::WorldView& in, float M[16]) {
 }
 bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
     if (!g_enabled.load() || !g_inWorld.load()) return false;   // the menus: the game's own (no near clip through the heroes' heads)
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal())return NativeAlternativeProjection(in,M);
+#endif
     const float ratio = in.viewportH > 0.0f ? in.viewportW / in.viewportH : 0.0f;
     const float aspect = ratio > 0.1f && ratio < 10.0f ? ratio : 16.0f / 9.0f;
     g_lastAspect.store(aspect);
@@ -2975,7 +3074,7 @@ bool HandGridDir(float* gx, float* gy) {
 
 // A skill button is down (A, B, X, Y, RB), no menu: the attack or spell it casts goes along the hand.
 std::atomic<bool> g_skillHeld{false};
-bool AimByVector() { return g_enabled.load() && g_set.bowMode.load() == 4 && (g_aHeld.load() || g_skillHeld.load()); }
+bool AimByVector() { return !NativeExternal() && g_enabled.load() && g_set.bowMode.load() == 4 && (g_aHeld.load() || g_skillHeld.load()); }
 
 #ifdef D2RVR_NATIVE_OPENXR
 using SpellControllerTargetFn=uintptr_t(*)(uintptr_t,int);
@@ -2987,7 +3086,7 @@ SpellResolveFn OrigSpellResolve=nullptr;
 std::atomic<bool> g_spellAimReady{false};
 thread_local framevr::spellaim::Cast g_spellCast;
 bool DirectedSpellAim(float& gx,float& gy) {
-    return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+    return !NativeExternal()&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
         framevr::DirectedSpellActive()&&HandGridDir(&gx,&gy);
 }
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
@@ -3263,6 +3362,18 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
     // moves its cursor on the screen, so turning it by the camera's yaw sent the
     // cursor the wrong way, and the right stick is the menu's too.
     if (gamestate::MenuOpen()) { if (own) g_rightX.store(0.0f); return; }
+    if(NativeExternal()) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        g_nativePadAt.store(GetTickCount64());
+#endif
+        if(ViewNow()==2) {
+            g_rightX.store(std::fabs(in.sThumbRX/32767.f)>.2f?in.sThumbRX/32767.f:0.f);
+            s->Gamepad.sThumbRX=0;s->Gamepad.sThumbRY=0;
+            float x=in.sThumbLX/32767.f,y=in.sThumbLY/32767.f;
+            if(ViewStickToGame(&x,&y)){s->Gamepad.sThumbLX=SHORT(std::clamp(x*32767,-32768.f,32767.f));s->Gamepad.sThumbLY=SHORT(std::clamp(y*32767,-32768.f,32767.f));}
+        }
+        return;
+    }
     AimByMouse(s);
     AimByTurn(s);
     const bool aimed = BowStick(s);
@@ -3296,7 +3407,7 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
 std::atomic<const BWPadMirror*> g_padMirror{nullptr};
 
 bool PadMirrorRead(BWPadMirror* out) {
-    if (g_flatSession || !g_set.bodywalkPad.load()) return false;
+    if (g_flatSession || NativeExternal() || !g_set.bodywalkPad.load()) return false;
     const BWPadMirror* p = g_padMirror.load();
     if (!p) {
         static std::atomic<ULONGLONG> lastTry{0};
@@ -3342,7 +3453,7 @@ constexpr uint64_t RVA_INTERACT_ON_ATTACK = 0x22BD840;
 const D2RVR_Actions* g_actions = nullptr;
 
 uint32_t ActionsHeld() {
-    if (g_flatSession) return 0;
+    if (g_flatSession || NativeExternal()) return 0;
     if (!g_actions) {
         static ULONGLONG lastTry = 0;
         if (GetTickCount64() - lastTry < 1000) return 0;
@@ -3450,7 +3561,7 @@ uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
 // without a headset. Live while our camera shows a game area and no menu is open.
 std::atomic<bool> g_mouseLookOn{false};
 bool ChatOpen();
-bool ShooterActive() { return (!g_flatSession || !ChatOpen()) && g_mouseLookOn.load() && g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen(); }
+bool ShooterActive() { return (!(g_flatSession || NativeExternal()) || !ChatOpen()) && g_mouseLookOn.load() && g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen(); }
 
 // The game's chat line (Enter) is open: then W A S D are letters typed, not
 // ours. D2's UI-state array, one byte per panel at 0x2A2ADA0 (GetUIState
@@ -3531,8 +3642,8 @@ bool VrKeyWalk() {
 bool VrKeyInput(float* px, float* py) {
     if (!GameFocused() || ChatOpen()) return false;
     auto held = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
-    float y = (held('W') ? 1.0f : 0.0f) - (held('S') ? 1.0f : 0.0f);
-    float x = (held('D') ? 1.0f : 0.0f) - (held('A') ? 1.0f : 0.0f);
+    float y = (held(MoveKey(0)) ? 1.0f : 0.0f) - (held(MoveKey(2)) ? 1.0f : 0.0f);
+    float x = (held(MoveKey(3)) ? 1.0f : 0.0f) - (held(MoveKey(1)) ? 1.0f : 0.0f);
     if (x == 0.0f && y == 0.0f) return false;
     if (x != 0.0f && y != 0.0f) { x *= 0.70710678f; y *= 0.70710678f; }
     ViewStickToGame(&x, &y);
@@ -3555,6 +3666,7 @@ bool KeyMoveMode() { return FlatKeyMode() || VrKeyWalk(); }
 // Our camera's views only (F2-F4: the stick turned like any other), no menu, no chat.
 std::atomic<int> g_stickHook{0};   // HookStickGet: 0 not in yet, 1 in, 2 not possible
 bool DirectWalkNow() {
+    if(NativeExternal())return false;
     return g_set.platform.load() == 1 && g_set.directWalk.load() && g_enabled.load() && g_inWorld.load() &&
            !gamestate::MenuOpen() && !ChatOpen();
 }
@@ -3871,7 +3983,7 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
             return r;
         }
 #endif
-        if (idx == 0) ApplyActions(s);
+        if (idx == 0 && !NativeExternal()) ApplyActions(s);
         {   // which entry polls what, with BodyWalk's pad or without (2026-10-07): at most 30 lines a session
             static std::atomic<int> lines{0};
             static ULONGLONG told[std::size(g_xhooks)] = {};
@@ -4128,6 +4240,9 @@ HCURSOR Crosshair() {
 }
 
 HCURSOR WINAPI HookSetCursor(HCURSOR c) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal()&&c&&c!=Crosshair())framevr::ObserveMouseCursor(c);
+#endif
     if (c && CrosshairNow())
         if (HCURSOR x = Crosshair()) c = x;
     return OrigSetCursor(c);
@@ -4223,7 +4338,7 @@ bool g_dragging = false;
 POINT g_dragLast{};
 
 void MouseTick() {
-    if (!g_enabled.load() || !GameFocused() || (g_flatSession && (gamestate::MenuOpen() || ChatOpen()))) { g_dragging = false; return; }
+    if (!g_enabled.load() || !GameFocused() || ((g_flatSession || NativeExternal()) && (gamestate::MenuOpen() || ChatOpen()))) { g_dragging = false; return; }
     const bool shooter=ShooterActive(),drag=(GetAsyncKeyState(VK_MBUTTON)&0x8000)!=0;
     if(!shooter&&!drag){g_dragging=false;return;}
     POINT p{};
@@ -4458,6 +4573,7 @@ std::string BusyThreads(double spanUs) {
 }  // namespace pairtime
 
 void Recenter();
+void CommitNativePerspective();
 uintptr_t HookDrawGameScreen(int a) {
     static thread_local int depth = 0;
     static bool told = false, toldWhy = false;
@@ -4469,6 +4585,7 @@ uintptr_t HookDrawGameScreen(int a) {
     static ULONGLONG since = GetTickCount64(), lastHitch = 0;
     static uint32_t pairs = 0,cpuPairs=0;
     const double entered=pairtime::UsNow();
+    if(!depth)CommitNativePerspective();
     if (depth || !PairWanted()) {
         if(!depth) {
 #ifdef D2RVR_NATIVE_OPENXR
@@ -4852,7 +4969,7 @@ bool ApplyView(const char** said) {
     // camera where the head is in the room (TableCamera), the hero whole as from
     // behind; the void black, the headset shows the room there (docs/plan_tabletop_mr.md).
     const bool table = vr && v == 3;   // the game on the floor is F3 since vr_mode_order 2 (as TableView)
-    const bool on = v != 1 || (vr && g_set.topPersp.load());
+    const bool on = NativeExternal() || v != 1 || (vr && g_set.topPersp.load());
     if (on && !AllHooksIn()) InstallHooks();
     if (on && !g_h.camera) { *said = "vrcam: no camera yet - its hooks are not in (see the log)"; return false; }
     g_view.store(v == 2 || table || (vr && v == 1) ? 2 : 1);
@@ -4874,10 +4991,42 @@ bool ApplyView(const char** said) {
     return true;
 }
 
+void CommitNativePerspective() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(g_flatSession)return;
+    const int mode=g_nativeRequested.load(),old=g_nativeMode.load();
+    if(mode==old&&!g_nativeRecenter.load())return; // no transport lock in steady-state F3
+    if(!g_inWorld.load()||gamestate::MenuOpen()||framevr::SettingsOpen()||!PairWanted())return;
+    if(NativeExternal()&&g_nativeRecenter.exchange(false)) {
+        g_nativeGeneration.fetch_add(1);dlssmv::CameraCut();
+        Log("Native VR: external camera recentered");
+    }
+    if(mode==old||!framevr::perspective::Supported(mode)||!framevr::PerspectiveReady())return;
+    static float immersiveYaw=0,immersiveTurn=0,immersivePitch=0;
+    if(old==4){immersiveYaw=g_mouseYaw.load();immersiveTurn=g_turnYaw.load();immersivePitch=g_mousePitch.load();}
+    g_mouseYaw.store(mode==4?immersiveYaw:0);g_turnYaw.store(mode==4?immersiveTurn:0);g_mousePitch.store(mode==4?immersivePitch:0);
+    framevr::SetExternalPerspective(mode);
+    g_nativeMode.store(mode);g_set.vrView.store(mode);g_nativeGeneration.fetch_add(1);
+    g_rightX.store(0);g_aHeld.store(false);g_skillHeld.store(false);g_aimRay.store(false);
+    if(g_aimDown||g_aimStage){SendKeysMouse(false);g_aimDown=false;}
+    g_eyeOk.store(false);g_dragging=false;g_meleeTurnEpoch.fetch_add(1);
+    melee::CancelWeapon();melee::CancelShield();skel::ResetGrip();
+    dlssmv::CameraCut();
+    AcquireSRWLockExclusive(&g_nativePickLock);g_nativePickValid=false;ReleaseSRWLockExclusive(&g_nativePickLock);
+    d2rcam::SetScreenRayOverride(&NativeScreenRay);
+    prevscan::g_lastViewOk=false;prevscan::g_lastProjOk=false;
+    const char* message="";ApplyView(&message);
+    LogF("Native VR experimental: perspective %d (F1 overhead, F2 third person, F3 immersive)",mode);
+#endif
+}
+
 // Called from the update thread on every tick and after a view key: applies
 // the view once whenever [mode] names another one (the Home page writes it,
 // the keys below write it too).
 void FollowMode() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession&&g_enabled.load())return;
+#endif
     static int applied = -1;
     static bool toldWait = false;
     const int want = g_set.platform.load() * 10 + ViewNow() + (TopPersp() ? 100 : 0);
@@ -4889,6 +5038,9 @@ void FollowMode() {
 
 // A view of the current platform, by number: remembered in the ini, applied at once.
 void SetView(int v) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession){if(framevr::perspective::Supported(v))g_nativeRequested.store(v);return;}
+#endif
     if (v < 1 || v > ViewCount()) return;
     const bool vr = g_set.platform.load() == 1;
 #ifdef D2RVR_NATIVE_OPENXR
@@ -4906,6 +5058,9 @@ void SetView(int v) {
 
 // F12 (and the console's "vrcam"): the next view of this platform, round.
 const char* Toggle() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession){SetView(framevr::perspective::Next(g_nativeRequested.load()));return "Native VR: perspective switch queued";}
+#endif
 #ifdef D2RVR_NATIVE_OPENXR
     if (g_set.platform.load() == 1) return "Frame OpenXR: native VR stays in first person";
 #endif
@@ -4914,6 +5069,9 @@ const char* Toggle() {
 }
 
 void Recenter() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal()){g_nativeRecenter.store(true);return;}
+#endif
 #if D2RVR_NATIVE_OPENXR
     framevr::Recenter();
 #endif
@@ -4954,6 +5112,9 @@ SRWLOCK g_turnLock = SRWLOCK_INIT;
 std::atomic<uint32_t> g_meleeTurnEpoch{0};
 
 void TurnTick() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal()&&GetTickCount64()-g_nativePadAt.load()>250)g_rightX.store(0);
+#endif
     AcquireSRWLockExclusive(&g_turnLock);
     static double last = NowSeconds();
     static bool armed = true;
@@ -5801,7 +5962,7 @@ void PushArms() {
     // camera: else the right stick only swung the camera round a hero who
     // kept facing wherever he last walked.
     // Without the body the hero is turned whole, about the vertical only, and seen from his eyes.
-    in.bodyTurn = own ? (FullBody() ? g_set.bodyTurn.load() : 2) : on && ThirdPerson() && !Overhead() && g_set.thirdTurn.load() ? 2 : 0;
+    in.bodyTurn = NativeExternal() ? 0 : own ? (FullBody() ? g_set.bodyTurn.load() : 2) : on && ThirdPerson() && !Overhead() && g_set.thirdTurn.load() ? 2 : 0;
 #if D2RVR_FIRST_PERSON
     in.hideHead = own && (g_set.hideHead.load() || !FullBody());
     const int likeStaff = HeldLikeStaff();
@@ -6869,6 +7030,18 @@ int __cdecl HookCreate(void* cmdList, int feature, void* params, NgxHandle** out
     return r;
 }
 int __cdecl HookEval(void* cmdList, const NgxHandle* h, const void* params, void* callback) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    struct CutReset {
+        dlssmv::NgxParameter* p=nullptr;int old=0;
+        CutReset(const void* params,int eye) {
+            if(params&&dlssmv::TakeCameraCut(eye)) {
+                p=(dlssmv::NgxParameter*)const_cast<void*>(params);
+                p->Get("Reset",&old);p->Set("Reset",1);
+            }
+        }
+        ~CutReset(){if(p)p->Set("Reset",old);}
+    } reset(params,g_eye.load()&1);
+#endif
     if (h && g_set.dlssPerEye.load() && AfrOn()) {
         // the eye this frame draws: a pair per game frame sets it for each pass;
         // by turns, the one after the eye presented last
@@ -7744,7 +7917,13 @@ DWORD WINAPI UpdateThread(void*) {
             if (pressed & D2RVR_ACT_RECENTER) Recenter();
         }
         for (int k = 0; k < 5; ++k)
-            if (fView[k].Pressed(focus) && k < ViewCount()) SetView(k + 1);
+            if (fView[k].Pressed(focus) && k < ViewCount()) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+                SetView(g_flatSession?k+1:framevr::perspective::KeyMode(k+1));
+#else
+                SetView(k+1);
+#endif
+            }
         if (f11.Pressed(focus)) Recenter();
 #ifdef D2RVR_NATIVE_OPENXR
         if (f8.Pressed(focus)) framevr::RequestStereoCapture();

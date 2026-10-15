@@ -1,0 +1,60 @@
+name: Experimental native VR perspectives DLL
+on:
+  push:
+    branches: [feature/native-vr-perspectives]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  camera-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Camera math and source regression checks
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror steamvr/perspective_rig_test.cpp -o /tmp/perspective-rig-test
+          /tmp/perspective-rig-test
+          python3 -m unittest discover -s steamvr -p native_perspectives_test.py
+          python3 -m unittest discover -s steamvr -p launch_linux_test.py
+          python3 -m unittest discover -s steamvr -p launch_plus_test.py
+  windows-dll:
+    needs: camera-tests
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Install pinned toolchain
+        shell: powershell
+        run: ./steamvr/setup_windows_tools.ps1
+      - uses: actions/cache/save@v4
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Build experimental DLL and fixtures
+        shell: powershell
+        run: ./steamvr/build_windows.ps1 -ExperimentalPerspectives
+      - name: Run CPU fixtures
+        shell: powershell
+        run: |
+          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -E '^(ui-blit-|swapchain-color|interaction-weapon-skills|interaction-map-tab)'
+          if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p native_perspectives_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'First-person source regression' }
+      - name: Stage DLL-only test artifact
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force dist-perspectives | Out-Null
+          Copy-Item build-frame/windows-native/d2rl-vrcam.dll dist-perspectives/
+          Copy-Item docs/native-vr-perspectives-testing.md dist-perspectives/README.md
+          $hash = (Get-FileHash dist-perspectives/d2rl-vrcam.dll -Algorithm SHA256).Hash.ToLower()
+          "$hash  d2rl-vrcam.dll" | Set-Content -Encoding ascii dist-perspectives/SHA256SUMS.txt
+          "Source commit: $env:GITHUB_SHA" | Set-Content -Encoding ascii dist-perspectives/BUILD.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-Native-VR-Perspectives-Experimental
+          path: dist-perspectives/*
+          if-no-files-found: error
