@@ -155,7 +155,8 @@ class BattleNetTests(unittest.TestCase):
             self.assertIn('Battle.net (experimental), D2R 3.3.93847', output.getvalue())
             self.assertEqual((config / 'localconfig.vdf').read_bytes(), original)
             entry = steam.decode_binary((config / 'shortcuts.vdf').read_bytes())['shortcuts']['0']
-            self.assertIn('(Battle.net)', entry['appname'])
+            self.assertEqual(entry['appname'], 'D2R PCVR Plus - Virtual Desktop')
+            self.assertEqual(steam.entry_store(entry, ''), 'battlenet')
             self.assertIn('--frame-vdxr', entry['LaunchOptions'])
             self.assertEqual(entry['OpenVR'], 0)
             command = run.call_args.args[0]
