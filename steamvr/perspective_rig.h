@@ -32,7 +32,7 @@ inline Pose MouseCamera(const Rig& r,float referenceYaw) {
 inline math::Vec ToTracking(const Rig& r,math::Vec world) {
     return r.reference+math::Rotate(math::Conjugate(r.rotation),world-r.anchor)*(1/r.units);
 }
-constexpr bool MouseVisible(int mode,bool panel) {return mode==1||(mode==2&&panel);}
+constexpr bool MouseVisible(int mode,bool panel) {return mode==1||((mode==2||mode==3)&&panel);}
 inline math::Vec MouseDirection(Pose camera,float sx,float sy,float u,float v) {
     return math::Normalized(math::Rotate(camera.q,{(2*u-1)/sx,(1-2*v)/sy,-1}));
 }

@@ -783,7 +783,8 @@ std::atomic<uint32_t> g_nativeGeneration{1};
 std::atomic<bool> g_nativeRecenter{false},g_dioramaShaderReady{false};
 std::atomic<ULONGLONG> g_nativePadAt{0};
 std::atomic<float> g_nativeTopDistance{40},g_nativeThirdDistance{12};
-std::atomic<float> g_dioramaWidth{.7f},g_dioramaRadius{24},g_dioramaDistance{.65f},g_dioramaDrop{.45f},g_dioramaFollow{.15f};
+std::atomic<float> g_dioramaWalkYaw{0};
+std::atomic<float> g_dioramaWidth{1.2124f},g_dioramaRadius{24},g_dioramaDistance{.65f},g_dioramaDrop{.45f},g_dioramaFollow{.15f};
 #endif
 bool NativeExternal() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
@@ -829,7 +830,7 @@ void LoadSettings() {
     if (g_flatSession) LoadFlatBindings();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(!g_flatSession)LoadFlatBindings();
-    g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",.7f),.3f,1.5f));
+    g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.2124f),.3f,3.f));
     g_dioramaRadius.store(std::clamp(IniF(L"diorama",L"radius_units",24.f),8.f,60.f));
     g_dioramaDistance.store(std::clamp(IniF(L"diorama",L"distance_m",.65f),.3f,2.f));
     g_dioramaDrop.store(std::clamp(IniF(L"diorama",L"below_eye_m",.45f),.1f,1.2f));
@@ -1873,7 +1874,7 @@ bool BarNearWanted() { return AfrOn() && ClassicNow() && std::abs(BarNearNow()) 
 // The map on the floor (F3) nearer or farther in stereo ([hud_floor] map_near), as the toolbar.
 bool MapNearWanted() { return AfrOn() && ClassicNow() && TableView() && std::abs(g_set.mapNearFloor.load()) > 0.01f; }
 // VR F3, the game on the floor, with our camera on (ClassicNow's order: off is F1 whatever the view).
-bool FloorView() { return g_enabled.load() && TableView(); }
+bool FloorView() { return g_enabled.load() && TableView() && !NativeDiorama(); }
 // The item labels' box opacity and size for the view now - each VR view's Interface tab has
 // its own (F3 [hud_floor], F1 [hud_top], F2 [hud_third], F4 [hud]); 1 and 1 = the game's own.
 // Flat keeps the game's labels: it has no such tabs.
@@ -1881,7 +1882,7 @@ void LabelLookNow(float* alpha, float* size) {
     *alpha = 1.0f; *size = 1.0f;
     if (g_set.platform.load() != 1) return;
     if (FloorView()) { *alpha = g_set.labelsAlphaFloor.load(); *size = g_set.labelsSizeFloor.load(); }
-    else if (!g_enabled.load() || TopPersp()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
+    else if (!g_enabled.load() || TopPersp() || NativeDiorama()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
     else if (ThirdPerson()) { *alpha = g_set.labelsAlphaThird.load(); *size = g_set.labelsSizeThird.load(); }
     else if (FullBody()) { *alpha = g_set.labelsAlphaBody.load(); *size = g_set.labelsSizeBody.load(); }
 }
@@ -2411,6 +2412,10 @@ bool NativeAlternativeView(const d2rcam::WorldView& in,float out[16]) {
     if(!ready) {
         g_nativeRequested.store(4);return false;
     }
+    // Head yaw affects F4 locomotion only. The anchored table itself never rotates.
+    // Freeze heading near vertical gaze, where a projected forward vector is unstable.
+    if(table && center[2]*center[2]+center[10]*center[10]>.04f)
+        g_dioramaWalkYaw.store(atan2f(center[2],center[10])-atan2f(G[2],G[10]));
     memcpy(g_nativeCenter,center,sizeof center); // render thread only
     const V3 eye={-out[12]*out[0]-out[13]*out[1]-out[14]*out[2],
         -out[12]*out[4]-out[13]*out[5]-out[14]*out[6],-out[12]*out[8]-out[13]*out[9]-out[14]*out[10]};
@@ -3441,6 +3446,17 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
     // cursor the wrong way, and the right stick is the menu's too.
     if (gamestate::MenuOpen()) { if (own) g_rightX.store(0.0f); return; }
     if(ClassicPadMode()) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        if(NativeDiorama()) {
+            if(g_inWorld.load()&&GameFocused()&&!ChatOpen()&&!framevr::SettingsOpen()) {
+                float x=float(in.sThumbLX),y=float(in.sThumbLY);
+                pcvrplus::gamepad::RotateWalk(x,y,g_dioramaWalkYaw.load());
+                s->Gamepad.sThumbLX=SHORT(std::clamp(x,-32768.f,32767.f));
+                s->Gamepad.sThumbLY=SHORT(std::clamp(y,-32768.f,32767.f));
+            }
+            return; // native right stick and buttons; never camera input
+        }
+#endif
         // F1 is completely native. In camera views only the two right axes
         // and camera-relative left vector change; every button/trigger is intact.
         if(!ClassicPadAllowed())return;
@@ -5086,6 +5102,7 @@ void CommitNativePerspective() {
     static float immersiveYaw=0,immersiveTurn=0,immersivePitch=0;
     if(old==4){immersiveYaw=g_mouseYaw.load();immersiveTurn=g_turnYaw.load();immersivePitch=g_mousePitch.load();}
     g_mouseYaw.store(mode==4?immersiveYaw:0);g_turnYaw.store(mode==4?immersiveTurn:0);g_mousePitch.store(mode==4?immersivePitch:0);
+    g_dioramaWalkYaw.store(0);
     framevr::SetExternalPerspective(mode);
     ResetClassicPad();
     g_nativeMode.store(mode);g_set.vrView.store(mode);g_nativeGeneration.fetch_add(1);

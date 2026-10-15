@@ -21,7 +21,7 @@ GPU rendering still need validation inside the actual game.
 
 1. Load an offline character. Sit/stand comfortably and look straight ahead.
 2. Press F4. Look down slightly: the horizontal circular miniature is initially
-   70 cm across, 65 cm forward and 45 cm below your eye level.
+   121 cm across, 65 cm forward and 45 cm below your eye level.
 3. Play with the native gamepad. VR controllers must not attack or move the hero.
 4. Lean sideways/forward and turn your head. Check genuine depth and parallax;
    the miniature must stay in place, not follow your gaze.
@@ -43,7 +43,7 @@ section to `<game>/d2rloader/plugins/d2r_vr.ini` (do not overwrite other setting
 
 ```ini
 [diorama]
-width_m=0.7
+width_m=1.2124
 radius_units=24
 distance_m=0.65
 below_eye_m=0.45
@@ -69,3 +69,24 @@ lag is capped at 20% of radius and large jumps reset the sampled centre.
 - Native menu/panel legibility, cursor alignment, effects on UI, real stereo,
   performance and all runtime combinations require headset testing.
 - No claim of passthrough or complete Diorama feature support in this artifact.
+
+## Feedback revision: menus, viewer-relative movement and larger footprint
+
+The native game cursor capture/panel path used in F1 is now enabled for F4
+menus too; no replacement cursor artwork is introduced. F4 also uses F1 label
+appearance rather than legacy floor-label fading. Confirm the native circular
+gamepad cursor in inventory, stash, trade and dialogue.
+
+F4 rotates only the left-stick gameplay vector by the viewer's horizontal head
+orientation relative to the original game camera. Walking to the opposite side
+and looking back should reverse the mapping. Menu navigation, right stick and
+buttons remain native. Near straight-down/up gaze, the last usable yaw is held
+to avoid a singular direction jump. Head turns do not move the table.
+
+Default diameter is now approximately 1.2124 m (sqrt(3) times the original
+diameter, three times the footprint area), with the same 24-unit game-world radius. This enlarges the
+miniature without exposing more unloaded world. If you already added an explicit
+`width_m=0.7`, change it to `width_m=1.2124`; existing explicit settings are respected.
+Check movement from all four sides, diagonals and partial stick deflection; open
+a menu while holding the stick and verify normal cursor navigation. Recheck F1,
+F2 camera, F3 physical controls and Flat. Hardware validation remains required.

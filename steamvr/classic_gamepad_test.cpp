@@ -3,6 +3,19 @@
 #include <limits>
 using namespace pcvrplus::gamepad;
 int main(){
+    // Viewer-relative walk: opposite side reverses up; quarter turn gives left.
+    float x=0,y=1;RotateWalk(x,y,3.14159265f);
+    assert(std::fabs(x)<1e-6f&&std::fabs(y+1)<1e-6f);
+    x=0;y=.5f;RotateWalk(x,y,1.57079633f);
+    assert(std::fabs(x+.5f)<1e-6f&&std::fabs(y)<1e-6f);
+    for(float angle:{-3.f,-1.f,0.f,1.f,3.f}) {
+        x=.3f;y=.4f;RotateWalk(x,y,angle);
+        assert(std::fabs(x*x+y*y-.25f)<1e-6f);
+        RotateWalk(x,y,-angle);
+        assert(std::fabs(x-.3f)<1e-6f&&std::fabs(y-.4f)<1e-6f);
+        x=y=0;RotateWalk(x,y,angle);assert(x==0&&y==0);
+    }
+    assert(!CameraView(false,true,3)); // F4 right stick remains native
     assert(!CameraView(false,true,1));assert(CameraView(false,true,2));
     assert(!CameraView(false,false,4)); // immersive VR never enters this path
     assert(!CameraView(true,false,1));assert(CameraView(true,false,2));assert(CameraView(true,false,3));

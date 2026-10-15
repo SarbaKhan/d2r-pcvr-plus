@@ -7,6 +7,14 @@ struct Delta { float yaw=0, pitch=0; };
 constexpr bool CameraView(bool flat, bool external, int view) {
     return (flat && (view==2 || view==3)) || (external && view==2);
 }
+// Rotate only the native locomotion vector, preserving analog magnitude.
+// Positive angle means the viewer turned left in world space relative to the
+// original game camera. Buttons and right stick never enter this operation.
+inline void RotateWalk(float& x,float& y,float angle) {
+    if(!std::isfinite(angle))return;
+    const float c=std::cos(angle),s=std::sin(angle),oldX=x;
+    x=oldX*c-y*s;y=oldX*s+y*c;
+}
 inline float Axis(float x,float dead) {
     if(!std::isfinite(x)) return 0;
     dead=std::clamp(dead,0.05f,0.8f);

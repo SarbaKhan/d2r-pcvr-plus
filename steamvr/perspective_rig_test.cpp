@@ -26,8 +26,8 @@ int main(){
     assert(KeyMode(1)==1&&KeyMode(2)==2&&KeyMode(3)==4&&KeyMode(4)==3);
     assert(Supported(4)&&!External(4)&&Supported(3)&&External(3));
     assert(Next(4)==1&&Next(1)==2&&Next(2)==3&&Next(3)==4);
-    for(int mode:{1,2,4})for(bool panel:{false,true})
-        assert(MouseVisible(mode,panel)==(mode==1||(mode==2&&panel)));
+    for(int mode:{1,2,3,4})for(bool panel:{false,true})
+        assert(MouseVisible(mode,panel)==(mode==1||((mode==2||mode==3)&&panel)));
     for(float units:{1.f,3.8f,20.f})for(float yaw:{-2.f,0.f,1.2f})for(float down:{-.4f,.25f,.95f}){
         const math::Vec reference{2,1.6f,3},hero{42,4,-7};
         const auto rig=Orbit(hero,6,12,yaw,down,units,reference,.3f);
