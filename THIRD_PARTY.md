@@ -116,3 +116,46 @@ runtime and license are retained under `deps/python`, with a license copy under
 `licenses/Python-LICENSE.txt`. No pip packages are required. This overlay reuses
 the existing automatic-setup installation's D2RLoader, ReShade and OpenXR loader;
 it does not redistribute or replace these binaries.
+
+## Linux Qt setup runtime
+
+The Linux setup uses **PySide6 / Shiboken 6.8.3** and **Qt 6.8.3** (The Qt Company
+and contributors), under LGPL-3.0. The Qt libraries are dynamically loaded from
+`_internal`, not statically linked. Their use does not change this project's MIT
+license. LGPL-3.0 and GPL-3.0 texts are in `installer/licenses` and the setup
+payload. Runtime license files available in the upstream Python wheels are also
+collected into `runtime-licenses` during packaging.
+
+Corresponding upstream sources and notices:
+
+- https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.8.3-src/
+- https://download.qt.io/archive/qt/6.8/6.8.3/submodules/ (qtbase and qtwayland,
+  including their `LICENSES` and third-party notices)
+- https://code.qt.io/cgit/pyside/pyside-setup.git/tree/?h=v6.8.3
+- https://code.qt.io/cgit/qt/qtbase.git/tree/?h=v6.8.3
+- https://code.qt.io/cgit/qt/qtwayland.git/tree/?h=v6.8.3
+
+Users may replace the shared Qt/PySide/Shiboken libraries in `_internal` with
+ABI-compatible modified versions, or rebuild this MIT-licensed setup using
+`installer/build_linux_setup.py` and the pinned requirements. No signature check
+prevents that replacement. Reverse engineering for debugging such modifications
+is permitted. Keep the bundle's directory layout and the replacement libraries'
+dependencies intact.
+
+**Python 3.12** is distributed under the Python Software Foundation license:
+https://www.python.org/downloads/source/ . Its license is included in the runtime
+notices. **PyInstaller 6.16.0** uses GPL-2.0-or-later with an exception allowing
+bundled applications to retain their own license; its notice is collected during
+packaging. Source: https://github.com/pyinstaller/pyinstaller/tree/v6.16.0 .
+
+The setup does not bundle Steam, Proton, WiVRn, SteamVR or Blizzard game assets.
+D2RLoader/ReShade/shader compiler downloads retain the existing verified URLs,
+hash checks and redistribution rules documented above.
+
+## Launcher artwork
+
+`artwork/` contains project-owner-supplied Diablo II: Resurrected promotional
+artwork with PCVR Plus badges, approved for integration by the project owner.
+The underlying illustrations and Diablo marks remain copyright Blizzard
+Entertainment; the repository's MIT license does not grant rights to that
+underlying artwork. See `artwork/README.md` for provenance and scope.

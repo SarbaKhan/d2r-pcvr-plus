@@ -11,6 +11,7 @@ import sys
 
 import install
 import steam_config
+import plus_preferences
 from game_install import validate_game, battlenet_location, STEAM_VERSION, BATTLENET_VERSION
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -212,7 +213,7 @@ def run_installer(command, root, hide_console=False):
 
 
 def apply_setup(manifest, store, version, headset, connections, steam, game, profile,
-                saves, runtime, mode, root=None, on_steam_configured=None, hide_console=False):
+                saves, runtime, mode, root=None, on_steam_configured=None, hide_console=False, preferences=None):
     """Shared console/graphical execution; callers collect and confirm choices first."""
     root = Path(root) if root is not None else ROOT
     require_closed()
@@ -221,6 +222,10 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
     options = launch_options(Path(sys.executable).resolve(), root / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     # Steam may have flushed new bytes while closing after the preview.
     old_options = preflight_steam(profile, steam, game, options, connections, **routing)
+    loader = game / 'd2rloader/config/d2rloader.toml'
+    previous_loader = loader.read_text(encoding='utf-8-sig') if loader.is_file() else None
+    preference_originals = {p: p.read_bytes() if p.exists() else None for p in (
+        loader, game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini')}
     if mode != 2:
         command = [sys.executable, str(root / 'steamvr/install.py'), '--game', str(game),
                    '--saves', str(saves), '--plugin', str(root / 'bin/d2rl-vrcam.dll'),
@@ -232,10 +237,16 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
             command.append('--preserve-settings')
         run_installer(command, root, hide_console=hide_console)
     require_closed()
+    pref_updates = plus_preferences.preference_updates(game, preferences, previous_loader) if preferences is not None else {}
     backup = steam_config.configure(profile, steam, game, options, connections,
-                                   root / 'setup-backups', require_closed, **routing)
+                                   root / 'setup-backups', require_closed,
+                                   artwork=root / 'artwork' if (root / 'artwork/manifest.json').is_file() else None,
+                                   extra_updates=pref_updates, **routing)
     if on_steam_configured is not None:
-        on_steam_configured()
+        originals = {Path(item['path']): (backup / item['backup']).read_bytes() if item['backup'] is not None else None
+                     for item in json.loads((backup / 'manifest.json').read_text(encoding='utf-8'))}
+        originals.update({p: data for p, data in preference_originals.items() if p in pref_updates})
+        on_steam_configured(originals)
     record = install.read_record(game)
     record.update({'game': str(game), 'store': store, 'saves': str(saves)})
     state = record.setdefault('steam_profiles', {}).setdefault(str(profile.resolve()), {})

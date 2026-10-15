@@ -107,7 +107,8 @@ class BattleNetTests(unittest.TestCase):
             self.assertEqual(entries['1'], originals['1'])
             self.assertEqual(len(entries), 4)
             for key in ('2', '3'):
-                self.assertIn('(Battle.net)', entries[key]['appname'])
+                self.assertEqual(entries[key]['appname'], steam.SHORTCUTS['steamvr' if key == '2' else 'vdxr'][0])
+                self.assertEqual(steam.entry_store(entries[key], ''), 'battlenet')
                 self.assertNotIn('-applaunch', entries[key]['LaunchOptions'])
                 self.assertIn('--battlenet-game=', entries[key]['LaunchOptions'])
             self.assertIn('--frame-openxr-runtime=', entries['2']['LaunchOptions'])
@@ -154,7 +155,8 @@ class BattleNetTests(unittest.TestCase):
             self.assertIn('Battle.net (experimental), D2R 3.3.93847', output.getvalue())
             self.assertEqual((config / 'localconfig.vdf').read_bytes(), original)
             entry = steam.decode_binary((config / 'shortcuts.vdf').read_bytes())['shortcuts']['0']
-            self.assertIn('(Battle.net)', entry['appname'])
+            self.assertEqual(entry['appname'], 'D2R PCVR Plus - Virtual Desktop')
+            self.assertEqual(steam.entry_store(entry, ''), 'battlenet')
             self.assertIn('--frame-vdxr', entry['LaunchOptions'])
             self.assertEqual(entry['OpenVR'], 0)
             command = run.call_args.args[0]

@@ -265,6 +265,7 @@ class NativeSetupTests(unittest.TestCase):
                 item = entries['shortcuts']['0']
                 if mismatch == 'icon':
                     item['icon'] = str(root / 'other game/D2R.exe')
+                    item['D2RPCVRPlusGame'] = str(root / 'other game')
                 elif mismatch == 'game':
                     item['LaunchOptions'] = item['LaunchOptions'].replace(str(game), str(root / 'other game'))
                 elif mismatch == 'wrapper':
@@ -515,6 +516,8 @@ class NativeSetupTests(unittest.TestCase):
                 self.assertEqual(kwargs['mode'], 0)
                 self.assertTrue(kwargs['hide_console'])
                 self.put(game / uninstall.PLUGIN, b'new plugin')
+                self.put(game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\n')
+                self.put(game / 'd2rloader/config/d2rloader.toml', b'text_locale=""\naudio_locale=""\n')
                 if not install.read_record(game).get('snapshots'):
                     snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
                     install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
@@ -540,6 +543,8 @@ class NativeSetupTests(unittest.TestCase):
                 self.assertIn(str(game), command)
                 snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
                 self.put(game / uninstall.PLUGIN, b'new plugin')
+                self.put(game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\n')
+                self.put(game / 'd2rloader/config/d2rloader.toml', b'text_locale=""\naudio_locale=""\n')
                 install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
             with patch.object(setup, 'require_closed'), patch.object(setup, 'verify_release', return_value={'sha256': {}}), \
                     patch.object(setup.sys, 'executable', str(runtime_python)), \

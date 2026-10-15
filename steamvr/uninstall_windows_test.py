@@ -129,6 +129,7 @@ class UninstallTests(unittest.TestCase):
                 entries['shortcuts']['4'] = {'appname': 'Other Game', 'Exe': '"other.exe"'}
                 collision = dict(entries['shortcuts']['0' if store == 'steam' else '2'])
                 collision['icon'] = str(root / 'different installation/D2R.exe')
+                collision['D2RPCVRPlusGame'] = str(root / 'different installation')
                 entries['shortcuts']['5'] = collision
                 self.write(profile / 'config/shortcuts.vdf', steam.encode_binary(entries))
                 target = game if store == 'steam' else other

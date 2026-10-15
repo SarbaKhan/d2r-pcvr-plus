@@ -50,3 +50,8 @@ promo/
 
 # Portable CI staging
 dist-plus/
+
+# Linux hardware-validation machine configuration and installation rollback
+/linux-launch.json
+/linux-launch-error.txt
+/installation-backups/
