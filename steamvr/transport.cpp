@@ -2107,11 +2107,11 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;}
+bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&!bodyCalibration.Active()&&state==XR_SESSION_STATE_FOCUSED;}
 void SetExternalPerspective(bool external) {
     std::lock_guard lock(mutex);
     // Cancel pending casts, gestures and pointer presses before changing ownership.
-    ClearInput();motionInput={};externalPerspective=external;externalGeneration=~0u;
+    ClearInput();motionInput={};interactionInput={};externalPerspective=external;externalGeneration=~0u;
 }
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye) {

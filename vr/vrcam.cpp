@@ -3073,7 +3073,7 @@ bool HandGridDir(float* gx, float* gy) {
 
 // A skill button is down (A, B, X, Y, RB), no menu: the attack or spell it casts goes along the hand.
 std::atomic<bool> g_skillHeld{false};
-bool AimByVector() { return g_enabled.load() && g_set.bowMode.load() == 4 && (g_aHeld.load() || g_skillHeld.load()); }
+bool AimByVector() { return !NativeExternal() && g_enabled.load() && g_set.bowMode.load() == 4 && (g_aHeld.load() || g_skillHeld.load()); }
 
 #ifdef D2RVR_NATIVE_OPENXR
 using SpellControllerTargetFn=uintptr_t(*)(uintptr_t,int);
@@ -3085,7 +3085,7 @@ SpellResolveFn OrigSpellResolve=nullptr;
 std::atomic<bool> g_spellAimReady{false};
 thread_local framevr::spellaim::Cast g_spellCast;
 bool DirectedSpellAim(float& gx,float& gy) {
-    return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+    return !NativeExternal()&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
         framevr::DirectedSpellActive()&&HandGridDir(&gx,&gy);
 }
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
@@ -4989,12 +4989,14 @@ bool ApplyView(const char** said) {
 
 void CommitNativePerspective() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    if(g_flatSession||!g_inWorld.load()||gamestate::MenuOpen()||framevr::SettingsOpen())return;
+    if(g_flatSession)return;
+    const int mode=g_nativeRequested.load(),old=g_nativeMode.load();
+    if(mode==old&&!g_nativeRecenter.load())return; // no transport lock in steady-state F3
+    if(!g_inWorld.load()||gamestate::MenuOpen()||framevr::SettingsOpen())return;
     if(NativeExternal()&&g_nativeRecenter.exchange(false)) {
         g_nativeGeneration.fetch_add(1);dlssmv::CameraCut();
         Log("Native VR: external camera recentered");
     }
-    const int mode=g_nativeRequested.load(),old=g_nativeMode.load();
     if(mode==old||!framevr::perspective::Supported(mode)||!framevr::PerspectiveReady())return;
     static float immersiveYaw=0,immersiveTurn=0,immersivePitch=0;
     if(old==4){immersiveYaw=g_mouseYaw.load();immersiveTurn=g_turnYaw.load();immersivePitch=g_mousePitch.load();}
@@ -5002,6 +5004,7 @@ void CommitNativePerspective() {
     framevr::SetExternalPerspective(framevr::perspective::External(mode));
     g_nativeMode.store(mode);g_set.vrView.store(mode);g_nativeGeneration.fetch_add(1);
     g_rightX.store(0);g_aHeld.store(false);g_skillHeld.store(false);g_aimRay.store(false);
+    if(g_aimDown||g_aimStage){SendKeysMouse(false);g_aimDown=false;}
     g_eyeOk.store(false);g_dragging=false;g_meleeTurnEpoch.fetch_add(1);
     melee::CancelWeapon();melee::CancelShield();skel::ResetGrip();
     dlssmv::CameraCut();
