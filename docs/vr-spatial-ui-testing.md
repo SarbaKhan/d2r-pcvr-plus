@@ -109,3 +109,18 @@ frames, rather than only BeginPair's stereo world frames. Test separate fresh
 processes: F3 -> F1 -> inventory, then F3 -> F2 -> inventory, without visiting
 F4 or using a mouse. Verify cursor shape changes during inventory actions and
 F1/F2/F4 transitions. The headset result still requires runtime validation.
+
+
+## F3 run/walk toggle
+
+In immersive F3 gameplay, click the right VR thumbstick once to toggle the
+native Run / walk state. Holding it does not repeat. Left-stick map controls
+and right-stick hold-to-sort in native menus remain unchanged. Physical
+controller bindings in F1/F2/F4 and Flat are unchanged.
+
+The existing signature-checked game-command executor sends command 0x23 on
+the UI thread, with a paired release. Requests expire after 200 ms and are
+cancelled on input/context loss; native menus are rechecked before execution.
+Test repeated clicks, a long hold, opening inventory while clicking, closing
+inventory with sort held, F3/F1 transitions, and focus loss. Verify actual walk
+and run speed in both Windows and Proton; no headset validation is claimed.

@@ -60,7 +60,7 @@
 #include "../vr/skeletons.h"
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
-namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
+namespace gamecmd {void RequestPotion(int slot);void CancelPotion();void RequestRunToggle();void CancelRunToggle();}
 namespace gamestate {void MenuMap(bool wanted);}
 namespace gamestate {bool LeftShield();}
 
@@ -228,7 +228,7 @@ math::Vec origin{};
 bool haveOrigin=false;
 HeightResetButton heightResetButton;
 MenuTriggerGate menuTriggerGate;
-PressEdge inventoryButton,menuButton;
+PressEdge inventoryButton,menuButton,runButton;
 float lastRecenter=0;
 uint32_t width=0,height=0;
 DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
@@ -438,6 +438,7 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    gamecmd::CancelRunToggle();runButton={};
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
@@ -1426,6 +1427,11 @@ void Input() {
         MotionPulse(0,.72f,45000000);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
         MotionPulse(1,.72f,45000000);
+    // World-only click edge. Native menu reports retain right-stick hold-to-sort.
+    const bool runPressed=runButton.Update((controls.buttons&menus::RightStick)!=0);
+    if(motionInput.active&&!nativeUi&&!settingsOwned&&!settingsChord&&!inventoryPressed&&!menuPressed&&!interactionOutput.wheel) {
+        if(runPressed)gamecmd::RequestRunToggle();
+    } else gamecmd::CancelRunToggle();
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {
@@ -1462,7 +1468,7 @@ void Input() {
     if(p.right_trigger>128)a.held|=D2RVR_ACT_ATTACK;
     if((controls.buttons&menus::A)&&!quickCast.Suppress(0))a.held|=D2RVR_ACT_INTERACT;
     if(heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
-    // Physical right-stick click belongs to native menus (hold-to-sort).
+    // Physical right-stick click toggles run above; native menus retain hold-to-sort.
     // Gameplay swaps are requested by the shoulder gesture or wheel only.
     if(motionControls.load()&&gameplayChain) {
         p.buttons=0;p.left_trigger=p.right_trigger=0;

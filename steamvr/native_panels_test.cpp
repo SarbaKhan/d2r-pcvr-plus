@@ -1,3 +1,4 @@
+#include "input.h"
 #include "native_panels.h"
 #include "spatial_ui.h"
 #include "panel_input_mode.h"
@@ -9,6 +10,20 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    {
+        menus::ReleaseGate gate;PressEdge run;
+        menus::Pad p;
+        gate.Step(menus::Mode::World,0,p);
+        p.buttons=menus::RightStick;
+        Check(run.Update((gate.Step(menus::Mode::World,0,p).buttons&menus::RightStick)!=0),"run toggle starts on click");
+        Check(!run.Update((gate.Step(menus::Mode::World,0,p).buttons&menus::RightStick)!=0),"held stick does not repeat run toggle");
+        run.Update((gate.Step(menus::Mode::Native,1,p).buttons&menus::RightStick)!=0);
+        Check(!run.Update((gate.Step(menus::Mode::World,2,p).buttons&menus::RightStick)!=0),"menu-held sort cannot toggle run on close");
+        p.buttons=0;run.Update((gate.Step(menus::Mode::World,2,p).buttons&menus::RightStick)!=0);
+        p.buttons=menus::RightStick;
+        Check(run.Update((gate.Step(menus::Mode::World,2,p).buttons&menus::RightStick)!=0),"fresh click after menu toggles run");
+    }
+
     for(const auto head:{math::Vec{0,1.6f,3},math::Vec{0,10,1},math::Vec{-4,2,-5}}) {
         const auto panel=spatialui::DialoguePanel({0,0,0},head);
         const auto toward=math::Normalized(head-panel.p);
