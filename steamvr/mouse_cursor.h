@@ -2,6 +2,9 @@
 #include "frame_math.h"
 #include <cstdint>
 namespace framevr::mousecursor {
+constexpr bool MenuVisible(int mode,bool menu,bool controller) {
+    return menu&&controller&&(mode==1||mode==2||mode==3);
+}
 // DrawIconEx on black/white backgrounds supports both alpha cursors and
 // classic AND masks. Recover straight RGBA for the OpenXR alpha layer.
 inline void Pixel(const uint8_t* black,const uint8_t* white,uint8_t* rgba) {

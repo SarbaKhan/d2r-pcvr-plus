@@ -36,6 +36,7 @@
 #include "interactionstate.h"
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
+#include "../steamvr/spatial_ui.h"
 #include "../steamvr/callback_ticket.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
@@ -72,7 +73,7 @@ std::atomic<uint32_t> g_weapon{D2RVR_WEAPON_UNKNOWN};
 std::atomic<uint32_t> g_menu{0};
 std::atomic<uint32_t> g_menuEpoch{0};
 std::atomic<bool> g_journalOnly{false};
-std::atomic<bool> g_opaqueMenu{false};
+std::atomic<bool> g_opaqueMenu{false},g_dialogueOnly{false};
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -486,6 +487,12 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
         g_menu.store(menu ? 1 : 0);
         int menus=0;bool quest=false;
         for(const auto& name:g_panels)if(IsMenuPanel(name)){++menus;quest=name.find("QuestLog")!=std::string::npos;}
+        bool dialogue=false,other=false;
+        for(const auto& name:g_panels)if(IsMenuPanel(name)) {
+            if(framevr::spatialui::Dialogue(name))dialogue=true;
+            else if(name!="ControllerOverlay")other=true;
+        }
+        g_dialogueOnly=dialogue&&!other;
         g_journalOnly=menus==1&&quest;
         if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
@@ -638,6 +645,7 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
 
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
+bool DialogueOnly(){return g_dialogueOnly.load();}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};

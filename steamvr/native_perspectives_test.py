@@ -9,10 +9,21 @@ import json
 from pathlib import Path
 import unittest
 ROOT=Path(__file__).resolve().parent.parent
-ADAPTERS={'cleanroom/camera/d2rcam.cpp','cleanroom/camera/d2rcam.h',
+ADAPTERS={'vr/gamecmd.cpp','steamvr/native_panels_test.cpp','vr/hud.cpp','vr/gamestate.cpp','vr/journal_ui.h','steamvr/panel_input_mode.h','cleanroom/camera/d2rcam.cpp','cleanroom/camera/d2rcam.h',
           'vr/panel_input.cpp','vr/panel_input.h','steamvr/transport.cpp','steamvr/transport.h','vr/dlss_mv.cpp','vr/dlss_mv.h'}
 BLOCKS=[('steamvr/transport.cpp', 'bool View(float out[16],const float hero[3]', 'void Shutdown()', '95f62721f7751be019d4f2d5d157679eff76b8642bbd56778a067d4e890b0db6'), ('vr/vrcam.cpp', '    const bool nativeFirst =', '    const float hangA[3]', 'f087d80214b748cbdf4e9c78f3336b2ea7bc0d6bcfb0ee88c90c03fc55eb5d85')]
 class NativePerspectiveRegression(unittest.TestCase):
+    def test_menu_cursor_initializes_without_stereo_pair(self):
+        source=(ROOT/'steamvr/transport.cpp').read_text()
+        begin=source[source.index('bool Begin()'):source.index('bool Acquire(Eye&')]
+        pair=source[source.index('void BeginPair() {'):source.index('void EndPair() {')]
+        capture=source[source.index('void Capture('):source.index('void Prepare(')]
+        self.assertIn('RefreshMouseCursor();',begin)
+        self.assertNotIn('RefreshMouseCursor();',pair)
+        self.assertIn('Begin()',capture)
+        self.assertIn('Begin()',pair)
+        self.assertLess(begin.index('Input();'),begin.index('RefreshMouseCursor();'))
+
     def test_unmodified_runtime_dependencies(self):
         manifest=json.loads((ROOT/'steamvr/vr_baseline.json').read_text())
         for name,expected in manifest['unchanged_sources'].items():

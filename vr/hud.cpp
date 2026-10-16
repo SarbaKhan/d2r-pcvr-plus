@@ -82,6 +82,9 @@ using namespace reshade::api;
 void (*g_log)(const char*) = nullptr;
 void Log(const char* s) { if (g_log) g_log(s); }
 
+std::atomic<bool> dioramaHud{false};
+bool dioramaHudCaptured=false;
+std::atomic<int> dioramaHudEye{0};
 std::atomic<int> g_hide{0};   // 0 nothing, 1 the toolbar, 2 everything
 std::atomic<float> g_uiScale{1.0f};
 std::atomic<bool> g_menu{false};   // the main menu, or a panel (inventory, trade...) open: nothing is hidden then   // the game's interface size, 0.5..1
@@ -102,7 +105,7 @@ std::atomic<float> g_mapOffX{0.0f}, g_mapOffY{0.0f};   // [hud_floor] map_x / ma
 bool MapOffset() { return std::abs(g_mapOffX.load()) > 0.0005f || std::abs(g_mapOffY.load()) > 0.0005f; }
 bool MapZoomed() { return std::abs(g_mapZoom.load() - 1.0f) > 0.005f || g_mapMoved.load() || MapOffset(); }
 // What is taken out of the picture now: for FlatVR in first person, to be drawn back at another size otherwise.
-int HideNow() { return g_classic.load() ? (g_picReady.load() && BarZoomed() ? 1 : 0) : g_hide.load(); }
+int HideNow() { if(dioramaHud.load())return 1; return g_classic.load() ? (g_picReady.load() && BarZoomed() ? 1 : 0) : g_hide.load(); }
 int MapNow() { return g_menuMap.load()?1:g_classic.load() ? (g_picReady.load() && MapZoomed() ? 1 : 0) : g_mapMode.load(); }
 // MapNow at this frame's layer clear: the map goes to our target, or not, for the whole frame.
 std::atomic<int> g_frameMap{0};
@@ -383,7 +386,12 @@ void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, int hide)
     bool bar = false, map = false;
     const rect barBox = ToolbarRect(w, h);
     rect mapBox{};
-    if (hide >= 1 && !menu) bar = CopyOut(cl, layer, barBox, kBar);
+    if (hide >= 1 && !menu) {
+        if(!dioramaHud.load()||dioramaHudEye.load()==0) {
+            bar=CopyOut(cl,layer,barBox,kBar);
+            if(dioramaHud.load())dioramaHudCaptured=bar;
+        } else bar=dioramaHudCaptured;
+    }
     const bool drawn = g_mapDrawn;
     g_mapDrawn = false;
     // the parts the labels' plane leaves flat: the toolbar's strip, and the map's box while it is drawn
@@ -484,23 +492,27 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
         if(uiActive.load()) {
             const auto tex=layerResource;const auto desc=layerDescription;
             int32_t native[4]{};
-            if(workspaceActive.load()||gamestate::JournalRect(native)) {
-                const auto region=workspaceActive.load()?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
+            // NPC widget bounds are not in the quest journal's coordinate
+            // system. Preserve their native canvas, including choices/cursor.
+            const bool workspace=workspaceActive.load();
+            if(workspace||gamestate::JournalRect(native)) {
+                const auto region=workspace?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
                     framevr::journal::Crop({native[0],native[1],native[2],native[3]},desc.texture.width,desc.texture.height,g_uiScale.load());
                 const rect crop{region.x,region.y,region.x+region.w,region.y+region.h};
                 if(crop.right>crop.left&&crop.bottom>crop.top) {
-                    if(uiEye.load()==0&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
+                    if(uiEye.load()==0&&!uiCaptured&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
                         uiCrop[0]=crop.left;uiCrop[1]=crop.top;uiCrop[2]=crop.right-crop.left;uiCrop[3]=crop.bottom-crop.top;
                         uiCaptured=true;
                     }
                     if(uiCaptured) {
                         g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
                         ++g_frames;DrainRetired(dev);
-                        // Leave the native UI source intact. The verified
-                        // final compositor samples only the world in BOTH
-                        // eyes while this UI is submitted as one XR layer.
-                        // Avoid clearing a shared/cached source beneath the
-                        // native compositor between its two eye passes.
+                        // The XR layer owns a private, current-pair copy. Remove
+                        // the source UI after capture, before native compositing.
+                        // Otherwise eye 0 can retain the opaque menu background
+                        // while eye 1 skips native panel painting and sees the world.
+                        // Empty means full world transmittance, NOT opaque black.
+                        cl->clear_render_target_view(layerRtv,kEmpty);
                         Untrack(it);
                         if(now.handle){const auto d=framevr::resources::Describe(dev,framevr::resources::Resolve(dev,now));Track(cl,Drawing{now,false,d.texture.width,d.texture.height});}
                         return;
@@ -515,7 +527,7 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
         }
         if (const int hide = g_menu.load() ? 0 : hideNow; hide == 2) {
             cl->clear_render_target_view(layerRtv, kEmpty);
-        } else if (hide == 1 && (!g_classic.load() || g_pic.on[kBar])) {   // drawn back from a copy: only if there is one
+        } else if (hide == 1 && (!g_classic.load() || g_pic.on[kBar] || (dioramaHud.load()&&dioramaHudCaptured))) {   // drawn back from a copy: only if there is one
             const auto& d = layerDescription;
             const rect bar = ToolbarRect(d.texture.width, d.texture.height);   // the map stays (MapRect: kept for FlatVR)
             cl->clear_render_target_view(layerRtv, kEmpty, 1, &bar);
@@ -553,6 +565,15 @@ void Register() {
     reshade::register_event<reshade::addon_event::bind_scissor_rects>(&OnScissor);
 }
 
+void DioramaHudFrame(bool active,int eye) {
+    std::lock_guard lock(g_lock);dioramaHud=active;dioramaHudEye=eye;
+    if(!active||eye==0)dioramaHudCaptured=false;
+}
+uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height) {
+    std::lock_guard lock(g_lock);const auto& s=g_share[kBar];
+    if(!dioramaHud.load()||!dioramaHudCaptured||!s.tex.handle)return 0;
+    width=s.w;height=s.h;return s.tex.handle;
+}
 void UiFrame(bool active,bool workspace,int eye){
     std::lock_guard lock(g_lock);
     if(!active||eye==0)uiCaptured=false;
@@ -618,7 +639,7 @@ bool PictureNow(int i, float box[4], uint64_t* srv) {
     if (i < 0 || i >= kShares) return false;
     std::lock_guard g(g_lock);
     *srv = g_share[i].srv.handle;
-    const bool on = g_pic.on[i] && g_classic.load() && GetTickCount64() - g_pic.at < 250;
+    const bool on = !(i==kBar&&dioramaHud.load()) && g_pic.on[i] && g_classic.load() && GetTickCount64() - g_pic.at < 250;
     for (int k = 0; k < 4; ++k) box[k] = g_pic.box[i][k];
     return on && *srv;
 }

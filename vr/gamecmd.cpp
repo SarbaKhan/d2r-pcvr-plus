@@ -58,6 +58,7 @@ std::atomic<bool> g_queued{false};
 // The bits Apply() has pressed (UI thread writes, the timer reads), as D2RVR_Commands::held.
 std::atomic<uint64_t> g_applied[2] = {0, 0};
 std::atomic<int> g_ok{-1};            // -1 not found yet, 1 found, 0 faulted (switched off for the session)
+std::atomic<uint64_t> g_runRequest{0}; // short-lived native run/walk toggle
 std::atomic<uint64_t> g_potionRequest{0}; // timestamp in ms << 8 | belt command
 
 // A binding per command, as the dispatcher hands one over: the game's own
@@ -177,7 +178,8 @@ void __cdecl Apply(const PluginContext*, void*) noexcept {
     uint64_t want[2];
     CommandsHeld(want);
     const uint64_t request=g_potionRequest.exchange(0);
-    if (Same(want)&&!request) return;
+    const uint64_t run=g_runRequest.exchange(0);
+    if (Same(want)&&!request&&!run) return;
     const uint64_t had[2] = {g_applied[0].load(), g_applied[1].load()};
     auto store = [&] { g_applied[0].store(want[0]); g_applied[1].store(want[1]); };
     if (!Ready()) { store(); return; }
@@ -187,6 +189,10 @@ void __cdecl Apply(const PluginContext*, void*) noexcept {
         const auto cmd=uint32_t(request&255);
         Press(cmd,true);
         if(g_ok.load()==1)Press(cmd,false);
+    }
+    if(run&&g_ok.load()==1&&!gamestate::MenuOpen()&&GetTickCount64()-run<200) {
+        Press(0x23,true); // native Run / walk switch, independent of key bindings
+        if(g_ok.load()==1)Press(0x23,false);
     }
     // Releases first: a switch from one command to another lets go before it presses.
     for (uint32_t n = 0; n < kCommands && g_ok.load() == 1; ++n)
@@ -210,9 +216,12 @@ void Tick() {
     if (!g_ctx || !g_threads || !g_threads->runOnUiThread || g_ok.load() == 0) return;
     uint64_t held[2];
     CommandsHeld(held);
-    if ((Same(held)&&!g_potionRequest.load()) || g_queued.exchange(true)) return;
+    if ((Same(held)&&!g_potionRequest.load()&&!g_runRequest.load()) || g_queued.exchange(true)) return;
     if (g_threads->runOnUiThread(g_ctx, &Apply, nullptr) != Threads::Result::Success) g_queued.store(false);
 }
+
+void RequestRunToggle() {g_runRequest.store(GetTickCount64());}
+void CancelRunToggle() {g_runRequest.store(0);}
 
 void RequestPotion(int slot) {
     if(slot>=0&&slot<4)g_potionRequest.store((GetTickCount64()<<8)|uint64_t(0x17+slot));
