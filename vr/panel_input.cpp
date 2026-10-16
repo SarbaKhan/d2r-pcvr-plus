@@ -87,7 +87,8 @@ void OnFocus(void* self,bool sound) {
 }
 
 bool Preserve() {
-    if(!ready.load(std::memory_order_acquire)||!lease.PreserveController(GetTickCount64(),true))return false;
+    if(!ready.load(std::memory_order_acquire)||
+       !(lease.Active(GetTickCount64())||worldInput.Active(GetTickCount64())))return false;
     return isController();
 }
 void Report() {

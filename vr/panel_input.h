@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+namespace panelinput {inline constexpr uintptr_t InputTag=0x44325256;}
 namespace panelinput {
 void ObserveControllerMode(); // read-only mode observer for Flat; no input ownership
 bool NativeControllerActive(); // cached on the native UI thread

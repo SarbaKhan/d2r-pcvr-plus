@@ -832,6 +832,8 @@ void LoadSettings() {
     if(!g_flatSession)LoadFlatBindings();
     framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
     framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f));
+    framevr::ConfigureSpatialUi(IniF(L"diorama",L"hud_tilt_deg",10.f),IniF(L"diorama",L"hud_arc_deg",103.f),
+        IniF(L"diorama",L"panel_width_m",1.2f),IniF(L"diorama",L"panel_above_m",.7f));
     g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.2124f),.3f,3.f));
     g_dioramaRadius.store(std::clamp(IniF(L"diorama",L"radius_units",24.f),8.f,60.f));
     g_dioramaDistance.store(std::clamp(IniF(L"diorama",L"distance_m",.65f),.3f,2.f));
@@ -3678,6 +3680,14 @@ uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
         *flag = 0;
         inside = false;
     }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(NativeExternal()&&t&&!gamestate::MenuOpen()) {
+        uint32_t type=0;uintptr_t path=0;uint16_t p[4]{};
+        if(SafeRead(&type,(const void*)t,sizeof type)&&type==1&&
+           SafeRead(&path,(const void*)(t+0x38),sizeof path)&&path&&SafeRead(p,(const void*)path,sizeof p))
+            framevr::ObserveDialogueTarget(2*(p[1]+p[0]/65536.f),2*(p[3]+p[2]/65536.f));
+    }
+#endif
     g_interactTarget.store(t);
     g_interactTargetAt.store(GetTickCount64());
     return r;
@@ -3761,6 +3771,9 @@ bool FlatNoPad() { return FlatKeyMode() && !g_set.padEnabled.load(); }
 // Only while the game's UI is in mouse mode - it asks 0x8A960 only then; a pad
 // stick (BodyWalk's) flips it to the controller until the next click.
 bool VrKeyWalk() {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!g_flatSession)return false;
+#endif
     return g_set.platform.load() == 1 && g_set.vrKeyWalk.load() && g_keyMove.load() != 2 && g_enabled.load() &&
            g_inWorld.load() && ViewNow() == 2;
 }
@@ -4054,6 +4067,9 @@ void FlatPadTick() {
 // Flat mode with the keyboard move (FlatKeyMode) has no such pad: kept only
 // for another game build, where the keyboard move hook cannot go in.
 void KeysAsStick(XINPUT_STATE* s, DWORD* r) {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!g_flatSession)return;
+#endif
     if (KeyMoveMode() || !ShooterActive() || !GameFocused()) return;
     auto held = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
     if (*r != ERROR_SUCCESS) { memset(s, 0, sizeof *s); *r = ERROR_SUCCESS; }
@@ -4370,9 +4386,6 @@ HCURSOR Crosshair() {
 }
 
 HCURSOR WINAPI HookSetCursor(HCURSOR c) {
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    if(NativeExternal()&&c&&c!=Crosshair())framevr::ObserveMouseCursor(c);
-#endif
     if (c && CrosshairNow())
         if (HCURSOR x = Crosshair()) c = x;
     return OrigSetCursor(c);
@@ -4397,6 +4410,19 @@ LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
 #endif
     // F1..F3 (F4 in VR) pick the view: the game, which has skills on them, never sees them.
     if ((msg == WM_KEYDOWN || msg == WM_KEYUP) && w >= VK_F1 && (int)w < VK_F1 + ViewCount()) return 0;
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!g_flatSession&&g_inWorld.load()) {
+        if(msg==WM_SETCURSOR&&LOWORD(l)==HTCLIENT){SetCursor(nullptr);return TRUE;}
+        const bool injected=uintptr_t(GetMessageExtraInfo())==panelinput::InputTag;
+        if((msg>=WM_MOUSEFIRST&&msg<=WM_MOUSELAST)&&!injected)return 0;
+        if(msg==WM_INPUT){RAWINPUTHEADER header{};UINT size=sizeof header;
+            if(GetRawInputData((HRAWINPUT)l,RID_HEADER,&header,&size,sizeof header)!=(UINT)-1&&header.dwType==RIM_TYPEMOUSE)
+                return DefWindowProcW(h,msg,w,l);
+        }
+        // Keep releases and typing available; gameplay key presses cannot change layout.
+        if(msg==WM_KEYDOWN&&!injected&&!ChatOpen()&&w!=VK_RETURN)return 0;
+    }
+#endif
     // Enter opening the chat line: its letters may come before the game has
     // set its flag, so they are let through for a moment (not on the Enter
     // that sends the line - W pressed right after it walks).
@@ -4468,6 +4494,9 @@ bool g_dragging = false;
 POINT g_dragLast{};
 
 void MouseTick() {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!g_flatSession){g_dragging=false;return;}
+#endif
     if(ClassicControllerUI()){g_dragging=false;return;} // never synthesize mouse motion while the native pad UI owns input
     if (!g_enabled.load() || !GameFocused() || ((g_flatSession || NativeExternal()) && (gamestate::MenuOpen() || ChatOpen()))) { g_dragging = false; return; }
     const bool shooter=ShooterActive(),drag=(GetAsyncKeyState(VK_MBUTTON)&0x8000)!=0;
@@ -7273,7 +7302,11 @@ bool FogWanted() {
            (g_set.fogCaves.load() || !g_underground.load());   // [fog] caves=0: none underground
 }
 // The table (F5): the void black, the game lifted off black - D2R_DepthFog.fx TableKey.
-bool TableKeyWanted() { return TableView() && g_inWorld.load() && !gamestate::MenuOpen(); }
+bool TableKeyWanted() { return TableView() && g_inWorld.load() && (!gamestate::MenuOpen()
+#ifdef D2RVR_NATIVE_OPENXR
+        ||framevr::SpatialMenu()
+#endif
+    ); }
 // The cave ceiling (D2R_DepthFog.fx Ceiling): from inside only - VR F4 and flat F3,
 // never from above, from behind or on the floor (all three run as ThirdPerson).
 bool CeilWanted() {

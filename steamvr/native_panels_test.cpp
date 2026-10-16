@@ -1,4 +1,5 @@
 #include "native_panels.h"
+#include "spatial_ui.h"
 #include "panel_input_mode.h"
 #include "menu_controls.h"
 #include "quick_cast.h"
@@ -8,6 +9,25 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    Check(spatialui::Spatial(1,true)&&spatialui::Spatial(2,true),"F1/F2 speech stays spatial");
+    Check(!spatialui::Spatial(1,false)&&!spatialui::Spatial(2,false),"F1/F2 management menus stay flat");
+    Check(spatialui::Spatial(3,false)&&spatialui::Spatial(4,false),"F3/F4 management menus stay spatial");
+    Check(!spatialui::Spatial(0,true),"invalid mode cannot enable spatial menus");
+    Check(spatialui::Dialogue("NpcDialogPanel")&&!spatialui::Dialogue("VendorPanelLayout"),"trade is not speech");
+    constexpr float pi=3.14159265359f;
+    const math::Vec center{2,.74f,3};
+    for(int i=0;i<16;++i) {
+        auto p=spatialui::HudSegment(center,.75f,0,1.8f,.2f,pi/18,i,16);
+        auto n=math::Rotate(p.q,{0,0,1});auto d=p.p-center;
+        Check(std::fabs(std::hypot(d.x,d.z)-.75f)<.0001f,"HUD follows table radius");
+        Check(n.x*d.x+n.z*d.z>0,"HUD faces outside, never the center");
+        Check(std::fabs(n.y-std::sin(pi/18))<.0001f,"HUD face tilts upward ten degrees");
+        Check(p.p.y>center.y,"HUD clears miniature ground");
+    }
+    Check(spatialui::FollowAngle(.7f,center,center,.02f)==.7f,"inside dead zone keeps stable orientation");
+    auto angle=spatialui::FollowAngle(pi-.01f,center+math::Vec{-.01f,1,-1},center,.02f);
+    Check(std::fabs(angle-(pi-.01f))<.03f,"orbit takes short path across angle wrap");
+
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
         "BankExpansionLayout","BankOriginalLayout","StashPanel","PlayerInventoryExpansionLayout",
         "PlayerInventoryOriginalLayout","HoradricCubeLayout","HirelingInventoryPanel","MercenaryInventoryLayout"})
