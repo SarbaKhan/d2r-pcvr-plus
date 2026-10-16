@@ -9,14 +9,14 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
-    // The miniature/orbit floor is not the tracking-space floor. Its normal
-    // must survive mapping the panel back through the tilted camera rig.
-    const auto rig=perspective::Orbit({10,2,30},0,90,.4f,.959931f,6,{0,1.6f,0},.2f);
-    const auto panel=spatialui::GroundPanel(rig,.8f);
-    const auto normal=math::Rotate(rig.rotation,math::Rotate(panel,{0,0,1}));
-    Check(std::fabs(normal.x)<.0001f&&std::fabs(normal.z)<.0001f&&normal.y>.9999f,
-        "F1 dialogue is parallel to game ground and faces upward");
-    Check(spatialui::DialogueWidth(8)>spatialui::DialogueWidth(2),"distant dialogue keeps readable angular width");
+    for(const auto head:{math::Vec{0,1.6f,3},math::Vec{0,10,1},math::Vec{-4,2,-5}}) {
+        const auto panel=spatialui::DialoguePanel({0,0,0},head);
+        const auto toward=math::Normalized(head-panel.p);
+        const auto normal=math::Rotate(panel.q,{0,0,1});
+        Check(math::Dot(normal,toward)>.9999f,"NPC dialogue faces viewer including overhead and opposite side");
+    }
+    Check(std::fabs(spatialui::DialogueWidth(20)/20-spatialui::DialogueWidth(2)/2)<.00001f,
+        "NPC text keeps angular size in distant F1 and nearby F2");
     Check(std::fabs(spatialui::HudScale-2.f/3.f)<.00001f,"HUD dimensions shrink by one third without changing edge radius");
 
     Check(spatialui::Spatial(1,true)&&spatialui::Spatial(2,true),"F1/F2 speech stays spatial");

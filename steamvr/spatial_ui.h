@@ -9,11 +9,16 @@ inline bool Dialogue(std::string_view name) {
 constexpr bool Spatial(int mode,bool dialogueOnly) {
     return mode==3||mode==4||((mode==1||mode==2)&&dialogueOnly);
 }
-inline math::Quat GroundPanel(const perspective::Rig& rig,float worldYaw) {
-    return math::Multiply(math::Conjugate(rig.rotation),
-        math::Multiply(math::Yaw(worldYaw),perspective::Pitch(-1.57079633f)));
+// Full native dialogue canvas: keep its angular width stable even in F1's
+// distant orbit. The previous 5 m cap made native text tiny at that distance.
+inline float DialogueWidth(float distance) {return 1.4f*std::max(distance,.5f);}
+inline perspective::Pose DialoguePanel(math::Vec anchor,math::Vec viewer) {
+    anchor.y+=.35f;
+    const auto d=viewer-anchor;
+    const float yaw=std::atan2(d.x,d.z);
+    const float pitch=-std::atan2(d.y,std::hypot(d.x,d.z));
+    return {anchor,math::Multiply(math::Yaw(yaw),perspective::Pitch(pitch))};
 }
-inline float DialogueWidth(float distance) {return std::clamp(distance*.65f,1.2f,5.f);}
 inline constexpr float HudScale=2.f/3.f;
 // +Z is the readable face of an XR quad. Pitch up without following gaze.
 inline math::Quat Outward(float angle,float tilt) {

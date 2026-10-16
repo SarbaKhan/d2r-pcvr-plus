@@ -1495,13 +1495,7 @@ bool Begin() {
     }
     spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;uiEye.copied=false;
     mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
-    hud::UiFrame(spatialMode,!journalMode,0,
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-        (externalMode==1||externalMode==2)&&gamestate::DialogueOnly()
-#else
-        false
-#endif
-    );
+    hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
     for(auto& e:eyes)e.copied=false;
@@ -1811,13 +1805,7 @@ void ConfigureDeferredWait(bool on) {
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
-    hud::UiFrame(spatialMode,!journalMode,eye,
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-        (externalMode==1||externalMode==2)&&gamestate::DialogueOnly()
-#else
-        false
-#endif
-    );
+    hud::UiFrame(spatialMode,!journalMode,eye);
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     hud::DioramaHudFrame(externalMode==3&&hudSupported&&!panelMode&&!spatialMode&&layerLimit>=8,eye);
 #endif
@@ -2054,15 +2042,12 @@ void EndPair() {
             }
             if(dialoguePlaced) {
                 at=perspective::ToTracking(externalRig,dialogueWorld);
-                const auto d=V(head.position)-at;const float yaw=std::atan2(d.x,d.z);
-                const auto viewer=perspective::Transform(externalRig,{V(head.position),Q(head.orientation)}).p;
-                const auto worldDelta=viewer-dialogueWorld;
-                const float worldYaw=std::atan2(worldDelta.x,worldDelta.z);
+                // Like native nameplates: NPC anchor, viewer-facing text and
+                // stable angular size. Do not use the game-ground plane for F1.
+                const auto facing=spatialui::DialoguePanel(at,V(head.position));
+                at=facing.p;rotation=facing.q;
+                const auto d=V(head.position)-at;
                 uiSize=spatialui::DialogueWidth(std::sqrt(math::Dot(d,d)));
-                if(externalMode==1) {
-                    rotation=spatialui::GroundPanel(externalRig,worldYaw);
-                    at=at+math::Rotate(rotation,{uiSize*.65f,0,.12f});
-                } else {at.y+=.65f;rotation=math::Yaw(yaw);}
 
             }
         }

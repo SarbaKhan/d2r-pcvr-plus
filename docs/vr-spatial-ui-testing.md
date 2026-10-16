@@ -70,3 +70,20 @@ Retest each eye separately while opening/closing inventory, then both eyes
 while moving your head. Check speech and option selection with several NPCs in
 F1/F2 and whether the cropped native cursor remains visible. These rendering
 fixes still require headset validation, including WiVRn and VDXR.
+
+
+## NPC dialogue visibility follow-up
+
+F1/F2 no longer crop NPC widgets using the quest journal coordinate mapping.
+That mapping can select an empty region for dialogue panels. Capture the full
+native transparent canvas so both speech and controller choices remain visible.
+The panel stays anchored near the NPC, faces the viewer in yaw and pitch (also
+from above in F1), and scales with distance without the previous 5 m width cap.
+This follows the nameplate placement principle; it does not change the native
+per-eye nameplate projection hook. Full-canvas capture can also include native
+HUD elements; exact dialogue-only cropping needs a verified NPC layout mapping.
+
+Retest Warriv/Akara choices, scrolling speech, cancelling, and reopening in
+F1/F2; check nearby and distant NPCs and camera rotation. Verify that F3/F4
+menus still show the moving world in both eyes and Flat stays unchanged.
+Headset validation remains required; CPU geometry tests cannot prove visibility.
