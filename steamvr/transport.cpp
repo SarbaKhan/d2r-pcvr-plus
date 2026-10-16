@@ -104,7 +104,7 @@ PFN_xrEnumerateEnvironmentBlendModes pEnumerateEnvironmentBlendModes=nullptr;
 uint32_t externalGeneration=~0u;
 math::Vec externalReference{};
 float externalReferenceYaw=0,externalGroundY=0,externalDistance=40;
-int externalMode=4;
+std::atomic<int> externalMode{4};
 perspective::Rig externalRig{};
 math::Vec tableAnchor{},tableCenter{};
 float tableHeading=0,tableFloor=0,tableFloorOffset=0;
