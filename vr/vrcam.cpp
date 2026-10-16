@@ -24,7 +24,6 @@
 #include <windows.h>
 #include "../steamvr/flat_controls.h"
 #include "../steamvr/classic_gamepad.h"
-#include "../steamvr/diorama_mr.h"
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
@@ -593,32 +592,14 @@ bool ParseHexColor(const wchar_t* text, float rgb[3]) {
 // [table] background: the void's fill in the table view; empty or unreadable = black.
 SRWLOCK g_tableBgLock = SRWLOCK_INIT;
 float g_tableBg[3] = {0.0f, 0.0f, 0.0f};
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-bool g_dioramaChroma = false; // protected with its color by g_tableBgLock
-float g_dioramaChromaColor[3] = {1.0f, 0.0f, 1.0f};
-#endif
 
 void LoadTableBackground() {
     wchar_t buf[64];
     GetPrivateProfileStringW(L"table", L"background", L"", buf, (DWORD)std::size(buf), g_iniPath);
     float rgb[3];
     if (!ParseHexColor(buf, rgb)) rgb[0] = rgb[1] = rgb[2] = 0.0f;
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    const bool chroma = IniB(L"diorama", L"chroma_key", false);
-    GetPrivateProfileStringW(L"diorama", L"chroma_color", L"#FF00FF", buf, (DWORD)std::size(buf), g_iniPath);
-    float key[3];
-    const wchar_t* hex = buf;
-    if (*hex == L'#') ++hex;
-    if (wcslen(hex) != 6 || wcsspn(hex, L"0123456789abcdefABCDEF") != 6 || !ParseHexColor(hex, key)) {
-        key[0] = key[2] = 1.0f; key[1] = 0.0f;
-    }
-#endif
     AcquireSRWLockExclusive(&g_tableBgLock);
     for (int c = 0; c < 3; ++c) g_tableBg[c] = rgb[c];
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    g_dioramaChroma = chroma;
-    for (int c = 0; c < 3; ++c) g_dioramaChromaColor[c] = key[c];
-#endif
     ReleaseSRWLockExclusive(&g_tableBgLock);
 }
 
@@ -7553,16 +7534,6 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     SetFloat(rt, "DioramaRadius", g_dioramaRadius.load());
     SetBool(rt, "DioramaMR", NativeDiorama() && TableKeyWanted() && framevr::DioramaPassthroughActive());
-    {
-        float color[3];
-        AcquireSRWLockShared(&g_tableBgLock);
-        const bool requested = g_dioramaChroma;
-        for (int c = 0; c < 3; ++c) color[c] = g_dioramaChromaColor[c];
-        ReleaseSRWLockShared(&g_tableBgLock);
-        const bool chroma = framevr::dioramamr::ChromaEnabled(NativeDiorama() && TableKeyWanted(), requested, framevr::DioramaPassthroughActive(), framevr::DioramaChromaRuntime());
-        SetBool(rt, "DioramaChromaKey", chroma);
-        SetFloats(rt, "DioramaChromaColor", color, 3);
-    }
 #endif
     SetFloat(rt, "TableFloor", g_set.tableFloor.load());
     if (TableKeyWanted()) {   // the bounds: this eye's ray, and the game's own view to test the ground against

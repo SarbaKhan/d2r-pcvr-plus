@@ -96,7 +96,7 @@ std::atomic<bool> motionControls{false};
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
 std::atomic<bool> externalPerspective{false};
 std::atomic<bool> mrRequested{true},mrShaderReady{false};
-bool mrSupported=false,mrBlocked=false,mrPair=false,mrVdxr=false;
+bool mrSupported=false,mrBlocked=false,mrPair=false;
 int mrReported=-1;
 PFN_xrEnumerateEnvironmentBlendModes pEnumerateEnvironmentBlendModes=nullptr;
 uint32_t externalGeneration=~0u;
@@ -499,8 +499,6 @@ bool LoadFunctions() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     // Optional query: never fail startup when a runtime cannot provide MR.
     mrSupported=false;mrBlocked=false;mrReported=-1;
-    mrVdxr=dioramamr::ChromaRuntime(props.runtimeName);
-    Say(mrVdxr?"Diorama MR: VDXR color key eligible":"Diorama MR: color key disabled for this runtime");
     if(XR_SUCCEEDED(getProc(instance,"xrEnumerateEnvironmentBlendModes",
         reinterpret_cast<PFN_xrVoidFunction*>(&pEnumerateEnvironmentBlendModes)))&&pEnumerateEnvironmentBlendModes) {
         uint32_t n=0;
@@ -2267,7 +2265,6 @@ void SetExternalPerspective(int mode) {
 void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
 void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
 bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
-bool DioramaChromaRuntime(){std::lock_guard lock(mutex);return mrVdxr;}
 void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
     float width,float radius,float distance,float drop,float follow,float heading,int eye) {
@@ -2371,7 +2368,7 @@ void Shutdown() {
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
-    mrSupported=mrBlocked=mrPair=mrVdxr=false;mrReported=-1;mrShaderReady=false;pEnumerateEnvironmentBlendModes=nullptr;
+    mrSupported=mrBlocked=mrPair=false;mrReported=-1;mrShaderReady=false;pEnumerateEnvironmentBlendModes=nullptr;
     tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
     mouseWidth=mouseHeight=64;mouseHotX=mouseHotY=32;
 #endif
