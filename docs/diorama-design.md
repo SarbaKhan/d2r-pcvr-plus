@@ -120,6 +120,76 @@ at launch so F4 activation needs no session restart. Creation/permission failure
 must disable only MR and leave F4 VR and F1/F2/F3 usable. Avoid mandatory new XR
 extensions. Do not advertise cross-runtime MR support before headset tests.
 
+## Visible world boundary: rendering is not monster activation
+
+Code review after the validated gamepad/HUD merge (`cf9a939`):
+
+- `cleanroom/drawdist/drawdist.h` defines a radius in **room graph rings**,
+  not metres or a monster spawn radius. `HookFindRooms` expands the 3D layer's
+  drawn room set. Ring 2 repeats the existing room discovery pass.
+- At radius 3 or above, `LoadAndAdd` traverses DRLG neighbour lists and calls
+  `g_ensureTiled` for missing rooms, with a per-tick budget. This is more than
+  a visibility mask. Do not increase this setting automatically for Diorama
+  or assume that preparing a room guarantees populated monsters or has no
+  simulation side effects.
+- `SetModelRadius` controls model visibility and requests re-sorting. The
+  header's documented default of 150 world units is **not** evidence of a
+  generation or AI activation distance.
+- The existing added/loaded room counters can support diagnostics, but they
+  do not report monster creation or activation. The referenced `RECON.md`
+  is absent from this checkout; comments alone cannot establish engine rules.
+
+The current review therefore establishes no safe numeric monster radius.
+Room shapes, boundaries, event spawns and client visibility must be measured
+separately. Never patch spawning, AI, movement, simulation room activation,
+or saves to satisfy the presentation requirement.
+
+### Proposed rendering contract (not implemented yet)
+
+Keep the physical tabletop anchor and its bounded volume fixed in OpenXR
+space. Smooth the game-world centre sampled through that volume towards the
+hero; do not move the physical anchor as the hero walks. Both eyes use the
+same centre, scale and boundary state for a stereo pair. Clip in world/table
+space using depth, not a screen-space vignette: leaning must reveal no world
+outside the miniature. Fade a configurable inner border into the VR background
+or passthrough, while keeping the readable UI on its independent surface.
+
+Keep physical width (initially 0.6–0.8 m) separate from visible game-world
+radius. Expose a game-world radius, safety margin, border fade width and follow
+time in `[diorama]`, with units documented once the transform is calibrated.
+The margin is a reserve inside an empirically validated populated region, not
+an instruction to load or generate more rooms. Do not label it a proven spawn
+radius or automatically enlarge the visible footprint from room counters.
+
+For a measured conservative coverage radius G around the hero, visible outer
+radius R, follow lag L and margin M, require R + L + M <= G. For a rectangular
+footprint use its farthest corner, not half its width. This is a conservative
+bound only where such coverage has been measured; irregular room coverage
+needs containment against the actual known region. Limit follow lag rather
+than allowing smoothing to consume the reserve unnoticed. For teleport/level
+changes or unknown coverage, fade the world, reset the sampled centre and
+restore it only after usable rendering data arrives. Preserve the table anchor.
+
+### Measurement and acceptance gate
+
+Before selecting defaults, add opt-in, read-only diagnostics at validated
+engine read points: hero position, room transitions, render-room availability
+and first observed monster IDs/positions with timestamps where available.
+Report first observation as client observation, not proven server creation or
+AI activation. No unverified memory offsets or per-frame unbounded graph scans.
+
+Test offline in open outdoor areas, narrow dungeon doors and corridors, level
+transitions, running, teleporting and backtracking. Compare ordinary encounters
+with scripted/summoned/event monsters: a legitimate spawn inside the visible
+area cannot be prevented by a border without changing or concealing gameplay.
+Record build, area, render settings, radius, margin, follow lag and frame time;
+repeat on Windows and Linux. A missing visible pop-in in one run is not proof
+of a universal activation distance. Hardware/game measurements are pending.
+
+Automated coverage for the implementation must include containment with lag,
+border limits, frame-rate-independent follow, shared stereo state, teleport
+reset, unknown-data fallback and no changes to F1/F2/F3 or Flat simulation/input.
+
 ## Stage 5: UI, persistence and acceptance
 
 Reuse the existing independent native UI panel at readable metre dimensions,

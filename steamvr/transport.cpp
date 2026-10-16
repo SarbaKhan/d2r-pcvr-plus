@@ -1,5 +1,7 @@
 #include "perspective_rig.h"
 #include "mouse_cursor.h"
+#include "diorama_mr.h"
+#include "diorama_placement.h"
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
@@ -94,6 +96,10 @@ std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
 std::atomic<bool> externalPerspective{false};
+std::atomic<bool> mrRequested{true},mrShaderReady{false};
+bool mrSupported=false,mrBlocked=false,mrPair=false;
+int mrReported=-1;
+PFN_xrEnumerateEnvironmentBlendModes pEnumerateEnvironmentBlendModes=nullptr;
 uint32_t externalGeneration=~0u;
 math::Vec externalReference{};
 float externalReferenceYaw=0,externalGroundY=0,externalDistance=40;
@@ -106,6 +112,12 @@ int mouseWidth=64,mouseHeight=64,mouseHotX=32,mouseHotY=32;
 ULONGLONG mouseRetryAt=0;
 constexpr int MouseAtlasSide=256;
 perspective::Rig externalRig{};
+math::Vec tableAnchor{},tableCenter{};
+float tableHeading=0,tableFloor=0,tableFloorOffset=0;
+bool tableFloorKnown=false;
+placement::Controls tableControls;
+bool tablePlaced=false,tableFollowing=false;
+ULONGLONG tableAt=0;
 bool externalRigValid=false;
 #endif
 gameplay::Engine motion;
@@ -487,6 +499,20 @@ bool LoadFunctions() {
     char b[192];std::snprintf(b,sizeof b,"Frame OpenXR: runtime %s",props.runtimeName);Say(b);
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};si.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     if(!Check(pGetSystem(instance,&si,&system),"get headset system"))return false;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    // Optional query: never fail startup when a runtime cannot provide MR.
+    mrSupported=false;mrBlocked=false;mrReported=-1;
+    if(XR_SUCCEEDED(getProc(instance,"xrEnumerateEnvironmentBlendModes",
+        reinterpret_cast<PFN_xrVoidFunction*>(&pEnumerateEnvironmentBlendModes)))&&pEnumerateEnvironmentBlendModes) {
+        uint32_t n=0;
+        if(XR_SUCCEEDED(pEnumerateEnvironmentBlendModes(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,0,&n,nullptr))&&n>0&&n<=16) {
+            std::vector<XrEnvironmentBlendMode> modes(n);
+            if(XR_SUCCEEDED(pEnumerateEnvironmentBlendModes(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,n,&n,modes.data())))
+                mrSupported=std::find(modes.begin(),modes.end(),XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND)!=modes.end();
+        }
+    }
+    Say(mrSupported?"Diorama MR: runtime advertises ALPHA_BLEND":"Diorama MR: ALPHA_BLEND unavailable; opaque VR fallback");
+#endif
     XrSystemProperties limits{XR_TYPE_SYSTEM_PROPERTIES};
     if(XR_SUCCEEDED(pGetSystemProperties(instance,system,&limits)))layerLimit=std::min(32u,limits.graphicsProperties.maxLayerCount);
     if(gazeExtension) {
@@ -1824,6 +1850,15 @@ void BeginPair() {
         if(frame)EndPair();Begin();pairDrawing=true;
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
         externalRigValid=false;
+        const bool alphaTexture=format==DXGI_FORMAT_R8G8B8A8_UNORM||format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB||
+            format==DXGI_FORMAT_B8G8R8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||
+            format==DXGI_FORMAT_R10G10B10A2_UNORM||format==DXGI_FORMAT_R16G16B16A16_FLOAT;
+        mrPair=dioramamr::Enabled(externalMode,mrRequested.load(),mrSupported,alphaTexture,mrShaderReady.load(),mrBlocked);
+        if(externalMode==3&&mrReported!=int(mrPair)) {
+            mrReported=int(mrPair);char line[240];
+            std::snprintf(line,sizeof line,"Diorama MR: %s requested=%d runtime_alpha=%d texture_alpha=%d shader=%d blocked=%d",
+                mrPair?"ACTIVE":"opaque fallback",int(mrRequested.load()),int(mrSupported),int(alphaTexture),int(mrShaderReady.load()),int(mrBlocked));Say(line);
+        }
         if(Active())RefreshMouseCursor();
 #endif
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
@@ -1872,6 +1907,12 @@ void EndPair() {
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=frameState.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mrPair) {
+        ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND;
+        projection.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+    }
+#endif
     std::array<const XrCompositionLayerBaseHeader*,32> layers{};uint32_t count=0;
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(mouseAtlasPending) {
@@ -2049,6 +2090,11 @@ void EndPair() {
     }
     ei.layerCount=count;ei.layers=count?layers.data():nullptr;
     const double start=Milliseconds();const auto submitted=pEndFrame(session,&ei);Check(submitted,"end frame");
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mrPair&&XR_FAILED(submitted)) {
+        mrBlocked=true;Say("Diorama MR: alpha frame rejected; returning to opaque VR next frame (restart to retry)");
+    }
+#endif
     if(interactionInput.active) {
         static ULONGLONG reportAt=0;const auto now=GetTickCount64();
         if(now>=reportAt) {
@@ -2217,7 +2263,59 @@ bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motio
 void SetExternalPerspective(int mode) {
     std::lock_guard lock(mutex);
     // Cancel pending casts, gestures and pointer presses before changing ownership.
+    tableControls.CancelAll();
     ClearInput();motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;
+}
+void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
+void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
+bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
+void ConfigureDioramaPlacement(float height,float floorOffset){
+    std::lock_guard lock(mutex);tableControls.Configure(height);
+    tableFloorOffset=std::isfinite(floorOffset)?std::clamp(floorOffset,-3.f,3.f):0;
+}
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch){
+    std::lock_guard lock(mutex);
+    allowed=allowed&&externalMode==3&&valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;
+    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64());
+    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0);
+}
+bool TakeDioramaHeight(float& height,bool allowed){
+    std::lock_guard lock(mutex);tableControls.Expire(GetTickCount64());
+    if(!allowed||!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
+    if(!tableControls.dirty||tableControls.owner>=0)return false;
+    height=tableControls.heightCm*.01f;tableControls.dirty=false;return true;
+}
+void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
+bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
+    float width,float radius,float distance,float drop,float follow,float heading,int eye) {
+    std::lock_guard lock(mutex);if(!Active())return false;
+    if(!externalRigValid) {
+        tableControls.Expire(GetTickCount64());
+        if(!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
+        if(!tableFloorKnown) {
+            tableFloor=floorSpace?0.f:head.position.y-drop-tableControls.heightCm*.01f;
+            tableFloorKnown=true;
+            if(!floorSpace)Say("Diorama: no STAGE floor; using fixed estimated floor. Calibrate diorama.floor_offset_m if needed.");
+        }
+        if(!tablePlaced||tableControls.owner>=0) {
+            const float yaw=math::Heading(Q(head.orientation));
+            tableAnchor=perspective::TablePosition(V(head.position),yaw,distance,tableFloor+tableFloorOffset,tableControls.heightCm*.01f);
+            tableHeading=heading-yaw;tablePlaced=true;
+        }
+        tableAnchor.y=tableFloor+tableFloorOffset+tableControls.heightCm*.01f;
+        const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
+        if(!tableFollowing||now-tableAt>500)tableCenter=target;
+        else tableCenter=perspective::Follow(tableCenter,target,float(now-tableAt)*.001f,follow,radius*.2f);
+        tableAt=now;tableFollowing=true;
+        externalRig=perspective::Table(tableCenter,tableAnchor,tableHeading,2*radius/width);
+        externalRigValid=perspective::Valid(externalRig);
+    }
+    if(!externalRigValid){render=false;return false;}
+    sampled[0]=tableCenter.x;sampled[1]=tableCenter.y;sampled[2]=tableCenter.z;
+    const auto& pose=views[eye&1].pose;
+    const auto e=perspective::Transform(externalRig,{V(pose.position),Q(pose.orientation)});
+    const auto c=perspective::Transform(externalRig,{V(head.position),Q(head.orientation)});
+    math::View(e.p,e.q,out);math::View(c.p,c.q,center);return true;
 }
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye) {
@@ -2298,7 +2396,9 @@ void Shutdown() {
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
-    externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
+    mrSupported=mrBlocked=mrPair=false;mrReported=-1;mrShaderReady=false;pEnumerateEnvironmentBlendModes=nullptr;
+    tableControls.CancelAll();tableFloorKnown=false;
+    tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
     mouseWidth=mouseHeight=64;mouseHotX=mouseHotY=32;
 #endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;

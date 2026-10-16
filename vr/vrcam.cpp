@@ -780,13 +780,22 @@ std::atomic<unsigned> g_flatBindings{pcvrplus::PackKeys('W', 'A', 'S', 'D')};
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
 std::atomic<int> g_nativeMode{4},g_nativeRequested{4};
 std::atomic<uint32_t> g_nativeGeneration{1};
-std::atomic<bool> g_nativeRecenter{false};
+std::atomic<bool> g_nativeRecenter{false},g_dioramaShaderReady{false};
 std::atomic<ULONGLONG> g_nativePadAt{0};
 std::atomic<float> g_nativeTopDistance{40},g_nativeThirdDistance{12};
+std::atomic<float> g_dioramaWalkYaw{0};
+std::atomic<float> g_dioramaWidth{1.2124f},g_dioramaRadius{24},g_dioramaDistance{.65f},g_dioramaDrop{.45f},g_dioramaFollow{.15f};
 #endif
 bool NativeExternal() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     return !g_flatSession&&framevr::perspective::External(g_nativeMode.load());
+#else
+    return false;
+#endif
+}
+bool NativeDiorama() {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    return !g_flatSession&&g_nativeMode.load()==3;
 #else
     return false;
 #endif
@@ -821,6 +830,13 @@ void LoadSettings() {
     if (g_flatSession) LoadFlatBindings();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(!g_flatSession)LoadFlatBindings();
+    framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
+    framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f));
+    g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.2124f),.3f,3.f));
+    g_dioramaRadius.store(std::clamp(IniF(L"diorama",L"radius_units",24.f),8.f,60.f));
+    g_dioramaDistance.store(std::clamp(IniF(L"diorama",L"distance_m",.65f),.3f,2.f));
+    g_dioramaDrop.store(std::clamp(IniF(L"diorama",L"below_eye_m",.45f),.1f,1.2f));
+    g_dioramaFollow.store(std::clamp(IniF(L"diorama",L"follow_seconds",.15f),.01f,1.f));
     g_nativeTopDistance.store(std::clamp(IniF(L"native_views",L"top_distance",40.f),10.f,150.f));
     g_nativeThirdDistance.store(std::clamp(IniF(L"native_views",L"third_distance",12.f),3.f,60.f));
 #endif
@@ -1445,7 +1461,7 @@ int ViewNow() {
 #if D2RVR_FIRST_PERSON
 int ViewCount() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    if(!g_flatSession)return 3; // hotkeys; persisted immersive mode is still 4
+    if(!g_flatSession)return 4; // F4 table; persisted immersive mode is still 4
 #endif
     return g_set.platform.load() == 1 ? 4 : 3;
 }
@@ -1499,6 +1515,7 @@ bool ClassicNow() {
     return !FullBody();
 }
 float BarNearNow() {
+    if(NativeDiorama())return g_set.barNearTop.load();
     if (!g_enabled.load() || TopPersp()) return g_set.barNearTop.load();
     if (TableView()) return g_set.barNearFloor.load();
     if (ThirdPerson()) return g_set.barNearThird.load();
@@ -1506,6 +1523,7 @@ float BarNearNow() {
 }
 // The toolbar's size in the picture, from above, from behind and on the floor (the game's own is 1).
 float BarSizeNow() {
+    if(NativeDiorama())return g_set.barSizeTop.load();
     if (!g_enabled.load() || TopPersp()) return g_set.barSizeTop.load();
     if (TableView()) return g_set.barSizeFloor.load();
     if (ThirdPerson()) return g_set.barSizeThird.load();
@@ -1514,6 +1532,7 @@ float BarSizeNow() {
 // ... and where on the screen, uv from where the game puts it (+x right, +y down).
 void BarOffsetNow(float* x, float* y) {
     *x = *y = 0.0f;
+    if(NativeDiorama()){*x=g_set.barXTop.load();*y=g_set.barYTop.load();return;}
     if (!g_enabled.load() || TopPersp()) { *x = g_set.barXTop.load(); *y = g_set.barYTop.load(); }
     else if (TableView()) { *x = g_set.barXFloor.load(); *y = g_set.barYFloor.load(); }
     else if (ThirdPerson()) { *x = g_set.barXThird.load(); *y = g_set.barYThird.load(); }
@@ -1857,7 +1876,7 @@ bool BarNearWanted() { return AfrOn() && ClassicNow() && std::abs(BarNearNow()) 
 // The map on the floor (F3) nearer or farther in stereo ([hud_floor] map_near), as the toolbar.
 bool MapNearWanted() { return AfrOn() && ClassicNow() && TableView() && std::abs(g_set.mapNearFloor.load()) > 0.01f; }
 // VR F3, the game on the floor, with our camera on (ClassicNow's order: off is F1 whatever the view).
-bool FloorView() { return g_enabled.load() && TableView(); }
+bool FloorView() { return g_enabled.load() && TableView() && !NativeDiorama(); }
 // The item labels' box opacity and size for the view now - each VR view's Interface tab has
 // its own (F3 [hud_floor], F1 [hud_top], F2 [hud_third], F4 [hud]); 1 and 1 = the game's own.
 // Flat keeps the game's labels: it has no such tabs.
@@ -1865,7 +1884,7 @@ void LabelLookNow(float* alpha, float* size) {
     *alpha = 1.0f; *size = 1.0f;
     if (g_set.platform.load() != 1) return;
     if (FloorView()) { *alpha = g_set.labelsAlphaFloor.load(); *size = g_set.labelsSizeFloor.load(); }
-    else if (!g_enabled.load() || TopPersp()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
+    else if (!g_enabled.load() || TopPersp() || NativeDiorama()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
     else if (ThirdPerson()) { *alpha = g_set.labelsAlphaThird.load(); *size = g_set.labelsSizeThird.load(); }
     else if (FullBody()) { *alpha = g_set.labelsAlphaBody.load(); *size = g_set.labelsSizeBody.load(); }
 }
@@ -2386,10 +2405,19 @@ bool NativeAlternativeView(const d2rcam::WorldView& in,float out[16]) {
     const float down=(top?55.f:std::clamp(15.f+pitch,-60.f,75.f))*.0174532925f;
     const float units=std::max(1.f,g_set.height.load())/UserEyeHeightM();
     float center[16];
-    if(!framevr::AlternativeView(out,center,in.lookAt,top?0.f:g_set.thirdHeight.load(),
-        top?g_nativeTopDistance.load():g_nativeThirdDistance.load(),heading,down,units,g_nativeGeneration.load(),g_eye.load())) {
+    float sampled[3]={in.lookAt[0],in.lookAt[1],in.lookAt[2]};
+    const bool table=NativeDiorama();
+    const bool ready=table?framevr::DioramaView(out,center,sampled,in.lookAt,
+        g_dioramaWidth.load(),g_dioramaRadius.load(),g_dioramaDistance.load(),g_dioramaDrop.load(),g_dioramaFollow.load(),heading,g_eye.load()):
+        framevr::AlternativeView(out,center,in.lookAt,top?0.f:g_set.thirdHeight.load(),
+        top?g_nativeTopDistance.load():g_nativeThirdDistance.load(),heading,down,units,g_nativeGeneration.load(),g_eye.load());
+    if(!ready) {
         g_nativeRequested.store(4);return false;
     }
+    // Head yaw affects F4 locomotion only. The anchored table itself never rotates.
+    // Freeze heading near vertical gaze, where a projected forward vector is unstable.
+    if(table && center[2]*center[2]+center[10]*center[10]>.04f)
+        g_dioramaWalkYaw.store(atan2f(center[2],center[10])-atan2f(G[2],G[10]));
     memcpy(g_nativeCenter,center,sizeof center); // render thread only
     const V3 eye={-out[12]*out[0]-out[13]*out[1]-out[14]*out[2],
         -out[12]*out[4]-out[13]*out[5]-out[14]*out[6],-out[12]*out[8]-out[13]*out[9]-out[14]*out[10]};
@@ -2397,7 +2425,7 @@ bool NativeAlternativeView(const d2rcam::WorldView& in,float out[16]) {
     for(int k=0;k<3;++k){g_eyeWorld[k].store(position[k]);g_eyeFromLook[k].store(position[k]-in.lookAt[k]);}
     g_eyeOk.store(true);g_viewBuilds.fetch_add(1);g_camYaw.store(yaw);g_viewFwdY.store(-center[6]);
     AcquireSRWLockExclusive(&g_skyLock);auto& sky=g_skyView[g_eye.load()&1];
-    for(int k=0;k<3;++k){sky.axes[k]=out[k*4];sky.axes[k+3]=out[k*4+1];sky.axes[k+6]=out[k*4+2];sky.eyeRel[k]=position[k]-in.lookAt[k];sky.hero[k]=in.lookAt[k];}
+    for(int k=0;k<3;++k){sky.axes[k]=out[k*4];sky.axes[k+3]=out[k*4+1];sky.axes[k+6]=out[k*4+2];sky.eyeRel[k]=position[k]-sampled[k];sky.hero[k]=sampled[k];}
     sky.axes_ok=true;ReleaseSRWLockExclusive(&g_skyLock);
     // Navigation follows the rig, never an incidental head turn.
     StickFrame f{};f.camR[0]=cosf(heading);f.camR[2]=-sinf(heading);
@@ -3365,6 +3393,39 @@ bool ClassicPadAllowed(){
 void ResetClassicPad(){
     AcquireSRWLockExclusive(&g_classicPadLock);g_classicPad.Reset();ReleaseSRWLockExclusive(&g_classicPadLock);
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<bool> g_dioramaPadPending{false};
+bool DioramaPlacementAllowed(){return NativeDiorama()&&g_enabled.load()&&g_inWorld.load()&&GameFocused()&&!gamestate::MenuOpen()&&!ChatOpen()&&!framevr::SettingsOpen();}
+void FilterDioramaPad(DWORD idx,DWORD result,XINPUT_STATE* s){
+    if(!NativeDiorama()&&!g_dioramaPadPending.load())return;
+    const bool connected=result==ERROR_SUCCESS&&s;
+    const uint16_t raw=connected?s->Gamepad.wButtons:0;
+    const auto filtered=framevr::DioramaPad(idx,connected,raw,DioramaPlacementAllowed(),gamestate::MenuEpoch());
+    g_dioramaPadPending.store((filtered&0x10000u)!=0);
+    if(connected){
+        s->Gamepad.wButtons=uint16_t(filtered);
+        // Deferred tap and hold threshold transitions happen without a physical
+        // packet change. Advertise a fresh packet while filtering (and on exit).
+        static std::atomic<DWORD> serial{0};
+        s->dwPacketNumber=serial.fetch_add(1)+1;
+    }
+}
+void DioramaPlacementTick(){
+    if(g_flatSession)return;
+    static bool pending=false,wasDiorama=false;static float height=.74f;static ULONGLONG retry=0;
+    const bool active=NativeDiorama();
+    if(!active&&!wasDiorama&&!pending&&!g_dioramaPadPending.load())return;
+    wasDiorama=active;
+    float changed;
+    if(framevr::TakeDioramaHeight(changed,DioramaPlacementAllowed())){height=changed;pending=true;retry=0;}
+    const auto now=GetTickCount64();
+    if(pending&&now>=retry){
+        wchar_t value[32];swprintf_s(value,L"%.2f",height);
+        if(WritePrivateProfileStringW(L"diorama",L"height_m",value,g_iniPath))pending=false;
+        else {if(!retry)Log("Diorama: could not save height_m; retrying");retry=now+2000;}
+    }
+}
+#endif
 void PollClassicPad(DWORD idx,DWORD result,const XINPUT_STATE* state){
     const bool allowed=ClassicPadAllowed();
     const auto p=(result==ERROR_SUCCESS&&state)?state->Gamepad:XINPUT_GAMEPAD{};
@@ -3420,6 +3481,17 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
     // cursor the wrong way, and the right stick is the menu's too.
     if (gamestate::MenuOpen()) { if (own) g_rightX.store(0.0f); return; }
     if(ClassicPadMode()) {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        if(NativeDiorama()) {
+            if(g_inWorld.load()&&GameFocused()&&!ChatOpen()&&!framevr::SettingsOpen()) {
+                float x=float(in.sThumbLX),y=float(in.sThumbLY);
+                pcvrplus::gamepad::RotateWalk(x,y,g_dioramaWalkYaw.load());
+                s->Gamepad.sThumbLX=SHORT(std::clamp(x,-32768.f,32767.f));
+                s->Gamepad.sThumbLY=SHORT(std::clamp(y,-32768.f,32767.f));
+            }
+            return; // native right stick and buttons; never camera input
+        }
+#endif
         // F1 is completely native. In camera views only the two right axes
         // and camera-relative left vector change; every button/trigger is intact.
         if(!ClassicPadAllowed())return;
@@ -4017,6 +4089,9 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     DWORD r = g_xhooks[I].orig(idx, s);
     --t_xDepth;
     if(t_xDepth==0&&ClassicPadMode())PollClassicPad(idx,r,s);
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(t_xDepth==0)FilterDioramaPad(idx,r,s);
+#endif
     // Flat with a real pad let through (gamepad.enabled=1): that pad only, its stick
     // turned by the camera below; BodyWalk's stick walks through the keyboard move.
     bool mirror = false;
@@ -5054,13 +5129,18 @@ void CommitNativePerspective() {
     if(mode==old&&!g_nativeRecenter.load())return; // no transport lock in steady-state F3
     if(!g_inWorld.load()||gamestate::MenuOpen()||framevr::SettingsOpen()||!PairWanted())return;
     if(NativeExternal()&&g_nativeRecenter.exchange(false)) {
+        if(NativeDiorama())framevr::RecenterTable();
         g_nativeGeneration.fetch_add(1);dlssmv::CameraCut();
         Log("Native VR: external camera recentered");
+    }
+    if(mode==3&&!g_dioramaShaderReady.load()) {
+        g_nativeRequested.store(old);Log("Diorama: updated D2R_DepthFog.fx and enabled ReShade effects required");return;
     }
     if(mode==old||!framevr::perspective::Supported(mode)||!framevr::PerspectiveReady())return;
     static float immersiveYaw=0,immersiveTurn=0,immersivePitch=0;
     if(old==4){immersiveYaw=g_mouseYaw.load();immersiveTurn=g_turnYaw.load();immersivePitch=g_mousePitch.load();}
     g_mouseYaw.store(mode==4?immersiveYaw:0);g_turnYaw.store(mode==4?immersiveTurn:0);g_mousePitch.store(mode==4?immersivePitch:0);
+    g_dioramaWalkYaw.store(0);
     framevr::SetExternalPerspective(mode);
     ResetClassicPad();
     g_nativeMode.store(mode);g_set.vrView.store(mode);g_nativeGeneration.fetch_add(1);
@@ -5073,7 +5153,7 @@ void CommitNativePerspective() {
     d2rcam::SetScreenRayOverride(&NativeScreenRay);
     prevscan::g_lastViewOk=false;prevscan::g_lastProjOk=false;
     const char* message="";ApplyView(&message);
-    LogF("Native VR experimental: perspective %d (F1 overhead, F2 third person, F3 immersive)",mode);
+    LogF("Native VR experimental: perspective %d (F1 overhead, F2 third person, F3 immersive, F4 diorama)",mode);
 #endif
 }
 
@@ -7263,6 +7343,13 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (ApplySkyPictures(rt)) return;   // the effect reloads with the new pictures
     if (!g_tech[0].handle) g_tech[0] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog");
     if (!g_tech[1].handle) g_tech[1] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog_R");
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    const bool dioramaReady=g_tech[0].handle&&g_tech[1].handle&&rt->get_effects_state()&&
+        rt->find_uniform_variable("D2R_DepthFog.fx", "DioramaOn").handle;
+    g_dioramaShaderReady.store(dioramaReady);
+    framevr::DioramaShaderReady(dioramaReady&&rt->find_uniform_variable("D2R_DepthFog.fx", "DioramaMR").handle);
+    if(NativeDiorama()&&!dioramaReady)g_nativeRequested.store(4);
+#endif
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
@@ -7480,6 +7567,11 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
     SetFloat(rt, "FogBlur", g_set.fogBlur.load());
     SetBool(rt, "FogOn", FogWanted());
     SetBool(rt, "TableKeyOn", TableKeyWanted());
+    SetBool(rt, "DioramaOn", NativeDiorama() && TableKeyWanted());
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    SetFloat(rt, "DioramaRadius", g_dioramaRadius.load());
+    SetBool(rt, "DioramaMR", NativeDiorama() && TableKeyWanted() && framevr::DioramaPassthroughActive());
+#endif
     SetFloat(rt, "TableFloor", g_set.tableFloor.load());
     if (TableKeyWanted()) {   // the bounds: this eye's ray, and the game's own view to test the ground against
         SkyView sv[2];
@@ -7488,7 +7580,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         const bool on = b.ok && g_set.tableBounds.load() > 0.0f && sv[0].proj_ok && sv[0].axes_ok;
         SetBool(rt, "TableBoundsOn", on);
         SetFloat(rt, "TableBounds", g_set.tableBounds.load());
-        if (on) {
+        if (on || NativeDiorama()) {
             for (int e = 0; e < 2; ++e) {
                 const SkyView& v = sv[e].axes_ok && sv[e].proj_ok ? sv[e] : sv[0];
                 char n[16];
@@ -7877,7 +7969,7 @@ DWORD g_updateThreadId = 0;
 // ground it points at). Sent when it moves, not every tick: hud's lock is the
 // render thread's too.
 bool FloorPointerAuto() {
-    return g_set.platform.load() == 1 && g_enabled.load() && TableView() && g_floorCamOk.load() && g_inWorld.load() &&
+    return !NativeExternal() && g_set.platform.load() == 1 && g_enabled.load() && TableView() && g_floorCamOk.load() && g_inWorld.load() &&
            !gamestate::MenuOpen();
 }
 void FloorPointerTick() {
@@ -8014,6 +8106,9 @@ DWORD WINAPI UpdateThread(void*) {
         d2rcam::SetEnabled(g_enabled.load() || (g_set.topStereo.load() && g_set.afr.load()));
         MouseTick();
         ClassicPadTick();
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        DioramaPlacementTick();
+#endif
         TurnTick();
         PushArms();
 #ifdef D2RVR_NATIVE_OPENXR
@@ -8034,10 +8129,10 @@ DWORD WINAPI UpdateThread(void*) {
         hud::SetClassicView(ClassicNow());
         // first person without the body: the map at a size of its own, from its corner
         // ... and on the floor (F3) its own size, depth and place, as the toolbar's
-        hud::SetPictureZoom(BarSizeNow(), InsideFree() ? g_set.mapZoomInside.load() : TableView() ? g_set.mapSizeFloor.load() : 1.0f);
+        hud::SetPictureZoom(BarSizeNow(), InsideFree() ? g_set.mapZoomInside.load() : TableView() && !NativeDiorama() ? g_set.mapSizeFloor.load() : 1.0f);
         hud::SetPictureBarMoved(BarNearWanted());
         hud::SetPictureMapMoved(MapNearWanted());
-        if (ClassicNow() && TableView()) hud::SetPictureMapOffset(g_set.mapXFloor.load(), g_set.mapYFloor.load());
+        if (ClassicNow() && TableView() && !NativeDiorama()) hud::SetPictureMapOffset(g_set.mapXFloor.load(), g_set.mapYFloor.load());
         else hud::SetPictureMapOffset(0.0f, 0.0f);
         {   // [hud_*] bar_x / bar_y: the toolbar somewhere else on the screen
             float bx = 0.0f, by = 0.0f;

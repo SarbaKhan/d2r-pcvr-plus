@@ -46,6 +46,15 @@ void SetExternalPerspective(int mode);
 // Original game HCURSOR, observed before any flat crosshair substitution.
 void ObserveMouseCursor(void* cursor);
 bool PerspectiveReady();
+void ConfigureDioramaPassthrough(bool requested);
+void DioramaShaderReady(bool ready);
+bool DioramaPassthroughActive();
+void ConfigureDioramaPlacement(float height,float floorOffset);
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch);
+bool TakeDioramaHeight(float& height,bool allowed);
+void RecenterTable();
+bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
+    float width,float radius,float distance,float drop,float follow,float heading,int eye);
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye);
 #endif
