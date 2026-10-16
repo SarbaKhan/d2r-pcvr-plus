@@ -78,6 +78,7 @@ uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
 uint64_t journalAt=0;
+int32_t dialogueRect[4]{};uint64_t dialogueRectAt=0;
 std::atomic<uint32_t> g_set{0};      // 1 / 2: the active weapon set
 std::atomic<uint32_t> g_view{0};     // vrcam's view: 0 off, 1 first person, 2 third person, 3 F1 in perspective, 4 the game on the floor
 
@@ -320,6 +321,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
     hud::MenuMapCapture(g_menuMapLease.Active(now,g_menu.load()!=0));
 #endif
+    if(havePlayer&&g_dialogueOnly.load())ReadDialogueRect();
     if(!havePlayer)g_menuOpenUntil=0;
     else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);
     if (!g_inventory || !g_items || !havePlayer) {
@@ -493,6 +495,8 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
             else if(name!="ControllerOverlay")other=true;
         }
         g_dialogueOnly=dialogue&&!other;
+        if(g_dialogueOnly.load())ReadDialogueRect();
+        else {std::lock_guard lock(journalMutex);dialogueRectAt=0;}
         g_journalOnly=menus==1&&quest;
         if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
@@ -646,6 +650,28 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
 bool DialogueOnly(){return g_dialogueOnly.load();}
+void ReadDialogueRect() {
+    if(!g_widgets||!g_widgets->findPanel||!g_widgets->getWidgetRect)return;
+    bool found=false;int left=0,top=0,right=0,bottom=0;
+    for(const auto& name:g_panels)if(framevr::spatialui::Dialogue(name)) {
+        Widgets::WidgetHandle panel=0;Widgets::Rect rect{};
+        if(g_widgets->findPanel(g_ctx,name.c_str(),&panel)!=Widgets::Result::Success||
+           g_widgets->getWidgetRect(g_ctx,panel,&rect)!=Widgets::Result::Success||
+           rect.width<20||rect.height<20||rect.width>4096||rect.height>4096)continue;
+        if(!found){left=rect.x;top=rect.y;right=rect.x+rect.width;bottom=rect.y+rect.height;}
+        else {left=std::min(left,int(rect.x));top=std::min(top,int(rect.y));right=std::max(right,int(rect.x+rect.width));bottom=std::max(bottom,int(rect.y+rect.height));}
+        found=true;
+    }
+    if(!found)return;
+    std::lock_guard lock(journalMutex);
+    dialogueRect[0]=left;dialogueRect[1]=top;dialogueRect[2]=right-left;dialogueRect[3]=bottom-top;
+    dialogueRectAt=GetTickCount64();
+}
+bool DialogueRect(int32_t out[4]) {
+    std::lock_guard lock(journalMutex);
+    if(!g_dialogueOnly.load()||!dialogueRectAt||GetTickCount64()-dialogueRectAt>650)return false;
+    std::copy_n(dialogueRect,4,out);return true;
+}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};

@@ -9,6 +9,16 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    // The miniature/orbit floor is not the tracking-space floor. Its normal
+    // must survive mapping the panel back through the tilted camera rig.
+    const auto rig=perspective::Orbit({10,2,30},0,90,.4f,.959931f,6,{0,1.6f,0},.2f);
+    const auto panel=spatialui::GroundPanel(rig,.8f);
+    const auto normal=math::Rotate(rig.rotation,math::Rotate(panel,{0,0,1}));
+    Check(std::fabs(normal.x)<.0001f&&std::fabs(normal.z)<.0001f&&normal.y>.9999f,
+        "F1 dialogue is parallel to game ground and faces upward");
+    Check(spatialui::DialogueWidth(8)>spatialui::DialogueWidth(2),"distant dialogue keeps readable angular width");
+    Check(std::fabs(spatialui::HudScale-2.f/3.f)<.00001f,"HUD dimensions shrink by one third without changing edge radius");
+
     Check(spatialui::Spatial(1,true)&&spatialui::Spatial(2,true),"F1/F2 speech stays spatial");
     Check(!spatialui::Spatial(1,false)&&!spatialui::Spatial(2,false),"F1/F2 management menus stay flat");
     Check(spatialui::Spatial(3,false)&&spatialui::Spatial(4,false),"F3/F4 management menus stay spatial");

@@ -46,3 +46,27 @@ Use offline test characters. Test Windows SteamVR and VDXR, and Linux SteamVR an
 NPC anchoring samples the existing native interaction target, checks the unit type and reads its dynamic-path coordinates while the target callback is executing. It never stores a raw target pointer for the render thread. A fresh target is required in the same player session; otherwise a viewer-facing panel is used instead of guessing an NPC position. Ground elevation uses the orbit rig's player ground height, so unusual NPC elevation needs headset verification.
 
 The existing verified SDR world/UI compositor is reused. Fullscreen native menus must be checked for a genuinely live world in both eyes; automated math and compilation cannot certify this. HDR or unsupported game builds may use the existing flat fallback. Curve readability, controller pointing under Proton, and GPU/runtime layer performance require real hardware testing.
+
+## First headset feedback correction
+
+The first test reported an opaque left-eye world, black canvas margins, tiny
+F1/F2 dialogue and an oversized F4 HUD. This revision:
+
+- Captures the native UI once into its own texture, then clears the native UI
+  source to full world transmittance before native compositing. Both eyes must
+  show their own moving world; no eye image is duplicated.
+- Preserves native UI alpha rather than forcing the entire canvas opaque.
+- Crops F1/F2 dialogue using the current native dialogue widget rectangles
+  (including speech when present), keeping crop coordinates shared with pointer
+  mapping. Requests are made only on the game's UI thread. Missing rectangles
+  retain the existing flat fallback after a bounded wait.
+- Orients F1 dialogue parallel to the GAME floor through the inverse camera
+  rig rotation, with its normal pointing upward. Dialogue width increases with
+  viewer distance within limits.
+- Multiplies HUD arc length and height by 2/3; radius, outward orientation,
+  tilt and position-following behavior stay unchanged.
+
+Retest each eye separately while opening/closing inventory, then both eyes
+while moving your head. Check speech and option selection with several NPCs in
+F1/F2 and whether the cropped native cursor remains visible. These rendering
+fixes still require headset validation, including WiVRn and VDXR.

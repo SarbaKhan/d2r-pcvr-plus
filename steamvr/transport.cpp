@@ -1495,7 +1495,13 @@ bool Begin() {
     }
     spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;uiEye.copied=false;
     mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
-    hud::UiFrame(spatialMode,!journalMode,0);
+    hud::UiFrame(spatialMode,!journalMode,0,
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        (externalMode==1||externalMode==2)&&gamestate::DialogueOnly()
+#else
+        false
+#endif
+    );
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
     for(auto& e:eyes)e.copied=false;
@@ -1646,7 +1652,7 @@ bool CopyUi(reshade::api::command_queue* rq) {
     uint32_t w=0,h=0;int32_t crop[4]{};
     auto* src=reinterpret_cast<ID3D12Resource*>(hud::UiTexture(w,h,crop));
     if(!src||!w||!h){
-        if(++uiMissingFrames>12){uiSupported=false;Say("Frame panels: UI capture unavailable; falling back to native menu");}
+        if(++uiMissingFrames>120){uiSupported=false;Say("Frame panels: UI capture unavailable; falling back to native menu");}
         return true;
     }
     uiMissingFrames=0;
@@ -1670,7 +1676,7 @@ bool CopyUi(reshade::api::command_queue* rq) {
     rq->flush_immediate_command_list();
     if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
     ID3D12Resource* dest=e.images[e.index].texture;
-    if(!uiBlit.Render(device.Get(),e.commands.Get(),src,dest,opaqueMenuMode)) {
+    if(!uiBlit.Render(device.Get(),e.commands.Get(),src,dest,false)) {
         e.commands->Close();uiSupported=false;
         Say("Frame panels: conversion rejected; native flat menu fallback next frame");return true;
     }
@@ -1805,7 +1811,13 @@ void ConfigureDeferredWait(bool on) {
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
-    hud::UiFrame(spatialMode,!journalMode,eye);
+    hud::UiFrame(spatialMode,!journalMode,eye,
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        (externalMode==1||externalMode==2)&&gamestate::DialogueOnly()
+#else
+        false
+#endif
+    );
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     hud::DioramaHudFrame(externalMode==3&&hudSupported&&!panelMode&&!spatialMode&&layerLimit>=8,eye);
 #endif
@@ -2043,11 +2055,15 @@ void EndPair() {
             if(dialoguePlaced) {
                 at=perspective::ToTracking(externalRig,dialogueWorld);
                 const auto d=V(head.position)-at;const float yaw=std::atan2(d.x,d.z);
+                const auto viewer=perspective::Transform(externalRig,{V(head.position),Q(head.orientation)}).p;
+                const auto worldDelta=viewer-dialogueWorld;
+                const float worldYaw=std::atan2(worldDelta.x,worldDelta.z);
+                uiSize=spatialui::DialogueWidth(std::sqrt(math::Dot(d,d)));
                 if(externalMode==1) {
-                    at=at+math::Rotate(math::Yaw(yaw),{.55f,.15f,0});
-                    rotation=math::Multiply(math::Yaw(yaw),perspective::Pitch(-1.57079633f));
+                    rotation=spatialui::GroundPanel(externalRig,worldYaw);
+                    at=at+math::Rotate(rotation,{uiSize*.65f,0,.12f});
                 } else {at.y+=.65f;rotation=math::Yaw(yaw);}
-                uiSize=1.1f;
+
             }
         }
         uiPose=XrPose({at,rotation});workspacePlaced=true;
@@ -2062,12 +2078,13 @@ void EndPair() {
         hudAt=now;
         const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count));
         const float radius=tableWidth*.5f+.025f;
-        const float h=radius*hudArc*float(hudHeight)/hudWidth;
+        const float arc=hudArc*spatialui::HudScale;
+        const float h=radius*arc*float(hudHeight)/hudWidth;
         for(int i=0;i<segments;++i) {
-            auto p=spatialui::HudSegment(tableAnchor,radius,hudHeading,hudArc,h,hudTilt,i,segments);
+            auto p=spatialui::HudSegment(tableAnchor,radius,hudHeading,arc,h,hudTilt,i,segments);
             curvedHud[i]={XR_TYPE_COMPOSITION_LAYER_QUAD};
             const int left=int(uint64_t(hudWidth)*i/segments),right=int(uint64_t(hudWidth)*(i+1)/segments);
-            motionQuad(curvedHud[i],XrPose({p.p,p.q}),2*radius*std::tan(hudArc/(2*segments)),h,
+            motionQuad(curvedHud[i],XrPose({p.p,p.q}),2*radius*std::tan(arc/(2*segments)),h,
                 {{left,0},{right-left,int32_t(hudHeight)}},hudEye.chain);
             curvedHud[i].layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
         }
@@ -2077,7 +2094,7 @@ void EndPair() {
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
         motionQuad(book,uiPose,uiSize,uiSize*float(uiCrop[3])/uiCrop[2],
             {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
-        book.layerFlags=opaqueMenuMode?0:XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        book.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
     XrCompositionLayerQuad settingsPanel{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady)

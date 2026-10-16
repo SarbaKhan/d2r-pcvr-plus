@@ -348,7 +348,7 @@ void ZoomedUv(const rect& r, float ax, float ay, float z, uint32_t w, uint32_t h
 struct Labels { resource tex{}; resource_view srv{}; uint32_t w = 0, h = 0; bool fresh = true;
                 bool on = false; float keep[2][4] = {}; ULONGLONG at = 0; };
 Labels g_lab;
-std::atomic<bool> uiActive{false},workspaceActive{false};
+std::atomic<bool> uiActive{false},workspaceActive{false},dialogueCrop{false};
 bool uiCaptured=false;
 std::atomic<int> uiEye{0};
 int32_t uiCrop[4]{};
@@ -492,23 +492,26 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
         if(uiActive.load()) {
             const auto tex=layerResource;const auto desc=layerDescription;
             int32_t native[4]{};
-            if(workspaceActive.load()||gamestate::JournalRect(native)) {
-                const auto region=workspaceActive.load()?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
+            const bool dialogue=dialogueCrop.load();
+            const bool cropReady=dialogue?gamestate::DialogueRect(native):gamestate::JournalRect(native);
+            if((workspaceActive.load()&&!dialogue)||cropReady) {
+                const auto region=workspaceActive.load()&&!dialogue?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
                     framevr::journal::Crop({native[0],native[1],native[2],native[3]},desc.texture.width,desc.texture.height,g_uiScale.load());
                 const rect crop{region.x,region.y,region.x+region.w,region.y+region.h};
                 if(crop.right>crop.left&&crop.bottom>crop.top) {
-                    if(uiEye.load()==0&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
+                    if(uiEye.load()==0&&!uiCaptured&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
                         uiCrop[0]=crop.left;uiCrop[1]=crop.top;uiCrop[2]=crop.right-crop.left;uiCrop[3]=crop.bottom-crop.top;
                         uiCaptured=true;
                     }
                     if(uiCaptured) {
                         g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
                         ++g_frames;DrainRetired(dev);
-                        // Leave the native UI source intact. The verified
-                        // final compositor samples only the world in BOTH
-                        // eyes while this UI is submitted as one XR layer.
-                        // Avoid clearing a shared/cached source beneath the
-                        // native compositor between its two eye passes.
+                        // The XR layer owns a private, current-pair copy. Remove
+                        // the source UI after capture, before native compositing.
+                        // Otherwise eye 0 can retain the opaque menu background
+                        // while eye 1 skips native panel painting and sees the world.
+                        // Empty means full world transmittance, NOT opaque black.
+                        cl->clear_render_target_view(layerRtv,kEmpty);
                         Untrack(it);
                         if(now.handle){const auto d=framevr::resources::Describe(dev,framevr::resources::Resolve(dev,now));Track(cl,Drawing{now,false,d.texture.width,d.texture.height});}
                         return;
@@ -570,10 +573,10 @@ uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height) {
     if(!dioramaHud.load()||!dioramaHudCaptured||!s.tex.handle)return 0;
     width=s.w;height=s.h;return s.tex.handle;
 }
-void UiFrame(bool active,bool workspace,int eye){
+void UiFrame(bool active,bool workspace,int eye,bool dialogue){
     std::lock_guard lock(g_lock);
     if(!active||eye==0)uiCaptured=false;
-    uiActive=active;workspaceActive=workspace;uiEye=eye;
+    uiActive=active;workspaceActive=workspace;uiEye=eye;dialogueCrop=dialogue;
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::uiworld::SetActive(active);
 #endif
