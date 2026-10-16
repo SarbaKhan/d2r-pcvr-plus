@@ -24,6 +24,9 @@ int main(){
         Check(std::fabs(n.y-std::sin(pi/18))<.0001f,"HUD face tilts upward ten degrees");
         Check(p.p.y>center.y,"HUD clears miniature ground");
     }
+    const auto left=spatialui::HudSegment(center,.75f,0,1.8f,.2f,pi/18,0,16);
+    const auto right=spatialui::HudSegment(center,.75f,0,1.8f,.2f,pi/18,15,16);
+    Check(left.p.x<right.p.x,"HUD texture strips retain left-to-right reading order");
     Check(spatialui::FollowAngle(.7f,center,center,.02f)==.7f,"inside dead zone keeps stable orientation");
     auto angle=spatialui::FollowAngle(pi-.01f,center+math::Vec{-.01f,1,-1},center,.02f);
     Check(std::fabs(angle-(pi-.01f))<.03f,"orbit takes short path across angle wrap");

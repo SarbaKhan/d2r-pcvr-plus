@@ -1489,7 +1489,10 @@ bool Begin() {
         Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
     }
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
-    if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
+    if(opaque!=opaqueMenuMode) {
+        workspacePlaced=false;
+        Say(opaque?"Frame panels: opaque canvas over stereo world":"Frame panels: transparent dialogue canvas");
+    }
     spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;uiEye.copied=false;
     mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);

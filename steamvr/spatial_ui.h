@@ -22,7 +22,7 @@ inline float FollowAngle(float previous,math::Vec head,math::Vec center,float dt
 }
 inline perspective::Pose HudSegment(math::Vec center,float radius,float heading,
     float arc,float height,float tilt,int index,int count) {
-    const float angle=heading+arc*(.5f-(index+.5f)/count);
+    const float angle=heading+arc*((index+.5f)/count-.5f);
     auto p=center+math::Vec{std::sin(angle)*radius,.015f+height*.5f*std::cos(tilt),std::cos(angle)*radius};
     return {p,Outward(angle,tilt)};
 }
