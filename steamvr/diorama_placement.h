@@ -42,7 +42,7 @@ struct Controls {
         Expire(now);
         if(index<0||index>=4)return buttons;
         auto& s=slots[index];
-        if(!connected){Cancel(index);s.last=0;return buttons;}
+        if(!connected){Cancel(index);s.last=0;s.quarantine=0;return buttons;}
         if(!allowed||(s.consuming&&epoch!=s.epoch))Cancel(index);
         s.seen=now;
         const bool back=(buttons&Back)!=0;

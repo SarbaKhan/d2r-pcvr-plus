@@ -35,7 +35,7 @@ void PlacementTests(){
     entry.Poll(0,true,0,true,0,110);entry.Poll(0,true,Back,true,0,120);
     entry.Poll(0,true,Back,true,0,300);entry.Poll(0,true,Back,true,0,500);entry.Poll(0,true,Back,true,0,620);
     assert(entry.owner==0);entry.Expire(1000);assert(entry.owner==-1);
-    assert(entry.Poll(0,true,Back,true,0,1010)==0);entry.Poll(0,false,0,true,0,1020);
+    assert(entry.Poll(0,true,Back,true,0,1010)==0);entry.Poll(0,false,0,true,0,1020);assert(!entry.Pending());
     assert(entry.Poll(0,true,Back,true,0,1030)==0);
     // Only one pad may place the table; idle other slots do not cancel it.
     Controls multi;for(int i=0;i<2;++i)multi.Poll(i,true,0,true,0,0);
