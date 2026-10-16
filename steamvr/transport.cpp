@@ -1,3 +1,4 @@
+#include "mouse_cursor.h"
 #include "perspective_rig.h"
 #include "diorama_mr.h"
 #include "diorama_placement.h"
@@ -105,6 +106,13 @@ uint32_t externalGeneration=~0u;
 math::Vec externalReference{};
 float externalReferenceYaw=0,externalGroundY=0,externalDistance=40;
 std::atomic<int> externalMode{4};
+XrSwapchain mouseChain=XR_NULL_HANDLE;
+std::atomic<void*> observedMouseCursor{nullptr};
+HCURSOR uploadedMouseCursor=nullptr;
+bool mouseAtlasPending=false,mouseImageReady=false;
+int mouseWidth=64,mouseHeight=64,mouseHotX=32,mouseHotY=32;
+ULONGLONG mouseRetryAt=0;
+constexpr int MouseAtlasSide=256;
 perspective::Rig externalRig{};
 math::Vec tableAnchor{},tableCenter{};
 float tableHeading=0,tableFloor=0,tableFloorOffset=0;
@@ -658,6 +666,41 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
 
     return ready;
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void RefreshMouseCursor() {
+    if(!mousecursor::MenuVisible(externalMode,panelMode||spatialMode,panelinput::NativeControllerActive()))return;
+    auto cursor=static_cast<HCURSOR>(observedMouseCursor.load());
+    if(!cursor){CURSORINFO info{sizeof(CURSORINFO)};if(GetCursorInfo(&info))cursor=info.hCursor;}
+    if(!cursor||cursor==uploadedMouseCursor||GetTickCount64()<mouseRetryAt)return;
+    mouseRetryAt=GetTickCount64()+250; // bound failed captures / rapidly changing handles
+    ICONINFO icon{};if(!GetIconInfo(cursor,&icon))return;
+    BITMAP bitmap{};
+    const bool got=GetObjectW(icon.hbmColor?icon.hbmColor:icon.hbmMask,sizeof bitmap,&bitmap)!=0;
+    const int w=bitmap.bmWidth,h=icon.hbmColor?bitmap.bmHeight:bitmap.bmHeight/2;
+    if(icon.hbmColor)DeleteObject(icon.hbmColor);if(icon.hbmMask)DeleteObject(icon.hbmMask);
+    if(!got||w<=0||h<=0||w>MouseAtlasSide||h>MouseAtlasSide||icon.xHotspot>=unsigned(w)||icon.yHotspot>=unsigned(h))return;
+    BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=w;
+    bi.bmiHeader.biHeight=-h;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+    HDC dc=CreateCompatibleDC(nullptr);if(!dc)return;
+    void* bits=nullptr;HBITMAP dib=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&bits,nullptr,0);
+    if(!dib){DeleteDC(dc);return;}
+    HGDIOBJ old=SelectObject(dc,dib);
+    const size_t bytes=size_t(w)*h*4;
+    std::vector<uint8_t> black(bytes),pixels(MouseAtlasSide*MouseAtlasSide*4);
+    std::memset(bits,0,bytes);
+    bool ok=DrawIconEx(dc,0,0,cursor,w,h,0,nullptr,DI_NORMAL|DI_NOMIRROR)!=0;GdiFlush();
+    std::memcpy(black.data(),bits,bytes);std::memset(bits,255,bytes);
+    ok=DrawIconEx(dc,0,0,cursor,w,h,0,nullptr,DI_NORMAL|DI_NOMIRROR)!=0&&ok;GdiFlush();
+    if(ok)for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+        const size_t at=(size_t(y)*w+x)*4;
+        mousecursor::Pixel(black.data()+at,static_cast<const uint8_t*>(bits)+at,pixels.data()+(size_t(y)*MouseAtlasSide+x)*4);
+    }
+    SelectObject(dc,old);DeleteObject(dib);DeleteDC(dc);
+    if(ok&&UploadAtlas(mouseChain,atlasFormat,MouseAtlasSide,MouseAtlasSide,pixels,true,&mouseAtlasPending)) {
+        uploadedMouseCursor=cursor;mouseWidth=w;mouseHeight=h;mouseHotX=int(icon.xHotspot);mouseHotY=int(icon.yHotspot);
+    }
+}
+#endif
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
@@ -1865,6 +1908,9 @@ void BeginPair() {
         }
 
 #endif
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        RefreshMouseCursor();
+#endif
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         if(Active())profile::BeginPair();else profile::SkipPair();
         if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
@@ -1921,6 +1967,12 @@ void EndPair() {
 #endif
     std::array<const XrCompositionLayerBaseHeader*,32> layers{};uint32_t count=0;
 
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mouseAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        mouseImageReady=Check(pReleaseSwapchainImage(mouseChain,&release),"release native mouse atlas");mouseAtlasPending=false;
+    }
+#endif
     if(settingsAtlasPending){
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         settingsImageReady=Check(pReleaseSwapchainImage(settingsChain,&release),"release settings atlas");settingsAtlasPending=false;
@@ -2092,6 +2144,41 @@ void EndPair() {
         if(pointerHit)motionQuad(dot,dotPose,.018f,.018f,{{0,32},{64,64}},pointerChain);
     }
 
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    XrCompositionLayerQuad mouseCursor{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(layer&&externalPerspective&&mouseChain&&mouseImageReady&&mousecursor::MenuVisible(externalMode,panelMode||spatialMode,panelinput::NativeControllerActive())&&
+       !settingsModel.open&&!bodyCalibration.Active()) {
+        POINT cursor{};RECT client{};
+        if(gameWindow&&GetCursorPos(&cursor)&&ScreenToClient(gameWindow,&cursor)&&GetClientRect(gameWindow,&client)&&
+           client.right>0&&client.bottom>0&&cursor.x>=0&&cursor.y>=0&&cursor.x<client.right&&cursor.y<client.bottom) {
+            const float u=float(cursor.x)/client.right,v=float(cursor.y)/client.bottom;
+            XrPosef pose{};float size=0;
+            if(panelMode&&menuPlaced) {
+                pose=menuPose;
+                const auto offset=math::Rotate(Q(menuPose.orientation),{(u-.5f)*panelWidth,(.5f-v)*panelWidth*height/width,.002f});
+                const auto at=V(menuPose.position)+offset;pose.position={at.x,at.y,at.z};
+                size=panelWidth*64.f/client.right;
+            } else if(spatialMode&&uiEye.copied&&uiCrop[2]>0&&uiCrop[3]>0) {
+                const float px=u*uiWidth,py=v*uiHeight;
+                const float cu=(px-uiCrop[0])/uiCrop[2],cv=(py-uiCrop[1])/uiCrop[3];
+                if(cu>=0&&cu<=1&&cv>=0&&cv<=1) {
+                    pose=uiPose;
+                    const auto offset=math::Rotate(Q(pose.orientation),{(cu-.5f)*uiSize,(.5f-cv)*uiSize*uiCrop[3]/uiCrop[2],.002f});
+                    const auto at=V(pose.position)+offset;pose.position={at.x,at.y,at.z};
+                    size=uiSize*64.f*uiWidth/(uiCrop[2]*float(client.right));
+                }
+            }
+            if(size>0) {
+                const float scale=size/64.f;
+                // Position the tip/hotspot at the pick point, not the bitmap center.
+                const auto offset=math::Rotate(Q(pose.orientation),mousecursor::CenterOffset(
+                    float(mouseWidth),float(mouseHeight),float(mouseHotX),float(mouseHotY),scale));
+                pose.position.x+=offset.x;pose.position.y+=offset.y;pose.position.z+=offset.z;
+                motionQuad(mouseCursor,pose,mouseWidth*scale,mouseHeight*scale,{{0,0},{mouseWidth,mouseHeight}},mouseChain);
+            }
+        }
+    }
+#endif
     XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
         static bool reported=false;
@@ -2267,6 +2354,7 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void ObserveMouseCursor(void* cursor){observedMouseCursor.store(cursor);}
 bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&!bodyCalibration.Active()&&state==XR_SESSION_STATE_FOCUSED;}
 void SetExternalPerspective(int mode) {
     std::lock_guard lock(mutex);
@@ -2418,6 +2506,8 @@ void Shutdown() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     mrSupported=mrBlocked=mrPair=false;mrReported=-1;mrShaderReady=false;pEnumerateEnvironmentBlendModes=nullptr;
     tableControls.CancelAll();tableFloorKnown=false;
+    if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
+    mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;mouseRetryAt=0;
     tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;hudAt=0;dialoguePlaced=false;dialogueAt=0;spatialEpoch=~0u;
 #endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;

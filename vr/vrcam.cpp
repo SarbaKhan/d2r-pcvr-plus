@@ -4386,14 +4386,20 @@ HCURSOR Crosshair() {
 }
 
 HCURSOR WINAPI HookSetCursor(HCURSOR c) {
+#if defined(D2RVR_NATIVE_OPENXR) && D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!g_flatSession)framevr::ObserveMouseCursor(c);
+#endif
     if (c && CrosshairNow())
         if (HCURSOR x = Crosshair()) c = x;
     return OrigSetCursor(c);
 }
 
-// Only in flat mode; once (user32 is there from the start).
+// Observe native menu cursor handles in VR; retain Flat crosshair replacement.
 void HookCursor() {
-    if (g_crossHooked.load() || (g_set.platform.load() != 0 && !g_set.vrKeyWalk.load())) return;   // flat, or VR F2's mouse look
+    if (g_crossHooked.load()) return;
+#ifndef D2RVR_NATIVE_OPENXR
+    if (g_set.platform.load() != 0 && !g_set.vrKeyWalk.load()) return;
+#endif
     g_crossHooked.store(true);
     void* fn = (void*)GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetCursor");
     const bool ok = fn && MH_CreateHook(fn, (void*)&HookSetCursor, (void**)&OrigSetCursor) == MH_OK && MH_EnableHook(fn) == MH_OK;
@@ -4412,7 +4418,9 @@ LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     if ((msg == WM_KEYDOWN || msg == WM_KEYUP) && w >= VK_F1 && (int)w < VK_F1 + ViewCount()) return 0;
 #ifdef D2RVR_NATIVE_OPENXR
     if(!g_flatSession&&g_inWorld.load()) {
-        if(msg==WM_SETCURSOR&&LOWORD(l)==HTCLIENT){SetCursor(nullptr);return TRUE;}
+        // Let the game select its native controller cursor. It is copied to
+        // the XR menu; physical mouse input below remains disabled.
+        if(msg==WM_SETCURSOR&&LOWORD(l)==HTCLIENT&&(!NativeExternal()||!gamestate::MenuOpen())){SetCursor(nullptr);return TRUE;}
         const bool injected=uintptr_t(GetMessageExtraInfo())==panelinput::InputTag;
         if((msg>=WM_MOUSEFIRST&&msg<=WM_MOUSELAST)&&!injected)return 0;
         if(msg==WM_INPUT){RAWINPUTHEADER header{};UINT size=sizeof header;

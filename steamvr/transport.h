@@ -43,6 +43,7 @@ FrameTiming LastTiming();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
 // Called only at a game stereo-pair boundary. Does not recreate the XR session.
 void SetExternalPerspective(int mode);
+void ObserveMouseCursor(void* cursor); // live native cursor, no replacement artwork
 bool PerspectiveReady();
 void ConfigureDioramaPassthrough(bool requested);
 void DioramaShaderReady(bool ready);

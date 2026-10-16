@@ -58,6 +58,12 @@ void PlacementTests(){
     Same(p,{-1.2f,.74f,0});
 }
 int main(){
+    for(int mode=1;mode<=4;++mode) {
+        assert(mousecursor::MenuVisible(mode,true,true)==(mode!=4));
+        assert(!mousecursor::MenuVisible(mode,false,true));
+        assert(!mousecursor::MenuVisible(mode,true,false));
+    }
+
     PlacementTests();
     using namespace perspective;
     assert(dioramamr::Enabled(3,true,true,true,true,false));

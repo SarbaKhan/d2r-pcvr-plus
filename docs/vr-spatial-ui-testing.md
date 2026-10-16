@@ -87,3 +87,16 @@ Retest Warriv/Akara choices, scrolling speech, cancelling, and reopening in
 F1/F2; check nearby and distant NPCs and camera rotation. Verify that F3/F4
 menus still show the moving world in both eyes and Flat stays unchanged.
 Headset validation remains required; CPU geometry tests cannot prove visibility.
+
+
+## Native controller cursor transport
+
+F1/F2/F4 menus copy the live Windows cursor selected by Diablo II into an
+OpenXR layer. Hardware cursors are not necessarily present in the UI texture.
+This reuses the former cursor capture, without its fallback arrow or world
+mouse pointer. No cursor artwork is shipped and mouse gameplay stays disabled.
+The hotspot maps onto the same flat/spatial menu coordinates as the native UI.
+F3 and Flat keep their existing paths. Test from a fresh process using only a
+controller: inventory/stash/vendor, item dragging, panel transitions, then F1,
+F2 and F4. Check golden cursor appearance and exact selection alignment under
+Windows and Proton. Same-handle cursor animation is not refreshed by this path.
