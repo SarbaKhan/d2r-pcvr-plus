@@ -100,3 +100,12 @@ F3 and Flat keep their existing paths. Test from a fresh process using only a
 controller: inventory/stash/vendor, item dragging, panel transitions, then F1,
 F2 and F4. Check golden cursor appearance and exact selection alignment under
 Windows and Proton. Same-handle cursor animation is not refreshed by this path.
+
+
+### Fresh-session cursor regression
+
+Cursor upload runs in the shared XR Begin path, including mono F1/F2 menu
+frames, rather than only BeginPair's stereo world frames. Test separate fresh
+processes: F3 -> F1 -> inventory, then F3 -> F2 -> inventory, without visiting
+F4 or using a mouse. Verify cursor shape changes during inventory actions and
+F1/F2/F4 transitions. The headset result still requires runtime validation.

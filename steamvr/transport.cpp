@@ -1593,7 +1593,13 @@ bool Begin() {
         }
     }
     timing.locateMs=Milliseconds()-locateStart;
-    const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;return true;
+    const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    // Begin is shared by Capture's mono menu path and BeginPair's stereo path.
+    // A fresh F1/F2 menu must not depend on a previous F4 stereo upload.
+    if(render&&valid)RefreshMouseCursor();
+#endif
+    return true;
 }
 bool Acquire(Eye& e) {
     if(e.acquired)return true;
@@ -1907,9 +1913,6 @@ void BeginPair() {
                 mrPair?"ACTIVE":"opaque fallback",int(mrRequested.load()),int(mrSupported),int(alphaTexture),int(mrShaderReady.load()),int(mrBlocked));Say(line);
         }
 
-#endif
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-        RefreshMouseCursor();
 #endif
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         if(Active())profile::BeginPair();else profile::SkipPair();
