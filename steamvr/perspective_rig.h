@@ -43,6 +43,11 @@ inline math::Vec MouseMarker(Pose camera,math::Vec direction,float groundY,float
     return camera.p+direction*(std::isfinite(t)&&t>0&&t<fallback*10?t:fallback);
 }
 inline math::Quat Pitch(float angle) {return {std::sin(angle*.5f),0,0,std::cos(angle*.5f)};}
+// Head-relative horizontal placement, at an absolute height above the floor.
+inline math::Vec TablePosition(math::Vec head,float yaw,float distance,float floor,float height) {
+    auto p=head+math::Rotate(math::Yaw(yaw),{0,0,-distance});
+    p.y=floor+height;return p;
+}
 // Horizontal miniature: tracking-space table maps to the sampled world centre.
 inline Rig Table(math::Vec world,math::Vec table,float heading,float units) {
     return {world,table,math::Yaw(heading),units};

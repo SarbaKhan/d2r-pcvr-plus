@@ -1,5 +1,6 @@
 #include "perspective_rig.h"
 #include "diorama_mr.h"
+#include "diorama_placement.h"
 #include "mouse_cursor.h"
 #include "../cleanroom/camera/mat4.h"
 #include <cassert>
@@ -8,7 +9,56 @@ using namespace framevr;
 void Near(float a,float b){assert(std::isfinite(a)&&std::fabs(a-b)<.0002f);}
 void Same(math::Vec a,math::Vec b){Near(a.x,b.x);Near(a.y,b.y);Near(a.z,b.z);}
 math::Vec Camera(const float* m){return {-m[12]*m[0]-m[13]*m[1]-m[14]*m[2],-m[12]*m[4]-m[13]*m[5]-m[14]*m[6],-m[12]*m[8]-m[13]*m[9]-m[14]*m[10]};}
+void PlacementTests(){
+    using namespace placement;
+    Controls c;
+    auto poll=[&](uint16_t b,uint64_t t,bool allowed=true,uint32_t epoch=1){return c.Poll(0,true,b,allowed,epoch,t);};
+    assert(c.heightCm==74);
+    poll(0,0);assert(poll(Back,10)==0);assert(poll(0,100)==Back);
+    assert(poll(0,120)==Back);assert(poll(0,151)==0); // one deferred tap pulse
+    poll(Back,200);poll(Back,400);poll(Back,600);poll(Back,700);
+    assert(c.owner==0);assert(poll(Back|Up,710)==0);assert(c.heightCm==84);
+    poll(Back|Up,720);assert(c.heightCm==84); // no auto-repeat
+    poll(Back,730);poll(Back|Right,740);assert(c.heightCm==85);
+    poll(Back,750);poll(Back|Left,760);assert(c.heightCm==84);
+    poll(Back,770);poll(Back|Down,780);assert(c.heightCm==74);
+    poll(Back|Up|Down,790);assert(c.heightCm==74); // opposing coarse keys
+    assert(poll(Down,800)==0);assert(c.owner==-1); // held D-pad cannot leak at release
+    assert(poll(Down,810)==0);poll(0,820);assert(poll(Down,830)==Down);
+    poll(0,840);poll(Back,850);assert(poll(Back|Right,860,false)==0);
+    assert(poll(Back|Right,870)==0);assert(poll(0,880)==0);assert(c.owner==-1);
+    // UI epoch change cancels short taps rather than replaying a map toggle.
+    poll(Back,900);poll(Back,920,true,2);assert(poll(0,930,true,2)==0);
+    // Held at entry/reconnect requires a neutral observation first.
+    Controls entry;assert(entry.Poll(0,true,Back,true,0,0)==0);
+    assert(entry.Poll(0,true,Back,true,0,100)==0);assert(entry.owner==-1);
+    entry.Poll(0,true,0,true,0,110);entry.Poll(0,true,Back,true,0,120);
+    entry.Poll(0,true,Back,true,0,300);entry.Poll(0,true,Back,true,0,500);entry.Poll(0,true,Back,true,0,620);
+    assert(entry.owner==0);entry.Expire(1000);assert(entry.owner==-1);
+    assert(entry.Poll(0,true,Back,true,0,1010)==0);entry.Poll(0,false,0,true,0,1020);
+    assert(entry.Poll(0,true,Back,true,0,1030)==0);
+    // Only one pad may place the table; idle other slots do not cancel it.
+    Controls multi;for(int i=0;i<2;++i)multi.Poll(i,true,0,true,0,0);
+    for(uint64_t t:{10,200,400,510})multi.Poll(0,true,Back,true,0,t);
+    multi.Poll(1,true,0,true,0,520);assert(multi.owner==0);
+    assert(multi.Poll(1,true,Back|Up,true,0,530)==0);assert(multi.heightCm==74);
+    multi.Poll(1,false,0,true,0,540);assert(multi.owner==0);
+    multi.CancelAll();assert(multi.owner==-1);assert(multi.Poll(0,true,Back,false,0,550)==0);
+    // Clamp and exact centimetre arithmetic, other buttons untouched.
+    c=Controls{};c.Configure(1.99f);poll(0,0);
+    for(uint64_t t:{10,200,400,510})poll(Back,t);
+    assert(poll(Back|Up|0x1000,520)==0x1000);assert(c.heightCm==200);
+    c.heightCm=20;poll(Back,530);poll(Back|Down,540);assert(c.heightCm==20);
+    // Floor-height placement ignores head height and preserves horizontal distance.
+    for(float y:{.8f,1.7f,2.f}) {
+        const auto p=perspective::TablePosition({2,y,3},0,1.2f,0,.74f);
+        Same(p,{2,.74f,1.8f});
+    }
+    const auto p=perspective::TablePosition({0,9,0},1.57079632679f,1.2f,-.1f,.84f);
+    Same(p,{-1.2f,.74f,0});
+}
 int main(){
+    PlacementTests();
     using namespace perspective;
     assert(dioramamr::Enabled(3,true,true,true,true,false));
     for(int mode:{1,2,4})assert(!dioramamr::Enabled(mode,true,true,true,true,false));

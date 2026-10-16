@@ -1,6 +1,7 @@
 #include "perspective_rig.h"
 #include "mouse_cursor.h"
 #include "diorama_mr.h"
+#include "diorama_placement.h"
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
@@ -112,7 +113,9 @@ ULONGLONG mouseRetryAt=0;
 constexpr int MouseAtlasSide=256;
 perspective::Rig externalRig{};
 math::Vec tableAnchor{},tableCenter{};
-float tableHeading=0;
+float tableHeading=0,tableFloor=0,tableFloorOffset=0;
+bool tableFloorKnown=false;
+placement::Controls tableControls;
 bool tablePlaced=false,tableFollowing=false;
 ULONGLONG tableAt=0;
 bool externalRigValid=false;
@@ -2260,21 +2263,46 @@ bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motio
 void SetExternalPerspective(int mode) {
     std::lock_guard lock(mutex);
     // Cancel pending casts, gestures and pointer presses before changing ownership.
+    tableControls.CancelAll();
     ClearInput();motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;
 }
 void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
 void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
 bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
+void ConfigureDioramaPlacement(float height,float floorOffset){
+    std::lock_guard lock(mutex);tableControls.Configure(height);
+    tableFloorOffset=std::isfinite(floorOffset)?std::clamp(floorOffset,-3.f,3.f):0;
+}
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch){
+    std::lock_guard lock(mutex);
+    allowed=allowed&&externalMode==3&&valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;
+    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64());
+    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0);
+}
+bool TakeDioramaHeight(float& height,bool allowed){
+    std::lock_guard lock(mutex);tableControls.Expire(GetTickCount64());
+    if(!allowed||!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
+    if(!tableControls.dirty||tableControls.owner>=0)return false;
+    height=tableControls.heightCm*.01f;tableControls.dirty=false;return true;
+}
 void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
     float width,float radius,float distance,float drop,float follow,float heading,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(!externalRigValid) {
-        if(!tablePlaced) {
+        tableControls.Expire(GetTickCount64());
+        if(!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
+        if(!tableFloorKnown) {
+            tableFloor=floorSpace?0.f:head.position.y-drop-tableControls.heightCm*.01f;
+            tableFloorKnown=true;
+            if(!floorSpace)Say("Diorama: no STAGE floor; using fixed estimated floor. Calibrate diorama.floor_offset_m if needed.");
+        }
+        if(!tablePlaced||tableControls.owner>=0) {
             const float yaw=math::Heading(Q(head.orientation));
-            tableAnchor=V(head.position)+math::Rotate(math::Yaw(yaw),{0,-drop,-distance});
+            tableAnchor=perspective::TablePosition(V(head.position),yaw,distance,tableFloor+tableFloorOffset,tableControls.heightCm*.01f);
             tableHeading=heading-yaw;tablePlaced=true;
         }
+        tableAnchor.y=tableFloor+tableFloorOffset+tableControls.heightCm*.01f;
         const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
         if(!tableFollowing||now-tableAt>500)tableCenter=target;
         else tableCenter=perspective::Follow(tableCenter,target,float(now-tableAt)*.001f,follow,radius*.2f);
@@ -2369,6 +2397,7 @@ void Shutdown() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
     mrSupported=mrBlocked=mrPair=false;mrReported=-1;mrShaderReady=false;pEnumerateEnvironmentBlendModes=nullptr;
+    tableControls.CancelAll();tableFloorKnown=false;
     tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;observedMouseCursor=nullptr;mouseRetryAt=0;
     mouseWidth=mouseHeight=64;mouseHotX=mouseHotY=32;
 #endif

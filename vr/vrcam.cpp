@@ -831,6 +831,7 @@ void LoadSettings() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(!g_flatSession)LoadFlatBindings();
     framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
+    framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f));
     g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.2124f),.3f,3.f));
     g_dioramaRadius.store(std::clamp(IniF(L"diorama",L"radius_units",24.f),8.f,60.f));
     g_dioramaDistance.store(std::clamp(IniF(L"diorama",L"distance_m",.65f),.3f,2.f));
@@ -3392,6 +3393,39 @@ bool ClassicPadAllowed(){
 void ResetClassicPad(){
     AcquireSRWLockExclusive(&g_classicPadLock);g_classicPad.Reset();ReleaseSRWLockExclusive(&g_classicPadLock);
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<bool> g_dioramaPadPending{false};
+bool DioramaPlacementAllowed(){return NativeDiorama()&&g_enabled.load()&&g_inWorld.load()&&GameFocused()&&!gamestate::MenuOpen()&&!ChatOpen()&&!framevr::SettingsOpen();}
+void FilterDioramaPad(DWORD idx,DWORD result,XINPUT_STATE* s){
+    if(!NativeDiorama()&&!g_dioramaPadPending.load())return;
+    const bool connected=result==ERROR_SUCCESS&&s;
+    const uint16_t raw=connected?s->Gamepad.wButtons:0;
+    const auto filtered=framevr::DioramaPad(idx,connected,raw,DioramaPlacementAllowed(),gamestate::MenuEpoch());
+    g_dioramaPadPending.store((filtered&0x10000u)!=0);
+    if(connected){
+        s->Gamepad.wButtons=uint16_t(filtered);
+        // Deferred tap and hold threshold transitions happen without a physical
+        // packet change. Advertise a fresh packet while filtering (and on exit).
+        static std::atomic<DWORD> serial{0};
+        s->dwPacketNumber=serial.fetch_add(1)+1;
+    }
+}
+void DioramaPlacementTick(){
+    if(g_flatSession)return;
+    static bool pending=false,wasDiorama=false;static float height=.74f;static ULONGLONG retry=0;
+    const bool active=NativeDiorama();
+    if(!active&&!wasDiorama&&!pending&&!g_dioramaPadPending.load())return;
+    wasDiorama=active;
+    float changed;
+    if(framevr::TakeDioramaHeight(changed,DioramaPlacementAllowed())){height=changed;pending=true;retry=0;}
+    const auto now=GetTickCount64();
+    if(pending&&now>=retry){
+        wchar_t value[32];swprintf_s(value,L"%.2f",height);
+        if(WritePrivateProfileStringW(L"diorama",L"height_m",value,g_iniPath))pending=false;
+        else {if(!retry)Log("Diorama: could not save height_m; retrying");retry=now+2000;}
+    }
+}
+#endif
 void PollClassicPad(DWORD idx,DWORD result,const XINPUT_STATE* state){
     const bool allowed=ClassicPadAllowed();
     const auto p=(result==ERROR_SUCCESS&&state)?state->Gamepad:XINPUT_GAMEPAD{};
@@ -4055,6 +4089,9 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     DWORD r = g_xhooks[I].orig(idx, s);
     --t_xDepth;
     if(t_xDepth==0&&ClassicPadMode())PollClassicPad(idx,r,s);
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(t_xDepth==0)FilterDioramaPad(idx,r,s);
+#endif
     // Flat with a real pad let through (gamepad.enabled=1): that pad only, its stick
     // turned by the camera below; BodyWalk's stick walks through the keyboard move.
     bool mirror = false;
@@ -8069,6 +8106,9 @@ DWORD WINAPI UpdateThread(void*) {
         d2rcam::SetEnabled(g_enabled.load() || (g_set.topStereo.load() && g_set.afr.load()));
         MouseTick();
         ClassicPadTick();
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        DioramaPlacementTick();
+#endif
         TurnTick();
         PushArms();
 #ifdef D2RVR_NATIVE_OPENXR

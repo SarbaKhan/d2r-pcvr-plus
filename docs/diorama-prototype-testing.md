@@ -177,3 +177,61 @@ Recheck F4 with SteamVR and VDXR for the dark background and smooth border, then
 WiVRn for the room and smooth alpha edge. Check menus, native cursor and F3/F4
 transitions. No placement, gameplay, save, installer or F1/F2/F3/Flat changes
 are included in this rollback.
+
+
+## Gamepad placement (F4 only)
+
+No virtual room or VR-controller manipulation is included. Use the same native
+XInput controller as gameplay (Xbox / compatible 8BitDo mode, including Proton).
+
+- Short Select/Back: native map button, delivered on release as a brief press.
+- Hold Select/Back for 0.5 seconds: attach the horizontal miniature in front of
+  the headset. Its X/Z position and yaw follow the headset; looking up/down,
+  crouching and standing do not change its floor-relative height.
+- While holding: D-pad Up/Down adds/subtracts 10 cm; Right/Left adds/subtracts 1 cm.
+  One step per press; holding a direction does not auto-repeat.
+- Release Select/Back: leave the miniature in place. D-pad buttons still held
+  at release stay suppressed until released, preventing gameplay actions.
+- F11 remains available and now preserves the selected floor-relative height.
+
+Add to the existing `[diorama]` section if desired (defaults apply if absent):
+
+```ini
+height_m=0.74
+floor_offset_m=0.0
+```
+
+The initial height is 74 cm; adjustments are limited to 20–200 cm and saved as
+`height_m` in the active `d2r_vr.ini` after placement ends. Only height persists
+across sessions; the tracking-space position is placed again on a new session.
+Existing width, radius, follow time and distance are retained. A correctly
+calibrated STAGE reference space supplies floor zero. Without STAGE, the first
+placement estimates a fixed floor from the head and legacy `below_eye_m`; this
+is NOT a measured floor. The log reports this fallback. `floor_offset_m` is a
+manual correction in metres, positive upward, clamped to -3..3 m.
+
+Placement is unavailable in inventory, stash, dialogues, chat, mod settings or
+while unfocused. Leaving F4, losing focus/tracking, stale input (250 ms), or
+controller disconnection cancels attachment without replaying a map press.
+Release Select before starting again. Other buttons and native gameplay remain
+available; only Select and D-pad are consumed during the gesture. F1/F2/F3 and
+Flat retain native Select/D-pad behavior outside cleanup of a canceled gesture.
+
+### Required headset and gamepad validation
+
+Automated policy/math tests do not validate the game's handling of the deferred
+map press or Steam Input mappings. Test on Windows and Linux:
+
+1. Tap Select repeatedly: one map toggle per tap, no movement of the miniature.
+2. Hold for >0.5 s: no map toggle. Walk/turn, crouch/stand, then release. The
+   miniature follows only while held and remains horizontal at fixed height.
+3. Check each D-pad direction, held directions, and repeated presses. No potion
+   or native D-pad action should fire during placement or at Select release.
+4. Open a panel or switch F4/F3 while holding Select. Release all controls, then
+   confirm native controls and a fresh placement gesture work normally.
+5. Disconnect/reconnect the pad, including with Select held; alt-tab; lose and
+   recover tracking. No resumed attachment or delayed map toggles are expected.
+6. Check two controller slots: an idle/disconnected second pad must not cancel
+   the active gesture, and two pads must not place the table simultaneously.
+7. Restart the game: selected height persists. Recheck F1/F2 camera, immersive
+   F3 physical controls, Flat, menus/cursor, and WiVRn native MR.
