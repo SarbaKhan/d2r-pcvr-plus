@@ -111,7 +111,9 @@ with opaque game terrain and readable HUD. Check dark terrain, border fading,
 menus and native cursor, turning/leaning, repeated F3/F4 transitions and frame
 rate. Then compare with `passthrough=0` and an unsupported runtime's fallback.
 The user has validated native MR successfully with WiVRn on Quest 2.
-The new Virtual Desktop color-key fallback still requires headset validation.
+The user also confirmed Virtual Desktop passthrough, but reported a hard edge
+and thin magenta fringe. Border quality is not validated. The runtime-gating
+revision requires a new SteamVR/VDXR check.
 
 Read `<game>/d2rloader/logs/d2r-vr-frame.log` for `Diorama MR:` lines:
 
@@ -174,6 +176,8 @@ chroma_color=#FF00FF
 In Virtual Desktop on the headset, enable **VR Passthrough** and select the same
 key color: magenta, RGB **255, 0, 255**. UI wording may vary by client version.
 Launch using the existing Virtual Desktop/VDXR shortcut and press F4 in a game.
+Color keying is now restricted to the reported `VirtualDesktopXR` runtime.
+SteamVR and unknown runtimes keep the dark background, even with `chroma_key=1`.
 The DLL paints only the area outside the miniature with that color; Virtual
 Desktop replaces it with the real room. Without the client feature enabled,
 a magenta background is expected. `chroma_key=0` restores the ordinary dark
@@ -197,9 +201,9 @@ does not prove that the client passthrough is disabled.
 
 ### SteamVR: connection and camera availability matter
 
-- **SteamVR through Virtual Desktop on Windows:** test the same client-side key
-  procedure above with the SteamVR launcher. This is a separate headset test;
-  success in VDXR alone does not validate it.
+- **SteamVR, including through Virtual Desktop:** color-key output is disabled.
+  Use the VDXR launcher for Virtual Desktop color-key passthrough. SteamVR cannot
+  reliably identify the headset streaming client from its runtime name.
 - **Quest through Steam Link / SteamVR:** the mod has no verified native
   passthrough path for this combination. With `chroma_key=0` it remains ordinary
   VR unless the actual OpenXR stack advertises ALPHA_BLEND. Setting a magenta
@@ -218,3 +222,19 @@ References:
 
 - https://github.com/guygodin/VirtualDesktop/releases/tag/v1.29.0
 - https://github.com/Rectus/openxr-steamvr-passthrough/blob/main/readme.md
+
+
+### Reported color-key border limitation
+
+The first Virtual Desktop test confirmed passthrough but revealed a hard cut and
+thin magenta fringe. The shader deliberately thresholds coverage at 0.5; native
+alpha still uses continuous coverage. Color keying cannot transmit that same
+alpha mask. Filtering/stream compression and the client's key removal may leave
+mixed edge pixels. Blending game pixels toward magenta is not a validated fix
+and could widen the fringe. Inspect the client's available key tolerance/edge
+controls before changing the shader; do not claim native-alpha quality.
+
+Runtime-gating regression: leave `chroma_key=1` in the shared profile, launch
+SteamVR and check the dark background, then launch VDXR and check passthrough.
+Recheck WiVRn's smooth native-alpha border. The native-alpha code and shader
+are unchanged by this runtime-gating fix.

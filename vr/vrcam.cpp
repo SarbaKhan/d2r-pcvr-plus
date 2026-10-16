@@ -7559,7 +7559,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         const bool requested = g_dioramaChroma;
         for (int c = 0; c < 3; ++c) color[c] = g_dioramaChromaColor[c];
         ReleaseSRWLockShared(&g_tableBgLock);
-        const bool chroma = framevr::dioramamr::ChromaEnabled(NativeDiorama() && TableKeyWanted(), requested, framevr::DioramaPassthroughActive());
+        const bool chroma = framevr::dioramamr::ChromaEnabled(NativeDiorama() && TableKeyWanted(), requested, framevr::DioramaPassthroughActive(), framevr::DioramaChromaRuntime());
         SetBool(rt, "DioramaChromaKey", chroma);
         SetFloats(rt, "DioramaChromaColor", color, 3);
     }

@@ -17,10 +17,14 @@ int main(){
     assert(!dioramamr::Enabled(3,true,true,false,true,false));
     assert(!dioramamr::Enabled(3,true,true,true,false,false));
     assert(!dioramamr::Enabled(3,true,true,true,true,true));
-    assert(dioramamr::ChromaEnabled(true,true,false));
-    assert(!dioramamr::ChromaEnabled(true,true,true));
-    assert(!dioramamr::ChromaEnabled(false,true,false));
-    assert(!dioramamr::ChromaEnabled(true,false,false));
+    assert(dioramamr::ChromaEnabled(true,true,false,true));
+    assert(!dioramamr::ChromaEnabled(true,true,true,true));
+    assert(!dioramamr::ChromaEnabled(false,true,false,true));
+    assert(!dioramamr::ChromaEnabled(true,false,false,true));
+    assert(!dioramamr::ChromaEnabled(true,true,false,false));
+    assert(dioramamr::ChromaRuntime("VirtualDesktopXR"));
+    for(const char* name:{"SteamVR/OpenXR","SteamVR","WiVRn","Monado","Oculus",""})
+        assert(!dioramamr::ChromaRuntime(name));
     // Opaque white must stay white, not disappear as it would with color-keying.
     uint8_t pixel[4];const uint8_t white[]={255,255,255,0},black[]={0,0,0,0};
     mousecursor::Pixel(white,white,pixel);assert(pixel[0]==255&&pixel[1]==255&&pixel[2]==255&&pixel[3]==255);
