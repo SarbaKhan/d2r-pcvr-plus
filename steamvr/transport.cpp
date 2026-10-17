@@ -2547,7 +2547,10 @@ void EndPair() {
         if(!hudAt)hudHeading=std::atan2(d.x,d.z);
         else hudHeading=spatialui::FollowAngle(hudHeading,V(head.position),tableAnchor,float(now-hudAt)*.001f);
         hudAt=now;
-        const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count));
+        // Reserve a composition slot for the editor indication on runtimes
+        // with small layer limits; the segmented HUD must not crowd it out.
+        const uint32_t noticeSlot=tableControls.Notice(now)>0&&contentLimit>count?1u:0u;
+        const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count-noticeSlot));
         const float radius=tableWidth*.5f+.025f;
         const float arc=hudArc*spatialui::HudScale*.775f/radius;
         const float h=radius*arc*float(hudHeight)/hudWidth;
