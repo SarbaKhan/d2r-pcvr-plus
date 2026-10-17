@@ -76,7 +76,7 @@ Focus originalFocus=nullptr;
 Activity originalPointer[6]{};
 bool pointerIn[6]{},activityIn=false,requestIn=false,controllerIn=false,dispatchIn=false,focusIn=false,cursorSnapIn=false;
 std::atomic<bool> ready{false},reported{false};
-std::atomic<bool> pointerFocus{false};
+std::atomic<bool> pointerFocus{false},nativeController{false};
 thread_local bool pointerContext=false;
 thread_local bool bindingContext=false;
 
@@ -181,7 +181,7 @@ bool ControllerMode(){
     if(bindingContext)return true;
     if(pointerContext)return false;
     if(ItemHoverActive()&&tooltipTiming.load()!=2&&reinterpret_cast<uintptr_t>(_ReturnAddress())==tooltipDelayReturn)return false;
-    return isController();
+    const bool mode=isController();nativeController.store(mode);return mode;
 }
 bool CursorSnap(){
     const bool itemQuery=reinterpret_cast<uintptr_t>(_ReturnAddress())==itemCursorReturn;
@@ -204,7 +204,8 @@ void OnFocus(void* self,bool sound) {
 }
 
 bool Preserve() {
-    if(!ready.load(std::memory_order_acquire)||!lease.PreserveController(GetTickCount64(),true))return false;
+    if(!ready.load(std::memory_order_acquire)||
+       !(lease.Active(GetTickCount64())||worldInput.Active(GetTickCount64())))return false;
     return isController();
 }
 void Report() {
@@ -250,6 +251,11 @@ bool ControllerReady(){
     if(isController())return true;
     originalRequest(1); // native transition; its UI update commits/reloads layouts
     return false;
+}
+bool NativeControllerActive(){return nativeController.load();}
+void ObserveControllerMode(){
+    if(!controllerIn&&d2rsig::Check(ControllerRva,ControllerSig,sizeof ControllerSig))
+        controllerIn=d2rsig::Hook(ControllerRva,ControllerSig,sizeof ControllerSig,reinterpret_cast<void*>(&ControllerMode),reinterpret_cast<void**>(&isController));
 }
 void Install() {
     InstallCanvasSize();

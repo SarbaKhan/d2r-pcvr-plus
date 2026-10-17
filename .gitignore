@@ -47,3 +47,11 @@ promo/
 **/d2r_vr_icons/
 **/d2r_vr_potions/
 /vkd3d-proton.cache*
+
+# Portable CI staging
+dist-plus/
+
+# Linux hardware-validation machine configuration and installation rollback
+/linux-launch.json
+/linux-launch-error.txt
+/installation-backups/

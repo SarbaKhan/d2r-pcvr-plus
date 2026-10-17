@@ -29,7 +29,7 @@ class InstallationTests(unittest.TestCase):
 
     def install_round_trip(self, store):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             game = root / 'library/steamapps/common/Diablo II Resurrected'
             game.mkdir(parents=True)
             exe = ('3.3.93787' if store == 'steam' else '3.3.93847').encode('utf-16-le')
@@ -124,6 +124,9 @@ class InstallationTests(unittest.TestCase):
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASHES', loader_hashes):
                     install.main()
                 snapshot = next((root / 'backups').iterdir())
+                self.assertEqual(list((snapshot / 'saves').iterdir()), [snapshot / 'saves/Settings.json'])
+                flat = game / 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini'
+                self.assertIn(b'flat_layout=WASD', flat.read_bytes().replace(b' ', b''))
                 record = install.read_record(game)
                 self.assertEqual(record['snapshots'], [str(snapshot.resolve())])
                 self.assertEqual(record['store'], store)
@@ -228,7 +231,7 @@ class InstallationTests(unittest.TestCase):
 
     def test_windows_runtime_override_only_applies_to_explicit_vr(self):
         with tempfile.TemporaryDirectory() as temporary:
-            runtime = Path(temporary) / 'steamxr_win64.json'
+            runtime = Path(temporary).resolve() / 'steamxr_win64.json'
             runtime.write_text('{}')
             options = [str(runtime.parent / 'D2R.exe'),
                        launch_windows.RUNTIME_OPTION + str(runtime)]
@@ -248,7 +251,7 @@ class InstallationTests(unittest.TestCase):
 
     def test_windows_vr_skips_early_overlay_routing_but_preserves_steam_ownership(self):
         with tempfile.TemporaryDirectory() as temporary:
-            runtime = Path(temporary) / 'steamxr_win64.json'
+            runtime = Path(temporary).resolve() / 'steamxr_win64.json'
             runtime.write_text('{}')
             inherited = {'SteamAppId': '2536520', 'SteamGameId': '2536520',
                          'STEAMOVERLAYGAMEID': '2536520', 'STEAMNOOVERLAYUI': '1',
@@ -276,7 +279,7 @@ class InstallationTests(unittest.TestCase):
 
     def test_explicit_vdxr_overrides_configured_steamvr_without_changing_stock_play(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             steamvr = root / 'Steam VR/steamxr_win64.json'
             vdxr = root / 'Virtual Desktop/OpenXR/virtualdesktop-openxr.json'
             for runtime in (steamvr, vdxr):
@@ -301,7 +304,7 @@ class InstallationTests(unittest.TestCase):
 
     def test_missing_vdxr_does_not_fall_back_to_the_configured_steamvr(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             steamvr = root / 'steamxr_win64.json'
             steamvr.write_text('{}')
             with patch.object(launch_windows, 'vdxr_manifest', return_value=root / 'missing.json'):
@@ -531,7 +534,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_verified_manual_cache_is_reused_without_network_or_replacement(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             target.write_bytes(self.payload)
             with patch.object(install.urllib.request, 'urlopen') as download, \
                     patch.object(Path, 'write_bytes') as write, \
@@ -586,7 +589,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_bad_download_keeps_existing_cache_and_enforces_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             target.write_bytes(b'old, unverified cache')
             with patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong content')), \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -596,7 +599,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_valid_download_replaces_invalid_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             target.write_bytes(b'invalid cache')
             with patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -605,7 +608,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_unreadable_cache_reports_path_and_os_error_without_redownloading(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             target.write_bytes(self.payload)
             with patch.object(Path, 'read_bytes', side_effect=OSError(22, 'Invalid argument')), \
                     patch.object(install.urllib.request, 'urlopen') as download:
@@ -659,7 +662,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_file_blocked_after_download_is_reported_immediately(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             with patch.object(Path, 'read_bytes', side_effect=[FileNotFoundError(), OSError(22, 'Invalid argument')]), \
                     patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -669,7 +672,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_file_removed_after_download_reports_missing_dependency(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             write_bytes = Path.write_bytes
             def removed_write(path, data):
                 size = write_bytes(path, data)
@@ -684,7 +687,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_blocked_write_is_explained(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             with patch.object(Path, 'write_bytes', side_effect=PermissionError(13, 'Permission denied')), \
                     patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -694,7 +697,7 @@ class DependencyDownloadTests(unittest.TestCase):
 
     def test_changed_file_after_save_fails_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
-            target = Path(temporary) / 'fixture.zip'
+            target = Path(temporary).resolve() / 'fixture.zip'
             write_bytes = Path.write_bytes
             def changed_write(path, data):
                 return write_bytes(path, b'changed content')

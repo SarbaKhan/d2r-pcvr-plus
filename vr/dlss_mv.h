@@ -3,6 +3,10 @@
 // frame instead of the other eye's (dlss_mv.cpp).
 
 namespace dlssmv {
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void CameraCut();
+bool TakeCameraCut(int eye);
+#endif
 void SetLogger(void (*log)(const char*));
 // 0 off, 1 check only (logs how well vrcam's matrices explain the game's vectors), 2 fix
 void SetMode(int mode);

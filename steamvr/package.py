@@ -33,11 +33,13 @@ def main():
         cwd=ROOT, text=True).strip() if args.variant == 'current-source' else None
     # Explicit allowlist. Never glob an install, backup, build or diagnostic tree.
     paths = ['INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
-             'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd',
+             'PCVR-PLUS-SETUP.md', 'd2r_pcvr_plus_flat.ini',
+             'steamvr/launch_plus.py', 'steamvr/process_guard.py',
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
              'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/hdr_check.py',
              'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
+             'steamvr/plus_artwork.py', 'steamvr/plus_preferences.py', 'artwork/manifest.json', 'artwork/README.md',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
              'external/reshade/LICENSE.md', 'steamvr/install.py', 'steamvr/mod_identity.py',
              'steamvr/launch_windows.py']
@@ -48,6 +50,8 @@ def main():
     paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
               'steamvr/game_install.py', 'steamvr/casc_assets.py']
     paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
+    paths += ['artwork/' + mode + '/' + kind + '.png' for mode in ('flat', 'steamvr', 'wivrn', 'virtual-desktop')
+              for kind in ('icon', 'cover', 'wide-cover', 'background', 'logo')]
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
@@ -72,7 +76,7 @@ def main():
                 'variant': args.variant,
                 'plugin_source_commit': plugin_commit,
                 'plugin_source_note': args.plugin_source_note,
-                'connections': ['SteamVR', 'Virtual Desktop (VDXR)'] if args.platform == 'native-windows' else [],
+                'connections': ['SteamVR', 'Virtual Desktop (VDXR)', 'Flat Screen (no VR)'] if args.platform == 'native-windows' else [],
                 'play_mode': 'local offline single-player',
                 'sha256': hashes}
     args.output.parent.mkdir(parents=True, exist_ok=True)

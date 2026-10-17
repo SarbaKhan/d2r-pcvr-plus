@@ -77,6 +77,7 @@ class WorldInputMode {
     InputModeLease lease;
 public:
     void Update(uint64_t now,bool active) { if(active)lease.Refresh(now);else lease.Clear(); }
+    bool Active(uint64_t now) const {return lease.Active(now);}
     bool NeedsController(uint64_t now,bool player,bool menu,bool controller) const {
         return player&&!menu&&!controller&&lease.Active(now);
     }

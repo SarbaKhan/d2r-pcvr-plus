@@ -16,7 +16,7 @@ $payload = Join-Path $qaRoot 'payload'
 $target = Join-Path $qaRoot 'installed'
 New-Item -ItemType Directory -Path "$payload/steamvr","$payload/.runtime" -Force | Out-Null
 Copy-Item -LiteralPath $PythonDirectory -Destination "$payload/.runtime/python" -Recurse
-foreach ($name in @('LICENSE','INSTALL-WINDOWS.md','CONTROLS.md')) {
+foreach ($name in @('LICENSE','PCVR-PLUS-SETUP.md','CONTROLS.md')) {
     Copy-Item -LiteralPath (Join-Path $repoRoot $name) -Destination (Join-Path $payload $name)
 }
 $backend = @'
@@ -60,7 +60,7 @@ $choices = Join-Path $qaRoot 'choices.ini'
 [IO.File]::WriteAllText($choices,"[setup]`r`nmode=repair`r`n")
 $registryKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\D2R-PCVR-Installer-Fixture_is1'
 if (Test-Path -LiteralPath $registryKey) { throw 'A previous fixture remains registered; remove it before testing.' }
-$setup = Start-Process -FilePath (Join-Path $qaRoot 'D2R-PCVR-Setup-0.0.1.exe') -ArgumentList @(
+$setup = Start-Process -FilePath (Join-Path $qaRoot 'D2R-PCVR-PLUS-Setup-0.0.1.exe') -ArgumentList @(
     '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="{0}"' -f $target), ('/CONFIG="{0}"' -f $choices), ('/LOG="{0}/setup.log"' -f $qaRoot)
 ) -WindowStyle Hidden -PassThru -Wait
 if ($setup.ExitCode -ne 0 -or !(Test-Path -LiteralPath $registryKey) -or !(Test-Path -LiteralPath "$target/fixture-installed.txt")) {

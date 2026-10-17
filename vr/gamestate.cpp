@@ -36,6 +36,7 @@
 #include "interactionstate.h"
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
+#include "../steamvr/spatial_ui.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/native_hud.h"
 #include "../steamvr/attack_speed.h"
@@ -165,6 +166,7 @@ std::atomic<bool> g_npcChoices{false};
 std::mutex npcChoicesMutex;
 int32_t npcChoicesRect[4]{};
 uint64_t npcChoicesAt=0;
+std::atomic<bool> g_dialogueOnly{false};
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -671,6 +673,12 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         g_menu.store(menu ? 1 : 0);
         int menus=0;bool quest=false;
         for(const auto& name:g_panels)if(IsMenuPanel(name)){++menus;quest=name.find("QuestLog")!=std::string::npos;}
+        bool dialogue=false,other=false;
+        for(const auto& name:g_panels)if(IsMenuPanel(name)) {
+            if(framevr::spatialui::Dialogue(name))dialogue=true;
+            else if(name!="ControllerOverlay")other=true;
+        }
+        g_dialogueOnly=dialogue&&!other;
         g_journalOnly=menus==1&&quest;
         const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
         if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
@@ -868,6 +876,7 @@ bool NpcChoicesRect(int32_t out[4]) {
     if(!g_npcChoices.load()||!npcChoicesAt||GetTickCount64()-npcChoicesAt>650)return false;
     std::copy_n(npcChoicesRect,4,out);return true;
 }
+bool DialogueOnly(){return g_dialogueOnly.load();}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};

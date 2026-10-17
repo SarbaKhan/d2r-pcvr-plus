@@ -1,5 +1,9 @@
 #pragma once
+#include <cstdint>
+namespace panelinput {inline constexpr uintptr_t InputTag=0x44325256;}
 namespace panelinput {
+void ObserveControllerMode(); // read-only mode observer for Flat; no input ownership
+bool NativeControllerActive(); // cached on the native UI thread
 void Install(); // timer thread; retries while native code is still encrypted
 void OwnPointer(); // before native menu pointer injection; no game-thread calls
 void UseController(); // restore native focus/snapping, retain protection for queued mouse releases

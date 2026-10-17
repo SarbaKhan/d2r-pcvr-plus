@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repoRoot = Split-Path $PSScriptRoot -Parent
-if ($Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') { throw 'Use a numeric three- or four-part installer version.' }
+if ($Version -notmatch '^\d+\.\d+(\.\d+){0,2}$') { throw 'Use a numeric two-, three- or four-part installer version.' }
 $package = (Resolve-Path -LiteralPath $PackagePath).Path
 if (!$OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'build-frame/installers' }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
@@ -44,7 +44,7 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 & $ISCCPath /Qp "/DPayloadDir=$($stage.payload)" "/DModVersion=$Version" "/DInstallerOutput=$output" (Join-Path $PSScriptRoot 'D2R_PCVR_Setup.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
-$installer = Join-Path $output "D2R-PCVR-Setup-$Version.exe"
+$installer = Join-Path $output "D2R-PCVR-PLUS-Setup-$Version.exe"
 $digest = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$installer.sha256", "$digest  $([IO.Path]::GetFileName($installer))`n")
 $report = [ordered]@{

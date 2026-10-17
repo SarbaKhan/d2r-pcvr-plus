@@ -7,6 +7,7 @@ import session
 from session import run
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Proton process supervision uses Linux /proc")
 class SessionTest(unittest.TestCase):
     def test_normal_exit(self):
         self.assertEqual(run([sys.executable, '-c', 'raise SystemExit(7)'], poll=.02), 7)

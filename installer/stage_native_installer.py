@@ -8,13 +8,14 @@ import zipfile
 
 PYTHON_SHA256 = '4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3'
 ROOT_FILES = {
+    'PCVR-PLUS-SETUP.md', 'd2r_pcvr_plus_flat.ini',
     'INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
     'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd', 'Install-Windows.cmd',
     'Install-BattleNet-Preview.cmd', 'Uninstall-Windows.cmd', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
     'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt', 'external/reshade/LICENSE.md',
     'bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'bin/CascLib.dll', 'steamvr/vendor/bitknit.py',
 }
-SCRIPTS = {'setup_windows.ps1', 'setup_windows.py', 'setup_native.py', 'uninstall_windows.py', 'hdr_check.py',
+SCRIPTS = {'launch_plus.py', 'process_guard.py', 'plus_artwork.py', 'plus_preferences.py', 'setup_windows.ps1', 'setup_windows.py', 'setup_native.py', 'uninstall_windows.py', 'hdr_check.py',
            'steam_config.py', 'install.py', 'mod_identity.py', 'launch_windows.py', 'prepare_icons.py',
            'steam_assets.py', 'game_assets.py', 'game_install.py', 'casc_assets.py',
            'prepare_potions.py', 'potion_assets.py'}
@@ -29,7 +30,11 @@ def safe_name(name):
 
 def allowed(name, source):
     path = safe_name(name)
-    return (name in ROOT_FILES or name in {'steamvr/' + item for item in SCRIPTS}
+    return (name in {'artwork/manifest.json', 'artwork/README.md'}
+            or name in {'artwork/' + mode + '/' + kind + '.png'
+                        for mode in ('flat', 'steamvr', 'wivrn', 'virtual-desktop')
+                        for kind in ('icon', 'cover', 'wide-cover', 'background', 'logo')}
+            or name in ROOT_FILES or name in {'steamvr/' + item for item in SCRIPTS}
             or (len(path.parts) == 3 and path.parts[:2] in (('steamvr', 'licenses'), ('reshade', 'sky'))
                 and path.suffix == ('.txt' if path.parts[0] == 'steamvr' else '.png')
                 and (source / name).is_file()))

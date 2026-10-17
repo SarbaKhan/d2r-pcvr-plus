@@ -658,6 +658,14 @@ void SetLag(int lag) { g_lag.store(std::clamp(lag, 0, 2)); }
 void SetFarTurn(float k) { g_farTurn.store(std::clamp(k, -2.0f, 2.0f)); }
 void SetFixes(bool nearPart, bool jitter) { g_fix.store((nearPart ? 1u : 0u) | (jitter ? 2u : 0u)); }
 
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<unsigned> cutMask{0};
+void CameraCut() {
+    std::lock_guard<std::mutex> l(g_framesLock);
+    g_frameCount=g_evalCount=0;g_pendingOk=false;cutMask.store(3);
+}
+bool TakeCameraCut(int eye) {const unsigned bit=1u<<(eye&1);return (cutMask.fetch_and(~bit)&bit)!=0;}
+#endif
 void SetPending(const float view[16], const float proj[16], int eye) {
     std::lock_guard<std::mutex> l(g_framesLock);
     memcpy(g_pending.view, view, sizeof g_pending.view);

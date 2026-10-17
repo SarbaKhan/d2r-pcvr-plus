@@ -1727,8 +1727,9 @@ float3 Stamp(float4 pos, float2 uv, uint stamp)
     else bit = (sum >> uint(i - 40)) & 1u;
     return bit != 0u ? float3(1.0, 1.0, 1.0) : float3(0.0, 0.0, 0.0);
 }
-float3 PS_Stamp(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Stamp(pos, uv, FrameStamp0); }
-float3 PS_StampR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Stamp(pos, uv, FrameStamp1); }
+uniform bool DioramaMR < hidden = true; > = false;
+float4 PS_Stamp(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return float4(Stamp(pos, uv, FrameStamp0), DioramaMR ? tex2D(FogColorSmp, uv).a : 1.0); }
+float4 PS_StampR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return float4(Stamp(pos, uv, FrameStamp1), DioramaMR ? tex2D(FogColorSmp, uv).a : 1.0); }
 
 // The table (vrcam's VR view F5): the game's view from above in a Meta Quest
 // over passthrough. The headset keys by brightness (the bridge's Blend
@@ -1739,6 +1740,8 @@ float3 PS_StampR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { r
 // TableFloor, so its own shadows and night are never cut. The void is the
 // pixel and its neighbours two pixels out with no depth AND dark - what the
 // interface draws over the void is bright and stays.
+uniform bool DioramaOn < hidden = true; > = false;
+uniform float DioramaRadius < hidden = true; > = 24.0;
 uniform bool TableKeyOn < hidden = true; > = false;
 uniform float TableFloor < hidden = true; > = 0.05;   // vrcam, [table] floor: how far off black the game is lifted
 // vrcam, [table] background: what the void is filled with - black for the bridge's
@@ -1779,6 +1782,19 @@ bool OutsideTable(float2 uv, float d, int eye)
     return max(abs(g.x), abs(g.y)) > TableBounds;
 }
 
+float DioramaCoverage(float2 uv, float d, int eye)
+{
+    if (d <= 0.0) return 0.0;
+    const float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    const float4 sp = eye == 0 ? SkyProj0 : SkyProj1;
+    const float3 v = float3((ndc.x + sp.z) / sp.x, (ndc.y + sp.w) / sp.y, -1.0);
+    const float3 ray = eye == 0 ? v.x * CamRight0 + v.y * CamUp0 + v.z * CamBack0
+                   : v.x * CamRight1 + v.y * CamUp1 + v.z * CamBack1;
+    const float3 p = (eye == 0 ? TableEye0 : TableEye1) + ray * (NearPlane / d);
+    const float edge = length(p.xz) / max(DioramaRadius, 1.0);
+    return 1.0 - smoothstep(0.88, 1.0, edge);
+}
+
 float3 TableKey(float2 uv, int eye)
 {
     const float3 c = tex2D(FogColorSmp, uv).rgb;
@@ -1799,6 +1815,12 @@ float3 TableKey(float2 uv, int eye)
     const float2 duv = UpsideDown ? float2(uv.x, 1.0 - uv.y) : uv;
     const float2 px = 2.0 * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT);
     float d = DepthAt(duv).x;
+    if (DioramaOn) {
+        if (d <= 0.0) return float3(0.012, 0.014, 0.02);
+        const float keep = DioramaCoverage(uv, d, eye);
+        if (DioramaMR) return c; // straight alpha; do not premultiply or darken the edge twice
+        return lerp(float3(0.012, 0.014, 0.02), c, keep);
+    }
     d = max(d, DepthAt(duv + float2(px.x, 0)).x);
     d = max(d, DepthAt(duv - float2(px.x, 0)).x);
     d = max(d, DepthAt(duv + float2(0, px.y)).x);
@@ -1833,8 +1855,17 @@ float3 TableKey(float2 uv, int eye)
     if (OutsideTable(uv, dc > 0.0 ? dc : d, eye)) return TableBackground;
     return top < TableFloor ? max(c, float3(TableFloor, TableFloor, TableFloor)) : c;
 }
-float3 PS_TableKey(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return TableKey(uv, 0); }
-float3 PS_TableKeyR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return TableKey(uv, 1); }
+float DioramaAlpha(float2 uv, int eye)
+{
+    if (!DioramaMR || !DioramaOn || !TableKeyOn || tex2Dsize(FogDepthSmp, 0).x < 16) return 1.0;
+    const float sign = eye == 0 ? 1.0 : -1.0;
+    if ((GameBarOn || GameMapOn) && GamePieces(uv, sign).a < 0.5) return 1.0;
+    if (InterfaceLit(uv, sign)) return 1.0;
+    const float2 duv = UpsideDown ? float2(uv.x, 1.0 - uv.y) : uv;
+    return DioramaCoverage(uv, DepthAt(duv).x, eye);
+}
+float4 PS_TableKey(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return float4(TableKey(uv, 0), DioramaAlpha(uv, 0)); }
+float4 PS_TableKeyR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return float4(TableKey(uv, 1), DioramaAlpha(uv, 1)); }
 
 // The left eye's frames (and mono). vrcam keeps one of the two on: before
 // each present, the one of the eye that present is for.

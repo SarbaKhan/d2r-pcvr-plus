@@ -1,3 +1,9 @@
+#include "mouse_cursor.h"
+#include "perspective_rig.h"
+#include "diorama_mr.h"
+#include "diorama_placement.h"
+#include "spatial_ui.h"
+#include "world_coordinates.h"
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
@@ -104,6 +110,37 @@ std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
 // Lock-free for other threads; desktop and flat play never stamp it.
 std::atomic<uint64_t> vrGameplayAt{0};
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+std::atomic<bool> externalPerspective{false};
+std::atomic<bool> mrRequested{true},mrShaderReady{false};
+bool mrSupported=false,mrBlocked=false,mrPair=false;
+int mrReported=-1;
+PFN_xrEnumerateEnvironmentBlendModes pEnumerateEnvironmentBlendModes=nullptr;
+uint32_t externalGeneration=~0u;
+math::Vec externalReference{};
+float externalReferenceYaw=0,externalGroundY=0,externalDistance=40;
+std::atomic<int> externalMode{4};
+XrSwapchain mouseChain=XR_NULL_HANDLE;
+std::atomic<void*> observedMouseCursor{nullptr};
+HCURSOR uploadedMouseCursor=nullptr;
+bool mouseAtlasPending=false,mouseImageReady=false;
+int mouseWidth=64,mouseHeight=64,mouseHotX=32,mouseHotY=32;
+ULONGLONG mouseRetryAt=0;
+constexpr int MouseAtlasSide=256;
+perspective::Rig externalRig{};
+math::Vec tableAnchor{},tableCenter{};
+float tableHeading=0,tableFloor=0,tableFloorOffset=0;
+float tableWidth=1.5f,hudTilt=.174532925f,hudArc=1.8f,spatialPanelWidth=1.2f,spatialPanelHeight=.7f;
+float hudHeading=0;ULONGLONG hudAt=0;
+math::Vec dialogueGrid{},dialogueWorld{};ULONGLONG dialogueAt=0;uint64_t dialogueSession=0;
+bool dialoguePlaced=false;uint32_t spatialEpoch=~0u;
+
+bool tableFloorKnown=false;
+placement::Controls tableControls;
+bool tablePlaced=false,tableFollowing=false;
+ULONGLONG tableAt=0;
+bool externalRigValid=false;
+#endif
 gameplay::Engine motion;
 skills::HandControls handControls;
 skills::HandOutput handOutput;
@@ -269,6 +306,8 @@ struct Eye {
 std::array<Eye,2> eyes;
 Eye uiEye;
 Eye mapEye;
+Eye hudEye;
+UiBlit hudBlit;bool hudSupported=false;uint32_t hudWidth=0,hudHeight=0;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
@@ -417,7 +456,7 @@ void ReleaseUiKey() {
     if(!heldKeyScan)return;
     INPUT key{};key.type=INPUT_KEYBOARD;key.ki.wScan=heldKeyScan;
     key.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
-    SendInput(1,&key,sizeof key);
+    (key.ki.dwExtraInfo=panelinput::InputTag,SendInput(1,&key,sizeof key));
     heldKeyScan=0;keyReleaseAt=0;
 }
 void PulseUiKey(WORD virtualKey) {
@@ -425,7 +464,7 @@ void PulseUiKey(WORD virtualKey) {
     const WORD scan=WORD(MapVirtualKeyW(virtualKey,MAPVK_VK_TO_VSC));
     if(!scan)return;
     INPUT key{};key.type=INPUT_KEYBOARD;key.ki.wScan=scan;key.ki.dwFlags=KEYEVENTF_SCANCODE;
-    if(SendInput(1,&key,sizeof key)!=1){Say("Frame OpenXR: UI key injection failed");return;}
+    if((key.ki.dwExtraInfo=panelinput::InputTag,SendInput(1,&key,sizeof key))!=1){Say("Frame OpenXR: UI key injection failed");return;}
     heldKeyScan=scan;keyReleaseAt=GetTickCount64()+125;
     Say(virtualKey==VK_ESCAPE?"Frame OpenXR: menu Escape scan code down":"Frame OpenXR: inventory I scan code down");
 }
@@ -434,14 +473,14 @@ void PanelModifier(WORD key,bool wanted,bool& held) {
     INPUT input{};input.type=INPUT_KEYBOARD;
     input.ki.wScan=WORD(MapVirtualKeyW(key,MAPVK_VK_TO_VSC));
     input.ki.dwFlags=KEYEVENTF_SCANCODE|(wanted?0:KEYEVENTF_KEYUP);
-    if(SendInput(1,&input,sizeof input)==1)held=wanted;
+    if((input.ki.dwExtraInfo=panelinput::InputTag,SendInput(1,&input,sizeof input))==1)held=wanted;
 }
 void ReleasePanelInput() {
     panelinput::ItemHover(false);
     if(mouseDown||rightMouseDown||controlDown||shiftDown)panelinput::OwnPointer();
     for(int i=0;i<2;++i) {
         bool& held=i?rightMouseDown:mouseDown;
-        if(held){INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
+        if(held){INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;(up.mi.dwExtraInfo=panelinput::InputTag,SendInput(1,&up,sizeof up));held=false;}
     }
     PanelModifier(VK_CONTROL,false,controlDown);PanelModifier(VK_SHIFT,false,shiftDown);
     panelMouse.Suspend();panelScroll={};
@@ -555,6 +594,20 @@ bool LoadFunctions() {
     char b[192];std::snprintf(b,sizeof b,"Frame OpenXR: runtime %s",props.runtimeName);Say(b);
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};si.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     if(!Check(pGetSystem(instance,&si,&system),"get headset system"))return false;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    // Optional query: never fail startup when a runtime cannot provide MR.
+    mrSupported=false;mrBlocked=false;mrReported=-1;
+    if(XR_SUCCEEDED(getProc(instance,"xrEnumerateEnvironmentBlendModes",
+        reinterpret_cast<PFN_xrVoidFunction*>(&pEnumerateEnvironmentBlendModes)))&&pEnumerateEnvironmentBlendModes) {
+        uint32_t n=0;
+        if(XR_SUCCEEDED(pEnumerateEnvironmentBlendModes(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,0,&n,nullptr))&&n>0&&n<=16) {
+            std::vector<XrEnvironmentBlendMode> modes(n);
+            if(XR_SUCCEEDED(pEnumerateEnvironmentBlendModes(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,n,&n,modes.data())))
+                mrSupported=std::find(modes.begin(),modes.end(),XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND)!=modes.end();
+        }
+    }
+    Say(mrSupported?"Diorama MR: runtime advertises ALPHA_BLEND":"Diorama MR: ALPHA_BLEND unavailable; opaque VR fallback");
+#endif
     XrSystemProperties limits{XR_TYPE_SYSTEM_PROPERTIES};
     if(XR_SUCCEEDED(pGetSystemProperties(instance,system,&limits)))layerLimit=std::min(32u,limits.graphicsProperties.maxLayerCount);
     if(gazeExtension) {
@@ -701,8 +754,45 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
         const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
         p[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
     }
-    return UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+    const bool ready=UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+
+    return ready;
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void RefreshMouseCursor() {
+    if(!mousecursor::MenuVisible(externalMode,panelMode||spatialMode,panelinput::NativeControllerActive()))return;
+    auto cursor=static_cast<HCURSOR>(observedMouseCursor.load());
+    if(!cursor){CURSORINFO info{sizeof(CURSORINFO)};if(GetCursorInfo(&info))cursor=info.hCursor;}
+    if(!cursor||cursor==uploadedMouseCursor||GetTickCount64()<mouseRetryAt)return;
+    mouseRetryAt=GetTickCount64()+250; // bound failed captures / rapidly changing handles
+    ICONINFO icon{};if(!GetIconInfo(cursor,&icon))return;
+    BITMAP bitmap{};
+    const bool got=GetObjectW(icon.hbmColor?icon.hbmColor:icon.hbmMask,sizeof bitmap,&bitmap)!=0;
+    const int w=bitmap.bmWidth,h=icon.hbmColor?bitmap.bmHeight:bitmap.bmHeight/2;
+    if(icon.hbmColor)DeleteObject(icon.hbmColor);if(icon.hbmMask)DeleteObject(icon.hbmMask);
+    if(!got||w<=0||h<=0||w>MouseAtlasSide||h>MouseAtlasSide||icon.xHotspot>=unsigned(w)||icon.yHotspot>=unsigned(h))return;
+    BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=w;
+    bi.bmiHeader.biHeight=-h;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+    HDC dc=CreateCompatibleDC(nullptr);if(!dc)return;
+    void* bits=nullptr;HBITMAP dib=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&bits,nullptr,0);
+    if(!dib){DeleteDC(dc);return;}
+    HGDIOBJ old=SelectObject(dc,dib);
+    const size_t bytes=size_t(w)*h*4;
+    std::vector<uint8_t> black(bytes),pixels(MouseAtlasSide*MouseAtlasSide*4);
+    std::memset(bits,0,bytes);
+    bool ok=DrawIconEx(dc,0,0,cursor,w,h,0,nullptr,DI_NORMAL|DI_NOMIRROR)!=0;GdiFlush();
+    std::memcpy(black.data(),bits,bytes);std::memset(bits,255,bytes);
+    ok=DrawIconEx(dc,0,0,cursor,w,h,0,nullptr,DI_NORMAL|DI_NOMIRROR)!=0&&ok;GdiFlush();
+    if(ok)for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+        const size_t at=(size_t(y)*w+x)*4;
+        mousecursor::Pixel(black.data()+at,static_cast<const uint8_t*>(bits)+at,pixels.data()+(size_t(y)*MouseAtlasSide+x)*4);
+    }
+    SelectObject(dc,old);DeleteObject(dib);DeleteDC(dc);
+    if(ok&&UploadAtlas(mouseChain,atlasFormat,MouseAtlasSide,MouseAtlasSide,pixels,true,&mouseAtlasPending)) {
+        uploadedMouseCursor=cursor;mouseWidth=w;mouseHeight=h;mouseHotX=int(icon.xHotspot);mouseHotY=int(icon.yHotspot);
+    }
+}
+#endif
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
@@ -837,6 +927,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!SetupPointer(eyeFormat))return false;
     atlasFormat=eyeFormat;
     if(!SetupGameplay(eyeFormat))Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
+    hudSupported=uiSupported&&hudBlit.Initialize(device.Get(),&Say);
     potionModels.Initialize(device.Get(),queue.Get(),eyeFormat,width,height,&Say);
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
@@ -956,10 +1047,10 @@ void MenuPointer(const menus::Pad& controls) {
     panelinput::ItemHover(active,pointerHit,panelMouse.down[0]||panelMouse.down[1]);
     for(int i=0;i<2;++i) {
         bool& held=i?rightMouseDown:mouseDown;
-        if(edges.release[i]&&held) {INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
+        if(edges.release[i]&&held) {INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;(up.mi.dwExtraInfo=panelinput::InputTag,SendInput(1,&up,sizeof up));held=false;}
         if(edges.press[i]) {
             INPUT down{};down.type=INPUT_MOUSE;down.mi.dwFlags=i?MOUSEEVENTF_RIGHTDOWN:MOUSEEVENTF_LEFTDOWN;
-            held=SendInput(1,&down,sizeof down)==1;
+            held=(down.mi.dwExtraInfo=panelinput::InputTag,SendInput(1,&down,sizeof down))==1;
             if(!held)panelMouse.down[i]=false;
         }
     }
@@ -1235,11 +1326,27 @@ void Input() {
     gazeValid=false;
     if(!tracking.data) return;
     if(!valid||state!=XR_SESSION_STATE_FOCUSED) {gazeStability.Reset();ClearInput();return; }
-    if(motionControls.load())vrGameplayAt.store(GetTickCount64());
+    if(motionControls.load()&&!externalPerspective)vrGameplayAt.store(GetTickCount64());
     hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(externalPerspective) {
+        panelinput::WorldInput(true);
+        // Keep 6DoF tracking, but publish no synthetic pad, mouse or combat input.
+        auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;s.handsValid=0;
+        const auto q=Q(head.orientation);const auto forward=math::Rotate(q,{0,0,-1});
+        s.headYawDeg=math::Heading(q)*kRadToDeg;
+        s.headPitchDeg=std::asin(std::clamp(forward.y,-1.f,1.f))*kRadToDeg;
+        s.headRollDeg=0;s.pitchValid=s.rollValid=1;s.headHeightM=head.position.y;
+        s.sampleStamp=D2RVRStampNow();s.sampleStampMagic=D2RVR_SAMPLE_STAMP_MAGIC;
+        s.roomMagic=D2RVR_ROOM_MAGIC;s.headRoom[0]=head.position.x;s.headRoom[1]=head.position.y;s.headRoom[2]=head.position.z;
+        s.headYawRoomDeg=s.headYawDeg;++s.counter;
+        if(actions.data){actions.data->held=0;++actions.data->counter;}
+        return;
+    }
+#endif
     controllerRumbleLease.Update(GetTickCount64(),motionControls.load());
     UpdateControllerLabels();
     const bool nativeUi=panelMode||spatialMode;
@@ -1763,7 +1870,7 @@ void Events() {
             if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();ClearInput();pEndSession(session);running=false;resolution::Restore(); }
             if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;resolution::Restore();ClearInput();}
         } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;resolution::Restore();ClearInput();}
-        hud::NativeSession(running);
+        hud::NativeSession(running&&!externalPerspective);
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
@@ -1784,7 +1891,7 @@ bool Begin() {
     if(!loaded)worldCalibrationPending=worldRecenter=false;
     worldWasLoaded=loaded;
     const bool spatial=SpatialMenu();
-    const bool book=spatial&&gamestate::JournalOnly();
+    const bool book=spatial&&gamestate::JournalOnly()&&!externalPerspective;
     const bool npc=spatial&&gamestate::NpcChoicesOnly();
     const bool surfaceChanged=spatial!=spatialMode||book!=journalMode;
     if(surfaceChanged) {
@@ -1798,7 +1905,7 @@ bool Begin() {
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
-    mapEye.copied=false;hud::MapFrame();
+    mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
@@ -1817,7 +1924,11 @@ bool Begin() {
         // Latch once per pair: camera matrices, foveation and xrEndFrame must
         // all describe the same frustum, including a live settings change.
         // LocateViews refreshes the original runtime FOVs on every frame.
-        const bool centered=symmetricProjection.load();
+        const bool centered=symmetricProjection.load()
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+            ||externalPerspective
+#endif
+            ;
         if(centered) {
             const auto& l=views[0].fov;const auto& r=views[1].fov;
             const auto f=math::EnclosingSymmetricFov(
@@ -1848,7 +1959,13 @@ bool Begin() {
         if(panelMode)PlaceMainMenu();
     }
     timing.locateMs=Milliseconds()-locateStart;
-    const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;return true;
+    const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    // Begin is shared by Capture's mono menu path and BeginPair's stereo path.
+    // A fresh F1/F2 menu must not depend on a previous F4 stereo upload.
+    if(render&&valid)RefreshMouseCursor();
+#endif
+    return true;
 }
 bool Acquire(Eye& e) {
     if(e.acquired)return true;
@@ -1944,7 +2061,7 @@ bool CopyUi(reshade::api::command_queue* rq) {
     uint32_t w=0,h=0;int32_t crop[4]{};
     auto* src=reinterpret_cast<ID3D12Resource*>(hud::UiTexture(w,h,crop));
     if(!src||!w||!h){
-        if(++uiMissingFrames>12){uiSupported=false;Say("Frame panels: UI capture unavailable; falling back to native menu");}
+        if(++uiMissingFrames>120){uiSupported=false;Say("Frame panels: UI capture unavailable; falling back to native menu");}
         return true;
     }
     uiMissingFrames=0;
@@ -1986,6 +2103,40 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
+bool CopyHud(reshade::api::command_queue* rq) {
+    if(!hudSupported||hudEye.copied)return true;
+    uint32_t w=0,h=0;
+    auto* src=reinterpret_cast<ID3D12Resource*>(hud::DioramaHudTexture(w,h));
+    if(!src||!w||!h)return true;
+    auto& e=hudEye;
+    if(e.chain&&(w!=hudWidth||h!=hudHeight)) {
+        if(!WaitGpuValue(e.copyFence))return false;
+        pDestroySwapchain(e.chain);e={};
+    }
+    if(!e.chain) {
+        XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+        c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=w;c.height=h;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
+        if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {hudSupported=false;Say("Frame panels: UI format unavailable; native menu retained");return true;}
+        uint32_t n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
+        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
+           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)))||FAILED(e.commands->Close()))return false;
+        hudWidth=w;hudHeight=h;
+        char message[160];std::snprintf(message,sizeof message,"Frame panels: native curved HUD surface %ux%u ready; one shared image for both eyes",w,h);Say(message);
+    }
+    if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
+    rq->flush_immediate_command_list();
+    if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
+    ID3D12Resource* dest=e.images[e.index].texture;
+    if(!hudBlit.Render(device.Get(),e.commands.Get(),src,dest,opaqueMenuMode)) {
+        e.commands->Close();hudSupported=false;
+        Say("Frame panels: conversion rejected; native flat menu fallback next frame");return true;
+    }
+    if(FAILED(e.commands->Close()))return false;
+    ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
+    if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
+    e.copyFence=fenceValue;e.copied=true;return true;
+}
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     std::lock_guard lock(mutex);
     if(failed)return;
@@ -2004,6 +2155,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
+    if(eye==0&&!CopyHud(rq)){hudSupported=false;hudEye.copied=false;Say("Diorama HUD: copy failed; restoring screen HUD");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         PlaceMainMenu();
@@ -2065,7 +2217,11 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     resolution::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
-bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
+bool SpatialMenu(){
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(!spatialui::Spatial(externalMode,gamestate::DialogueOnly()))return false;
+#endif
+    return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}
 void ConfigureDeferredWait(bool on) {
@@ -2075,8 +2231,11 @@ void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    hud::DioramaHudFrame(externalMode==3&&hudSupported&&!panelMode&&!spatialMode&&layerLimit>=8,eye);
+#endif
     std::lock_guard lock(mutex);
-    hud::NativeGameplay(nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
+    hud::NativeGameplay(!externalPerspective&&nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
     lightbounds::SetActive(Active()&&inWorld&&inWorld());
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
     d2rcam::TraceStereoLabels(capturePair?eye:-1);
@@ -2120,6 +2279,19 @@ void BeginPair() {
     lastTiming={};
     if(session&&!failed){
         if(frame)EndPair();Begin();pairDrawing=true;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        externalRigValid=false;
+        const bool alphaTexture=format==DXGI_FORMAT_R8G8B8A8_UNORM||format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB||
+            format==DXGI_FORMAT_B8G8R8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||
+            format==DXGI_FORMAT_R10G10B10A2_UNORM||format==DXGI_FORMAT_R16G16B16A16_FLOAT;
+        mrPair=dioramamr::Enabled(externalMode,mrRequested.load(),mrSupported,alphaTexture,mrShaderReady.load(),mrBlocked);
+        if(externalMode==3&&mrReported!=int(mrPair)) {
+            mrReported=int(mrPair);char line[240];
+            std::snprintf(line,sizeof line,"Diorama MR: %s requested=%d runtime_alpha=%d texture_alpha=%d shader=%d blocked=%d",
+                mrPair?"ACTIVE":"opaque fallback",int(mrRequested.load()),int(mrSupported),int(alphaTexture),int(mrShaderReady.load()),int(mrBlocked));Say(line);
+        }
+
+#endif
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         if(Active())profile::BeginPair();else profile::SkipPair();
         if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
@@ -2151,6 +2323,8 @@ void EndPair() {
         if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;}
         e.acquired=false;
     }
+    if(hudEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        if(!Check(pReleaseSwapchainImage(hudEye.chain,&release),"release Diorama HUD"))hudEye.copied=false;hudEye.acquired=false;}
     if(uiEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         Check(pReleaseSwapchainImage(uiEye.chain,&release),"release journal");uiEye.acquired=false;}
     if(mapEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -2169,7 +2343,20 @@ void EndPair() {
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=frameState.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mrPair) {
+        ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND;
+        projection.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+    }
+#endif
     std::array<const XrCompositionLayerBaseHeader*,32> layers{};uint32_t count=0;
+
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mouseAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        mouseImageReady=Check(pReleaseSwapchainImage(mouseChain,&release),"release native mouse atlas");mouseAtlasPending=false;
+    }
+#endif
     if(settingsAtlasPending){
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         settingsImageReady=Check(pReleaseSwapchainImage(settingsChain,&release),"release settings atlas");settingsAtlasPending=false;
@@ -2313,12 +2500,58 @@ void EndPair() {
         motionQuad(bowHint,XrPose({bow.p+math::Vec{0,-.25f,0},Q(head.orientation)}),.24f,.045f,
             {{576,768+hint*85},{448,85}},gameplayChain);
     }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(spatialMode&&externalPerspective&&externalRigValid) {
+        math::Vec at=V(uiPose.position);auto rotation=Q(uiPose.orientation);
+        if(externalMode==3&&tablePlaced) {
+            at=tableAnchor+math::Vec{0,spatialPanelHeight,0};
+            const auto d=V(head.position)-tableAnchor;
+            rotation=math::Yaw(std::atan2(d.x,d.z));uiSize=spatialPanelWidth;
+        } else if(gamestate::DialogueOnly()) {
+            if(!dialoguePlaced&&dialogueSession==gamestate::LocalPlayer()&&GetTickCount64()-dialogueAt<1500) {
+                dialogueWorld=coordinates::RenderGround(dialogueGrid,externalGroundY);dialoguePlaced=true;
+            }
+            if(dialoguePlaced) {
+                at=perspective::ToTracking(externalRig,dialogueWorld);
+                // Like native nameplates: NPC anchor, viewer-facing text and
+                // stable angular size. Do not use the game-ground plane for F1.
+                const auto facing=spatialui::DialoguePanel(at,V(head.position));
+                at=facing.p;rotation=facing.q;
+                const auto d=V(head.position)-at;
+                uiSize=spatialui::DialogueWidth(std::sqrt(math::Dot(d,d)));
+
+            }
+        }
+        uiPose=XrPose({at,rotation});workspacePlaced=true;
+    }
+#endif
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    std::array<XrCompositionLayerQuad,16> curvedHud{};
+    if(layer&&externalMode==3&&tablePlaced&&!panelMode&&!spatialMode&&hudEye.copied&&hudWidth&&hudHeight) {
+        const auto now=GetTickCount64();const auto d=V(head.position)-tableAnchor;
+        if(!hudAt)hudHeading=std::atan2(d.x,d.z);
+        else hudHeading=spatialui::FollowAngle(hudHeading,V(head.position),tableAnchor,float(now-hudAt)*.001f);
+        hudAt=now;
+        const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count));
+        const float radius=tableWidth*.5f+.025f;
+        const float arc=hudArc*spatialui::HudScale;
+        const float h=radius*arc*float(hudHeight)/hudWidth;
+        for(int i=0;i<segments;++i) {
+            auto p=spatialui::HudSegment(tableAnchor,radius,hudHeading,arc,h,hudTilt,i,segments);
+            curvedHud[i]={XR_TYPE_COMPOSITION_LAYER_QUAD};
+            const int left=int(uint64_t(hudWidth)*i/segments),right=int(uint64_t(hudWidth)*(i+1)/segments);
+            motionQuad(curvedHud[i],XrPose({p.p,p.q}),2*radius*std::tan(arc/(2*segments)),h,
+                {{left,0},{right-left,int32_t(hudHeight)}},hudEye.chain);
+            curvedHud[i].layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        }
+    }
+#endif
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
         const auto size=UiSurfaceSize();
         motionQuad(book,UiSurfacePose(),size.width,size.height,
             {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
-        book.layerFlags=opaqueMenuMode?0:XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        book.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
     XrCompositionLayerQuad settingsPanel{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady)
@@ -2350,6 +2583,42 @@ void EndPair() {
             layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&bloodQuad);++count;
         }
     }
+
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    XrCompositionLayerQuad mouseCursor{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(layer&&externalPerspective&&mouseChain&&mouseImageReady&&mousecursor::MenuVisible(externalMode,panelMode||spatialMode,panelinput::NativeControllerActive())&&
+       !settingsModel.open&&!bodyCalibration.Active()) {
+        POINT cursor{};RECT client{};
+        if(gameWindow&&GetCursorPos(&cursor)&&ScreenToClient(gameWindow,&cursor)&&GetClientRect(gameWindow,&client)&&
+           client.right>0&&client.bottom>0&&cursor.x>=0&&cursor.y>=0&&cursor.x<client.right&&cursor.y<client.bottom) {
+            const float u=float(cursor.x)/client.right,v=float(cursor.y)/client.bottom;
+            XrPosef pose{};float size=0;
+            if(panelMode&&menuPlaced) {
+                pose=menuPose;
+                const auto offset=math::Rotate(Q(menuPose.orientation),{(u-.5f)*panelWidth,(.5f-v)*panelWidth*height/width,.002f});
+                const auto at=V(menuPose.position)+offset;pose.position={at.x,at.y,at.z};
+                size=panelWidth*64.f/client.right;
+            } else if(spatialMode&&uiEye.copied&&uiCrop[2]>0&&uiCrop[3]>0) {
+                const float px=u*uiWidth,py=v*uiHeight;
+                const float cu=(px-uiCrop[0])/uiCrop[2],cv=(py-uiCrop[1])/uiCrop[3];
+                if(cu>=0&&cu<=1&&cv>=0&&cv<=1) {
+                    pose=uiPose;
+                    const auto offset=math::Rotate(Q(pose.orientation),{(cu-.5f)*uiSize,(.5f-cv)*uiSize*uiCrop[3]/uiCrop[2],.002f});
+                    const auto at=V(pose.position)+offset;pose.position={at.x,at.y,at.z};
+                    size=uiSize*64.f*uiWidth/(uiCrop[2]*float(client.right));
+                }
+            }
+            if(size>0) {
+                const float scale=size/64.f;
+                // Position the tip/hotspot at the pick point, not the bitmap center.
+                const auto offset=math::Rotate(Q(pose.orientation),mousecursor::CenterOffset(
+                    float(mouseWidth),float(mouseHeight),float(mouseHotX),float(mouseHotY),scale));
+                pose.position.x+=offset.x;pose.position.y+=offset.y;pose.position.z+=offset.z;
+                motionQuad(mouseCursor,pose,mouseWidth*scale,mouseHeight*scale,{{0,0},{mouseWidth,mouseHeight}},mouseChain);
+            }
+        }
+    }
+#endif
     XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
         static bool reported=false;
@@ -2357,6 +2626,11 @@ void EndPair() {
     }
     ei.layerCount=count;ei.layers=count?layers.data():nullptr;
     const double start=Milliseconds();const auto submitted=pEndFrame(session,&ei);Check(submitted,"end frame");
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(mrPair&&XR_FAILED(submitted)) {
+        mrBlocked=true;Say("Diorama MR: alpha frame rejected; returning to opaque VR next frame (restart to retry)");
+    }
+#endif
     if(interactionInput.active) {
         static ULONGLONG reportAt=0;const auto now=GetTickCount64();
         if(now>=reportAt) {
@@ -2515,7 +2789,7 @@ void FinishShieldSkill(bool accepted) {
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
 void MeleeImpact() {meleeImpactAt=GetTickCount64();}
-bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
+bool OwnsControllerRumble() {return !externalPerspective&&motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
 void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
@@ -2575,6 +2849,101 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void ObserveMouseCursor(void* cursor){observedMouseCursor.store(cursor);}
+bool PerspectiveReady(){std::lock_guard lock(mutex);return valid&&!failed&&motionHeadTracked&&!bodyCalibration.Active()&&state==XR_SESSION_STATE_FOCUSED;}
+void SetExternalPerspective(int mode) {
+    std::lock_guard lock(mutex);
+    // Cancel pending casts, gestures and pointer presses before changing ownership.
+    tableControls.CancelAll();workspacePlaced=false;dialoguePlaced=false;spatialEpoch=~0u;
+    ClearInput();vrGameplayAt.store(0);motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;hud::NativeSession(running&&!externalPerspective);
+}
+void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
+void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
+bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
+void ConfigureSpatialUi(float tilt,float arc,float width,float height) {
+    std::lock_guard lock(mutex);
+    hudTilt=std::clamp(tilt,0.f,60.f)*.0174532925f;
+    hudArc=std::clamp(arc,30.f,150.f)*.0174532925f;
+    spatialPanelWidth=std::clamp(width,.5f,2.f);spatialPanelHeight=std::clamp(height,.3f,1.5f);
+}
+void ObserveDialogueTarget(float x,float z) {
+    std::lock_guard lock(mutex);
+    if(!std::isfinite(x+z)||gamestate::DialogueOnly())return;
+    dialogueGrid={x,0,z};dialogueAt=GetTickCount64();dialogueSession=gamestate::LocalPlayer();
+}
+void ConfigureDioramaPlacement(float height,float floorOffset){
+    std::lock_guard lock(mutex);tableControls.Configure(height);
+    tableFloorOffset=std::isfinite(floorOffset)?std::clamp(floorOffset,-3.f,3.f):0;
+}
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch){
+    std::lock_guard lock(mutex);
+    allowed=allowed&&externalMode==3&&valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;
+    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64());
+    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0);
+}
+bool TakeDioramaHeight(float& height,bool allowed){
+    std::lock_guard lock(mutex);tableControls.Expire(GetTickCount64());
+    if(!allowed||!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
+    if(!tableControls.dirty||tableControls.owner>=0)return false;
+    height=tableControls.heightCm*.01f;tableControls.dirty=false;return true;
+}
+void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
+bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
+    float width,float radius,float distance,float drop,float follow,float heading,int eye) {
+    std::lock_guard lock(mutex);if(!Active())return false;
+    if(!externalRigValid) {
+        tableControls.Expire(GetTickCount64());
+        if(!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
+        if(!tableFloorKnown) {
+            tableFloor=floorSpace?0.f:head.position.y-drop-tableControls.heightCm*.01f;
+            tableFloorKnown=true;
+            if(!floorSpace)Say("Diorama: no STAGE floor; using fixed estimated floor. Calibrate diorama.floor_offset_m if needed.");
+        }
+        if(!tablePlaced||tableControls.owner>=0) {
+            const float yaw=math::Heading(Q(head.orientation));
+            tableAnchor=perspective::TablePosition(V(head.position),yaw,distance,tableFloor+tableFloorOffset,tableControls.heightCm*.01f);
+            tableHeading=heading-yaw;tablePlaced=true;
+        }
+        tableAnchor.y=tableFloor+tableFloorOffset+tableControls.heightCm*.01f;
+        const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
+        if(!tableFollowing||now-tableAt>500)tableCenter=target;
+        else tableCenter=perspective::Follow(tableCenter,target,float(now-tableAt)*.001f,follow,radius*.2f);
+        tableAt=now;tableFollowing=true;
+        externalRig=perspective::Table(tableCenter,tableAnchor,tableHeading,2*radius/width);
+        externalRigValid=perspective::Valid(externalRig);
+    }
+    if(!externalRigValid){render=false;return false;}
+    tableWidth=width;
+    sampled[0]=tableCenter.x;sampled[1]=tableCenter.y;sampled[2]=tableCenter.z;
+    const auto& pose=views[eye&1].pose;
+    const auto e=perspective::Transform(externalRig,{V(pose.position),Q(pose.orientation)});
+    const auto c=perspective::Transform(externalRig,{V(head.position),Q(head.orientation)});
+    math::View(e.p,e.q,out);math::View(c.p,c.q,center);return true;
+}
+bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
+    float distance,float heading,float down,float units,uint32_t generation,int eye) {
+    std::lock_guard lock(mutex);if(!Active())return false;
+    if(!externalRigValid) {
+        if(externalGeneration!=generation) {
+            externalGeneration=generation;externalReference=V(head.position);
+            externalReferenceYaw=math::Heading(Q(head.orientation));
+        }
+        externalRig=perspective::Orbit({hero[0],hero[1],hero[2]},height,distance,heading,down,
+            units,externalReference,externalReferenceYaw);
+        externalGroundY=hero[1];externalDistance=distance;
+        externalRigValid=perspective::Valid(externalRig);
+    }
+    if(!externalRigValid){render=false;return false;} // never submit an inconsistent eye pair
+    const auto& rig=externalRig;
+    // F1's pick camera stays fixed while both rendered eyes retain full 6DoF.
+    const auto c=externalMode==1?perspective::MouseCamera(rig,externalReferenceYaw):
+        perspective::Transform(rig,{V(head.position),Q(head.orientation)});
+    const auto& pose=views[eye&1].pose;
+    const auto e=perspective::Transform(rig,{V(pose.position),Q(pose.orientation)});
+    math::View(c.p,c.q,center);math::View(e.p,e.q,out);return true;
+}
+#endif
 bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye,float mapNorth) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
@@ -2647,6 +3016,7 @@ void Shutdown(bool preserveResolution) {
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
+    if(hudEye.chain&&pDestroySwapchain)pDestroySwapchain(hudEye.chain);hudEye={};hudBlit={};hudSupported=false;hudWidth=hudHeight=0;hud::DioramaHudFrame(false,0);
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
     bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
@@ -2659,6 +3029,13 @@ void Shutdown(bool preserveResolution) {
     if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
     bloodScreen.Reset();bloodOutput={};bloodShown=0;bloodPaintKey=bloodRequestedKey=~0ull;bloodPaintRequest=0;bloodPaintAt=0;bloodAtlasPending=bloodImageReady=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    mrSupported=mrBlocked=mrPair=false;mrReported=-1;mrShaderReady=false;pEnumerateEnvironmentBlendModes=nullptr;
+    tableControls.CancelAll();tableFloorKnown=false;
+    if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
+    mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;mouseRetryAt=0;
+    tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;hudAt=0;dialoguePlaced=false;dialogueAt=0;spatialEpoch=~0u;
+#endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;

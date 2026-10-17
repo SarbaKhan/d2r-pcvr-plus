@@ -24,6 +24,58 @@ class DesktopLaunchTests(unittest.TestCase):
             self.assertNotIn('steamoverlaygameid', environment)
             self.assertEqual(dict(os.environ), before)
 
+    def test_flat_steam_hands_off_once_without_direct_fallback_or_runtime_lookup(self):
+        import launch_plus
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary).resolve()
+            arguments = [str(game / 'D2R.exe'), '--frame-flat', '--frame-openxr-runtime=missing.json']
+            with patch.object(launch.sys, 'platform', 'win32'), \
+                    patch.object(launch, 'launch_from_desktop', return_value=1) as broker, \
+                    patch.object(launch, 'launch_environment', side_effect=AssertionError('Flat must not select XR')), \
+                    patch.object(launch_plus, 'main') as direct:
+                self.assertEqual(launch.main(arguments), 1)
+                broker.assert_called_once_with(arguments, str(game), {})
+                direct.assert_not_called()
+
+    def test_flat_desktop_child_runs_once_with_flat_environment_and_no_xr(self):
+        import launch_plus
+        for code in (0, 0xc0000005):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                plugins = root / 'mods/D2R-PCVR/d2rloader/plugins'
+                plugins.mkdir(parents=True)
+                for name in ('D2R.exe', 'D2RLoader.exe', 'mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll'):
+                    (root / name).write_bytes(b'fixture never executed')
+                (plugins / 'd2r_pcvr_plus_flat.ini').write_text('[mode]\nplatform=0\n')
+                request = root / 'request.json'
+                request.write_text(json.dumps({'arguments': [str(root / 'D2R.exe'), '--frame-flat'], 'runtime': 'missing.json'}))
+                with patch.object(launch.sys, 'platform', 'win32'), \
+                        patch('game_install.validate_game'), patch('process_guard.require_game_closed'), \
+                        patch.object(launch, 'launch_from_desktop', side_effect=AssertionError('No recursion')), \
+                        patch.object(launch, 'launch_environment', side_effect=AssertionError('No XR')), \
+                        patch.object(launch_plus.subprocess, 'run', return_value=Mock(returncode=code)) as run:
+                    self.assertEqual(launch.desktop_child(request), code)
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0], [str(root / 'D2RLoader.exe'), '-mod', 'D2R-PCVR'])
+                environment = run.call_args.kwargs['env']
+                self.assertEqual(environment['D2R_PCVR_PLUS_MODE'], 'flat')
+                self.assertEqual(environment['SteamAppId'], '2536520')
+                self.assertNotEqual(environment.get('XR_RUNTIME_JSON'), 'missing.json')
+                self.assertEqual(json.loads((root / 'status.json').read_text()), {'state': 'finished', 'result': code})
+                self.assertIn(f'Flat loader exited code=0x{code:08x}', (root / 'd2rloader/logs/pcvr-launch.log').read_text())
+
+    def test_flat_startup_failure_is_logged_and_reported(self):
+        import launch_plus
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary).resolve()
+            request = game / 'request.json'
+            request.write_text(json.dumps({'arguments': [str(game / 'D2R.exe'), '--frame-flat']}))
+            with patch.object(launch_plus, 'main', side_effect=ValueError('Missing Flat profile')) as start:
+                self.assertEqual(launch.desktop_child(request), 1)
+                start.assert_called_once()
+            self.assertEqual(json.loads((game / 'status.json').read_text())['result'], 1)
+            self.assertIn('Missing Flat profile', (game / 'd2rloader/logs/pcvr-launch.log').read_text())
+
     def test_stock_uses_original_subprocess_without_desktop_handoff(self):
         with patch.object(launch, 'prepare', return_value=(['D2R.exe', 'argument'], None)), \
                 patch.object(launch, 'launch_from_desktop') as broker, \

@@ -15,6 +15,8 @@ import install
 import mod_identity
 import setup_windows as setup
 import steam_config
+import plus_artwork
+import plus_preferences
 import uninstall_windows as uninstall
 from game_install import storage_config, validate_game
 
@@ -102,7 +104,7 @@ def launch_helper_roots(game, accounts, steam_game):
             for entry in entries.values():
                 if not isinstance(entry, dict) or not isinstance(entry.get('icon'), str):
                     continue
-                if Path(entry['icon']).resolve() != (game / 'D2R.exe').resolve():
+                if not plus_artwork.belongs(entry, game):
                     continue
                 parts = command_arguments(entry.get('LaunchOptions'))
                 games = [part.split('=', 1)[1] for part in parts
@@ -201,6 +203,7 @@ def write_probe(path, root, steam=None, game=None, managed_root=None, source_roo
         'installed_mod': '', 'other_mod': '',
     }
     values.update(setup.hdr_check.check())
+    values.update(plus_preferences.preferences(game or steam_game) if (game or steam_game) else {'layout': 'WASD', 'text_locale': '', 'audio_locale': ''})
     if game is not None:
         required, message, folder = probe_backups(game.resolve(), Path(managed_root or root),
             accounts, steam_game, source_root, backup_hint)
@@ -225,14 +228,17 @@ def write_probe(path, root, steam=None, game=None, managed_root=None, source_roo
 
 def validate_choices(values, root, managed_root=None):
     manifest = setup.verify_release(root)
+    prefs = plus_preferences.preferences(Path(values.get('game') or '.'))
+    prefs.update({key: values[key] for key in prefs if key in values})
+    if prefs['layout'] not in ('WASD', 'ZQSD') or any(prefs[key] not in plus_preferences.LANGUAGES for key in ('text_locale', 'audio_locale')):
+        raise ValueError('Invalid keyboard or language selection.')
     store, headset = values.get('store'), values.get('headset')
     if store not in ('steam', 'battlenet') or headset not in HEADSETS:
         raise ValueError('Choose a supported game edition and headset.')
     connections = values.get('connections', '').split(',')
     if (not connections or len(set(connections)) != len(connections)
-            or any(name not in ('steamvr', 'vdxr') for name in connections)
-            or headset not in ('Quest 2', 'Quest 3') and connections != ['steamvr']):
-        raise ValueError('Choose SteamVR for Steam Frame, or SteamVR / Virtual Desktop for Quest.')
+            or any(name not in ('steamvr', 'vdxr', 'flat') for name in connections)):
+        raise ValueError('Choose SteamVR, Virtual Desktop, Flat Screen, or All.')
     if store == 'battlenet' and 'bin/CascLib.dll' not in manifest['sha256']:
         raise ValueError('This package does not include Battle.net support.')
     paths = {}
@@ -273,7 +279,7 @@ def validate_choices(values, root, managed_root=None):
     if found.other:
         raise ValueError(found.message + ' No game or Steam files were changed.')
     if mode == 2 and not all((game / name).is_file() for name in (
-            'D2RLoader.exe', mod_identity.RESHADE, mod_identity.OPENXR_LOADER, mod_identity.PLUGIN, mod_identity.SETTINGS)):
+            'D2RLoader.exe', mod_identity.RESHADE, mod_identity.OPENXR_LOADER, mod_identity.PLUGIN, mod_identity.SETTINGS, mod_identity.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini')):
         raise ValueError('Shortcuts only requires a complete installed mod. Choose Update / repair instead.')
     options = setup.launch_options(target / '.runtime/python/python.exe', target / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     routing = {} if store == 'steam' else {'store': store, 'python': target / '.runtime/python/python.exe',
@@ -282,7 +288,7 @@ def validate_choices(values, root, managed_root=None):
     check_backups(game, target, legacy)
     managed_state(target)
     return dict(manifest=manifest, store=store, version=version, headset=headset, connections=connections,
-                steam=steam, game=game, profile=profile, saves=saves, runtime=runtime, mode=mode)
+                steam=steam, game=game, profile=profile, saves=saves, runtime=runtime, mode=mode, preferences=prefs)
 
 
 def check_backups(game, root, legacy=None):
@@ -368,7 +374,8 @@ def install_selected(values, root):
     before = set(backups.glob('*/manifest.json'))
     atomic_json(root / STATE, state)
     committed_steam = {}
-    def steam_committed():
+    def steam_committed(changes=None):
+        originals.update(changes or {})
         for path in originals:
             if path != game / install.RECORD:
                 committed_steam[path] = path.read_bytes() if path.is_file() else None
@@ -377,7 +384,7 @@ def install_selected(values, root):
         result = setup.apply_setup(**selection, root=root, on_steam_configured=steam_committed, hide_console=True)
         entry.update(status='installed', receipt=install.read_record(game))
         atomic_json(root / STATE, state)
-        print('Setup complete. Start Steam and use the matching VR shortcut with an offline character.', flush=True)
+        print('Setup complete. Start Steam and use the matching SteamVR, Virtual Desktop or Flat shortcut with an offline character.', flush=True)
         return result
     except BaseException:
         print('Setup stopped. Restoring changes from this attempt...', flush=True)

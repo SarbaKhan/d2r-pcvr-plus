@@ -7,11 +7,14 @@ bool UpperBandMenuOpen();
 bool NpcChoicesOnly();
 bool NpcChoicesRect(int32_t out[4]);
 void ReadNpcChoicesRect(); // UI thread only
+bool DialogueOnly();
 bool JournalRect(int32_t out[4]);
 void ReadJournalRect(); // UI thread only
 }
 namespace hud {
 bool LayerFound();
+void DioramaHudFrame(bool active,int eye);
+uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height);
 void UiFrame(bool active,bool workspace,int eye);
 // Hide the native HUDPanel for the entire XR session, including menus/loading.
 // Per-eye gameplay cropping is separate so native menu content is not erased.

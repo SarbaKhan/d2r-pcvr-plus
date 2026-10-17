@@ -1,0 +1,101 @@
+import configparser
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+import launch_plus as plus
+
+
+class PlusTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.game = self.root / 'game'
+        self.plugins = self.game / 'mods/D2R-PCVR/d2rloader/plugins'
+        self.plugins.mkdir(parents=True)
+        for name in ('D2R.exe', 'D2RLoader.exe'):
+            (self.game / name).touch()
+        (self.plugins / 'd2rl-pcvr.dll').touch()
+        (self.plugins / 'd2r_pcvr.ini').write_text('background_full_speed=1\n[mode]\nplatform=1\n')
+        (self.plugins / 'd2r_pcvr_plus_flat.ini').write_text('[mode]\nplatform=0\n')
+
+    def test_profiles_untouched_and_environment_local(self):
+        before = {p:p.read_bytes() for p in self.plugins.glob('*.ini')}
+        with patch.dict(plus.os.environ, {'D2R_PCVR_PLUS_MODE':'vr'}, clear=True):
+            command, env = plus.prepare(self.game, 'flat')
+            self.assertEqual(plus.os.environ['D2R_PCVR_PLUS_MODE'], 'vr')
+            self.assertEqual(env['D2R_PCVR_PLUS_MODE'],'flat')
+            self.assertNotIn('XR_RUNTIME_JSON',env)
+        self.assertEqual(command, [str(self.game / 'D2RLoader.exe'), '-mod', 'D2R-PCVR'])
+        self.assertEqual(before,{p:p.read_bytes() for p in self.plugins.glob('*.ini')})
+
+    def test_missing_flat_profile_does_not_fall_back_to_vr(self):
+        (self.plugins / 'd2r_pcvr_plus_flat.ini').unlink()
+        with self.assertRaises(ValueError): plus.prepare(self.game,'flat')
+
+    def test_vr_profile_must_be_vr(self):
+        (self.plugins / 'd2r_pcvr.ini').write_text('[mode]\nplatform=0')
+        with self.assertRaises(ValueError): plus.prepare(self.game,'vr')
+
+    def test_flat_launch_never_calls_vr_launcher(self):
+        args=['--game',str(self.game),'--mode','flat']
+        with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
+             patch('process_guard.require_game_closed'), patch('launch_windows.main') as vr, \
+             patch.object(plus.subprocess,'run') as run:
+            run.return_value.returncode=0
+            self.assertEqual(plus.main(args),0)
+            vr.assert_not_called()
+            self.assertEqual(run.call_args.kwargs['env']['D2R_PCVR_PLUS_MODE'],'flat')
+
+    def test_vr_launch_uses_original_route(self):
+        args=['--game',str(self.game),'--mode','vr','--vdxr']
+        with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
+             patch('process_guard.require_game_closed'), patch('launch_windows.main',return_value=7) as vr:
+            self.assertEqual(plus.main(args),7)
+            vr.assert_called_once_with(['--frame-vr','--frame-vdxr',str(self.game.resolve()/'D2R.exe')])
+
+    def test_explicit_runtime_reaches_original_launcher(self):
+        manifest=self.game/'Steam VR runtime.json'
+        manifest.write_text('{}')
+        args=['--game',str(self.game),
+              '--mode','vr','--openxr-runtime',str(manifest)]
+        with patch.object(plus.sys,'platform','win32'), patch('game_install.validate_game'), \
+             patch('process_guard.require_game_closed'), patch('launch_windows.main',return_value=0) as vr:
+            self.assertEqual(plus.main(args),0)
+            vr.assert_called_once_with(['--frame-vr','--frame-openxr-runtime='+str(manifest.resolve()),str(self.game.resolve()/'D2R.exe')])
+            from launch_windows import launch_environment
+            self.assertEqual(launch_environment(vr.call_args.args[0])['XR_RUNTIME_JSON'],str(manifest.resolve()))
+
+    def test_invalid_runtime_does_not_launch(self):
+        base=['--game',str(self.game)]
+        for flags in (['--mode','flat','--openxr-runtime','missing.json'],
+                      ['--mode','vr','--openxr-runtime','missing.json'],
+                      ['--mode','vr','--openxr-runtime','missing.json','--vdxr']):
+            with self.subTest(flags=flags), patch.object(plus.sys,'platform','win32'), \
+                 patch('launch_windows.main') as vr, \
+                 self.assertRaises(SystemExit):
+                try:
+                    plus.main(base+flags)
+                finally:
+                    vr.assert_not_called()
+
+    def test_launch_needs_no_save_folder_and_does_not_write_files(self):
+        def contents():
+            return {str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        before=contents()
+        for mode in ('flat','vr'):
+            with self.subTest(mode=mode), patch.object(plus.sys,'platform','win32'), \
+                 patch('game_install.validate_game'), patch('process_guard.require_game_closed'), \
+                 patch('launch_windows.main',return_value=0), patch.object(plus.subprocess,'run') as run:
+                run.return_value.returncode=0
+                self.assertEqual(plus.main(['--game',str(self.game),'--mode',mode]),0)
+                self.assertEqual(contents(),before)
+
+    def test_shipped_flat_profile(self):
+        config=configparser.ConfigParser(interpolation=None,strict=False,allow_no_value=True)
+        config.read_string('[global]\n'+(Path(__file__).parents[1]/'d2r_pcvr_plus_flat.ini').read_text())
+        for section,key,value in [('mode','platform','0'),('stereo','afr','0'),('input','flat_layout','WASD'),('gameplay','motion_controls','0')]:
+            self.assertEqual(config[section][key],value)
+
+if __name__ == '__main__': unittest.main()

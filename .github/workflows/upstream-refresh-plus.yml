@@ -1,0 +1,82 @@
+name: Upstream refresh Plus
+on:
+  push:
+    branches: [feature/upstream-refresh-plus]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python and camera fixtures
+        run: |
+          python3 -m unittest discover -s steamvr -p '*test.py'
+          for test in flat_controls classic_gamepad perspective_rig; do
+            g++ -std=c++20 -Wall -Wextra -Werror steamvr/${test}_test.cpp -o /tmp/$test
+            /tmp/$test
+          done
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Pinned Windows toolchain
+        shell: powershell
+        run: ./steamvr/setup_windows_tools.ps1
+      - name: Compile current upstream plus perspectives
+        shell: powershell
+        run: ./steamvr/build_windows.ps1 -ExperimentalPerspectives
+      - name: CPU and Python fixtures
+        shell: powershell
+        run: |
+          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -E '^(ui-blit-|swapchain-color|interaction-weapon-skills|interaction-map-tab)'
+          if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p '*test.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Python fixtures failed' }
+      - name: Full Windows installer and payload smoke tests
+        shell: powershell
+        run: ./installer/build_plus_release.ps1
+      - name: Linux source and DLL kit
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe steamvr/package_linux_test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Linux kit failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-Upstream-Preview-Windows
+          path: |
+            build-frame/installers/D2R-PCVR-PLUS-Setup-*.exe
+            docs/upstream-refresh-plus.md
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-kit
+          path: dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
+          if-no-files-found: error
+  linux-setup:
+    needs: [linux-tests, windows]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-kit
+          path: dist-plus
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxcb-cursor0
+      - run: python -m pip install -r installer/linux-requirements.txt
+      - run: python installer/build_linux_setup.py --kit dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-Upstream-Preview-Linux
+          path: dist-plus/*Setup*Linux*.tar.gz*
+          if-no-files-found: error

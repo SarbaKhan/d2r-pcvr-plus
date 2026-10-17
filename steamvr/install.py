@@ -391,7 +391,9 @@ def main():
     require_game_closed()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     snapshot.mkdir(parents=True)
-    shutil.copytree(saves, snapshot / 'saves')
+    # Only video settings are needed for rollback. Never copy characters/stash.
+    (snapshot / 'saves').mkdir()
+    shutil.copy2(saves / 'Settings.json', snapshot / 'saves/Settings.json')
     installed = []
     manifest = {'game': str(game), 'store': store, 'game_version': version,
                 'mod': mod_identity.MOD_ID, 'previous_mod': found.ours,
@@ -510,6 +512,10 @@ def main():
     put_config(mod_identity.RESHADE_DIR / 'ReShade.ini', b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
     put_config(mod_identity.RESHADE_DIR / 'D2R_Frame_ReShade.ini', b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
     put(mod_identity.RESHADE_DIR / 'reshade-shaders/Shaders/D2R_DepthFog.fx', (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())
+    # Flat preferences survive repairs and VR calibration resets.
+    flat_profile = mod_identity.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini'
+    if not (game / flat_profile).is_file():
+        put(flat_profile, (ROOT / 'd2r_pcvr_plus_flat.ini').read_bytes())
     for texture in (ROOT / 'reshade/sky').glob('*.png'):
         put(mod_identity.RESHADE_DIR / 'D2R_Sky_ours' / texture.name, texture.read_bytes())
         put(mod_identity.RESHADE_DIR / 'reshade-shaders/Textures/D2R_Sky_ours' / texture.name, texture.read_bytes())
@@ -519,7 +525,7 @@ def main():
                      'Atmospherics Quality': 2, 'Shadow Quality': 2})
     if not args.preserve_settings:
         (saves / 'Settings.json').write_text(json.dumps(settings, indent=4))
-    print(f'Installed offline VR mod. Save and file backup: {snapshot}')
+    print(f'Installed offline PCVR Plus mod. Installation and video-settings backup: {snapshot}')
 
 
 if __name__ == '__main__':

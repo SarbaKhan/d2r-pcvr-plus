@@ -1,3 +1,7 @@
+# D2R PCVR Plus — upstream integration preview
+
+See [integration scope, deferred features and hardware checklist](docs/upstream-refresh-plus.md). This branch retains upstream controls and uses the new per-mod layout.
+
 # D2R PCVR
 
 Play **Diablo II: Resurrected in VR on Windows**, with support for

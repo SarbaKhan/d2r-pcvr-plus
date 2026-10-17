@@ -50,6 +50,25 @@ struct FrameTiming {
     uint32_t pipelines=0;bool gpuValid=false;
 };
 FrameTiming LastTiming();
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+// Called only at a game stereo-pair boundary. Does not recreate the XR session.
+void SetExternalPerspective(int mode);
+void ObserveMouseCursor(void* cursor); // live native cursor, no replacement artwork
+bool PerspectiveReady();
+void ConfigureDioramaPassthrough(bool requested);
+void DioramaShaderReady(bool ready);
+bool DioramaPassthroughActive();
+void ConfigureDioramaPlacement(float height,float floorOffset);
+void ConfigureSpatialUi(float hudTilt,float hudArc,float panelWidth,float panelHeight);
+void ObserveDialogueTarget(float x,float z);
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch);
+bool TakeDioramaHeight(float& height,bool allowed);
+void RecenterTable();
+bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
+    float width,float radius,float distance,float drop,float follow,float heading,int eye);
+bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
+    float distance,float heading,float down,float units,uint32_t generation,int eye);
+#endif
 void Shutdown(bool preserveResolution=false);
 void BeginPair();
 void BeginEye(int eye);

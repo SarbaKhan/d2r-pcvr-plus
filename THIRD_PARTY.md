@@ -118,3 +118,7 @@ The texture header/format mapping was checked against
 Original potion models and textures belong to the game and are extracted into
 the local `d2r_vr_potions` cache; neither that cache nor raw game assets are
 distributed in the repository or release. No Granny runtime is needed.
+
+## Plus installer additions
+
+Linux bundles Python, PyInstaller, PySide6 and Qt with their licenses under `runtime-licenses`. Steam shortcut artwork provenance is documented in `artwork/README.md`. Original upstream attribution and licenses remain in place.
