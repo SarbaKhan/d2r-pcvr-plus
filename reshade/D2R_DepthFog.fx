@@ -1740,6 +1740,28 @@ float4 PS_StampR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { r
 // TableFloor, so its own shadows and night are never cut. The void is the
 // pixel and its neighbours two pixels out with no depth AND dark - what the
 // interface draws over the void is bright and stays.
+// F4 virtual environment. These rays are in OpenXR tracking space, not the
+// scaled/rotated game-camera space: editing the table cannot rotate the sky.
+texture2D DioramaSkyTex < source = "D2R_Sky_ours/diorama-night.png"; >
+{ Width = 1774; Height = 887; Format = RGBA8; MipLevels = 1; };
+sampler2D DioramaSkySmp { Texture = DioramaSkyTex; AddressU = WRAP; AddressV = CLAMP; MinFilter = LINEAR; MagFilter = LINEAR; };
+uniform bool DioramaSkyboxOn < hidden = true; > = false;
+uniform float3 DioramaSkyCorner0 < hidden = true; > = float3(-1,1,-1);
+uniform float3 DioramaSkyHorizontal0 < hidden = true; > = float3(2,0,0);
+uniform float3 DioramaSkyVertical0 < hidden = true; > = float3(0,-2,0);
+uniform float3 DioramaSkyCorner1 < hidden = true; > = float3(-1,1,-1);
+uniform float3 DioramaSkyHorizontal1 < hidden = true; > = float3(2,0,0);
+uniform float3 DioramaSkyVertical1 < hidden = true; > = float3(0,-2,0);
+float3 DioramaSky(float2 uv,int eye)
+{
+    if(!DioramaSkyboxOn)return float3(0.012,0.014,0.02);
+    const float3 ray=normalize(eye==0
+        ? DioramaSkyCorner0+uv.x*DioramaSkyHorizontal0+uv.y*DioramaSkyVertical0
+        : DioramaSkyCorner1+uv.x*DioramaSkyHorizontal1+uv.y*DioramaSkyVertical1);
+    const float2 panorama=float2(0.5+atan2(ray.x,-ray.z)/6.28318530718,
+        acos(clamp(ray.y,-1.0,1.0))/3.14159265359);
+    return tex2Dlod(DioramaSkySmp,float4(panorama,0,0)).rgb;
+}
 uniform bool DioramaOn < hidden = true; > = false;
 uniform float DioramaRadius < hidden = true; > = 24.0;
 uniform bool TableKeyOn < hidden = true; > = false;
@@ -1816,10 +1838,11 @@ float3 TableKey(float2 uv, int eye)
     const float2 px = 2.0 * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT);
     float d = DepthAt(duv).x;
     if (DioramaOn) {
-        if (d <= 0.0) return float3(0.012, 0.014, 0.02);
+        const float3 background=DioramaSky(uv,eye);
+        if (d <= 0.0) return background;
         const float keep = DioramaCoverage(uv, d, eye);
         if (DioramaMR) return c; // straight alpha; do not premultiply or darken the edge twice
-        return lerp(float3(0.012, 0.014, 0.02), c, keep);
+        return lerp(background, c, keep);
     }
     d = max(d, DepthAt(duv + float2(px.x, 0)).x);
     d = max(d, DepthAt(duv - float2(px.x, 0)).x);

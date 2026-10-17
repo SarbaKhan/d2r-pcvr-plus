@@ -1,6 +1,7 @@
 #include "mouse_cursor.h"
 #include "perspective_rig.h"
 #include "diorama_mr.h"
+#include "diorama_skybox.h"
 #include "diorama_placement.h"
 #include "spatial_ui.h"
 #include "world_coordinates.h"
@@ -2299,11 +2300,11 @@ void BeginPair() {
         const bool alphaTexture=format==DXGI_FORMAT_R8G8B8A8_UNORM||format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB||
             format==DXGI_FORMAT_B8G8R8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||
             format==DXGI_FORMAT_R10G10B10A2_UNORM||format==DXGI_FORMAT_R16G16B16A16_FLOAT;
-        mrPair=dioramamr::Enabled(externalMode,mrRequested.load(),mrSupported,alphaTexture,mrShaderReady.load(),mrBlocked);
+        mrPair=dioramamr::Enabled(externalMode,mrRequested.load(),mrSupported,alphaTexture,mrShaderReady.load(),mrBlocked||dioramasky::Preview);
         if(externalMode==3&&mrReported!=int(mrPair)) {
             mrReported=int(mrPair);char line[240];
             std::snprintf(line,sizeof line,"Diorama MR: %s requested=%d runtime_alpha=%d texture_alpha=%d shader=%d blocked=%d",
-                mrPair?"ACTIVE":"opaque fallback",int(mrRequested.load()),int(mrSupported),int(alphaTexture),int(mrShaderReady.load()),int(mrBlocked));Say(line);
+                mrPair?"ACTIVE":dioramasky::Preview?"skybox preview (passthrough disabled)":"opaque fallback",int(mrRequested.load()),int(mrSupported),int(alphaTexture),int(mrShaderReady.load()),int(mrBlocked));Say(line);
         }
 
 #endif
@@ -2899,6 +2900,18 @@ void SetExternalPerspective(int mode) {
     // Cancel pending casts, gestures and pointer presses before changing ownership.
     tableControls.CancelAll();workspacePlaced=false;dialoguePlaced=false;spatialEpoch=~0u;
     ClearInput();vrGameplayAt.store(0);motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;hud::NativeSession(running&&!externalPerspective);
+}
+bool DioramaSkyboxRays(float out[18]) {
+    std::lock_guard lock(mutex);
+    if(!dioramasky::Preview||externalMode!=3||!Active())return false;
+    for(int eye=0;eye<2;++eye) {
+        const auto& f=views[eye].fov;
+        const auto rays=dioramasky::MakeRays(Q(views[eye].pose.orientation),
+            f.angleLeft,f.angleRight,f.angleDown,f.angleUp);
+        const math::Vec vectors[]={rays.corner,rays.horizontal,rays.vertical};
+        for(int i=0;i<3;++i){out[eye*9+i*3]=vectors[i].x;out[eye*9+i*3+1]=vectors[i].y;out[eye*9+i*3+2]=vectors[i].z;}
+    }
+    return true;
 }
 void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
 void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}

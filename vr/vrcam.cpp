@@ -8018,6 +8018,14 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
     SetBool(rt, "TableKeyOn", TableKeyWanted());
     SetBool(rt, "DioramaOn", NativeDiorama() && TableKeyWanted());
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    float skyRays[18]{};
+    const bool skybox=NativeDiorama()&&TableKeyWanted()&&framevr::DioramaSkyboxRays(skyRays);
+    SetBool(rt, "DioramaSkyboxOn", skybox);
+    if(skybox) {
+        const char* names[]={"DioramaSkyCorner0","DioramaSkyHorizontal0","DioramaSkyVertical0",
+            "DioramaSkyCorner1","DioramaSkyHorizontal1","DioramaSkyVertical1"};
+        for(int i=0;i<6;++i)SetFloats(rt,names[i],skyRays+i*3,3);
+    }
     SetFloat(rt, "DioramaRadius", g_dioramaRadius.load());
     SetBool(rt, "DioramaMR", NativeDiorama() && TableKeyWanted() && framevr::DioramaPassthroughActive());
 #endif

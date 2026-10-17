@@ -55,6 +55,7 @@ FrameTiming LastTiming();
 void SetExternalPerspective(int mode);
 void ObserveMouseCursor(void* cursor); // live native cursor, no replacement artwork
 bool PerspectiveReady();
+bool DioramaSkyboxRays(float rays[18]); // tracking-space directions, no table transform or translation
 void ConfigureDioramaPassthrough(bool requested);
 void DioramaShaderReady(bool ready);
 bool DioramaPassthroughActive();
