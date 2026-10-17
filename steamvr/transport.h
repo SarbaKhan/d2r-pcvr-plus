@@ -18,7 +18,12 @@ void ConfigureGameplay(bool enabled);
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
+bool OwnsControllerRumble(); // lock-free; VR input owns feedback instead of gamepad motors
 bool SpellSelected();
+bool LeftHandAiming();
+bool CrossbowAiming();
+bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes
+bool NativeSkillCasting(); // any active trigger/quick cast; retain native locomotion input
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
 bool GameplayRay(float origin[3],float direction[3]);
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample);
@@ -28,7 +33,12 @@ int TakeShieldTarget(uint32_t& target); // 1 physical target, -1 cancelled cast,
 bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update
+void SpellCast(int hand,uint64_t session); // one successful hand spell, not each projectile
 bool TakeBowShot(bowflight::Shot& shot);
+bool TakeCrossbowShot(bowflight::Shot& shot);
+bool CrossbowHeld(const bowflight::Shot& shot);
+bool TakeSpellShot(int hand,bowflight::Shot& shot);
+bool SpellHeld(const bowflight::Shot& shot);
 bool BowPreviewPose(bowflight::Shot& pose,bool& visible);
 bowflight::Gate BowGate();
 void SetBowWorldEpoch(uint32_t epoch);
@@ -59,7 +69,7 @@ bool DioramaView(float out[16],float center[16],float sampled[3],const float her
 bool AlternativeView(float out[16],float center[16],const float hero[3],float height,
     float distance,float heading,float down,float units,uint32_t generation,int eye);
 #endif
-void Shutdown();
+void Shutdown(bool preserveResolution=false);
 void BeginPair();
 void BeginEye(int eye);
 // Diagnostic only: F8 saves the next complete gameplay pair via ReShade.
@@ -69,8 +79,12 @@ void ResetHeight();
 void Recenter();
 bool TakeWorldRecenter();
 bool Active();
+// Any thread: a focused VR session with motion controls ran input recently.
+// False in desktop/flat play, so VR-only world effects stay out of it.
+bool VrGameplay(uint64_t now);
 bool SpatialMenu();
+// mapNorth is the unmodified native camera's horizontal heading (map-up).
 bool View(float out[16], const float hero[3], float eyeHeight,
-          float userEyeHeight, float bodyHeading, float recenterYaw, int eye);
+          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth);
 bool Projection(float out[16], float nearWorld, int eye);
 }

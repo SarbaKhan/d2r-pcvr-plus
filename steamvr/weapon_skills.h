@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+#include "skill_slots.h"
 #include <cstdint>
 
 namespace framevr::weaponskills {
@@ -26,7 +27,7 @@ struct ContactContext {
     bool operator==(const ContactContext&) const=default;
 };
 inline bool Current(const ContactContext& saved,const ContactContext& current,uint64_t at,uint64_t now,uint64_t maxAge=1500) {
-    return saved.session&&saved.slot>=0&&saved.slot<8&&saved==current&&now>=at&&now-at<=maxAge;
+    return saved.session&&saved.slot>=0&&saved.slot<skills::Count&&saved==current&&now>=at&&now-at<=maxAge;
 }
 // One brief native button press per physical release. Native attack state,
 // skill availability, mana/ammunition and sequence timing stay authoritative.
@@ -37,8 +38,14 @@ class Pulse {
 public:
     void Cancel(){*this=Pulse{};}
     bool Start(int nextSlot,int nextId,int nextOwner,uint64_t nextContext,double now) {
-        if(nextSlot<0||nextSlot>=8||nextId<0||!std::isfinite(now)||now<until)return false;
-        slot=nextSlot;id=nextId;owner=nextOwner;context=nextContext;started=now;until=now+.065;return true;
+        if(nextSlot<0||nextSlot>=skills::Count||nextId<0||!std::isfinite(now)||now<until)return false;
+        // Shield contact uses the left trigger's alternate bank. SkillPad
+        // needs 50 ms at the native consumer before exposing its button; a
+        // 65 ms producer pulse can disappear between the game's polls.
+        // Allow bank preparation plus two native ticks and XR scheduling.
+        // FinishShieldSkill still cancels immediately when Smite executes.
+        const double duration=nextId==Smite?.180:.065;
+        slot=nextSlot;id=nextId;owner=nextOwner;context=nextContext;started=now;until=now+duration;return true;
     }
     int Get(int currentSlot,int currentId,int currentOwner,uint64_t currentContext,double now) {
         if(!std::isfinite(now)||now<started||now>=until||currentSlot!=slot||currentId!=id||currentOwner!=owner||currentContext!=context) {

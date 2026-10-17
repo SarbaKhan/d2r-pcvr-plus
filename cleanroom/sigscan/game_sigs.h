@@ -148,6 +148,16 @@ inline constexpr Sig kSigs[] = {
     {"TypeSeqTransform", 0x20B8F0, Kind::Ref, "E8 ?? ?? ?? ?? 0F 10 44 24 20 89 03 48 8B C3 C7 43 04 8B 52 7F 3C 0F 11 43 08", 0x2011FE, 0, 1, 5, 0, "48 83 EC 28 65 48 8B 04 25 58 00 00 00", nullptr, "first-person body", "The body's skeleton"},
     // entt type_seq<SkeletonComponent>::value()
     {"TypeSeqSkeleton", 0x67DE50, Kind::Ref, "E8 ?? ?? ?? ?? 0F 10 44 24 20 89 03 48 8B C3 C7 43 04 B2 89 98 67 0F 11 43 08", 0x6688AE, 0, 1, 5, 0, "48 83 EC 28 65 48 8B 04 25 58 00 00 00", nullptr, "first-person body", "The body's skeleton"},
+    // TlsfAllocator 'Renderer Pool' (12 MB), read by its alloc
+    {"RendererPool", 0x2810FF0, Kind::Ref, "48 8D 0D ?? ?? ?? ?? FF 50 08 48 8B D8 48 85 C0 75 13", 0xF6F082, 0, 3, 7, 0, nullptr, nullptr, "bigger renderer pool", "Memory pools"},
+    // TlsfAllocator 'Entity System Pool' (70 MB), its getter's static
+    {"EntityPool", 0x2677438, Kind::Ref, "48 8D 05 ?? ?? ?? ?? 48 83 C4 28 C3 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 3D ?? ?? ?? ?? FF 75 DF 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ??", 0x913F87, 0, 3, 7, 0, nullptr, nullptr, "bigger entity pool", "Memory pools"},
+    // TlsfAllocator's vtable
+    {"TlsfVtable", 0x1D6D770, Kind::Ref, "48 8D 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? 48 89 05 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 83 C4 28", 0x913FB4, 0, 3, 7, 0, nullptr, nullptr, "bigger memory pools", "Memory pools"},
+    // TlsfAllocator::Free (vtable slot 4): lock +0x28, tlsf_free(+0x20, p)
+    {"TlsfAllocFree", 0x82DC60, Kind::Code, "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B DA 48 83 C1 28 E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 48 8B 4F 20 48 8B D3 E8 ?? ?? ?? ?? 48 8D 4F 28", 0x82DC60, 0, 0, 0, 0, "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B F9 48 8B DA 48 83 C1 28 E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 48 8B 4F 20 48 8B D3 E8 ?? ?? ?? ??", nullptr, "bigger memory pools", "Memory pools"},
+    // tlsf_free(tlsf, p), called
+    {"TlsfFree", 0x1215C30, Kind::Code, "48 85 D2 0F 84 ?? ?? ?? ?? 56 48 83 EC 20 48 89 5C 24 30 48 8B F1 48 8D 5A F0 48 89 7C 24 38 48 8B 43 08 48 8D 7B 08 48 83 E0 FC 48 83 4C 18 10 02 48 89 5C 18 08 48 83 0F 01 F6 07 02 74 27 48 8B 1B", 0x1215C30, 0, 0, 0, 0, "48 85 D2 0F 84 ?? ?? ?? ?? 56 48 83 EC 20 48 89 5C 24 30 48 8B F1 48 8D 5A F0 48 89 7C 24 38 48 8B 43 08 48 8D 7B 08 48 83 E0 FC 48 83 4C 18 10 02 48 89 5C 18 08 48 83 0F 01 F6 07 02 74 27", nullptr, "bigger memory pools", "Memory pools"},
 };
 
 }   // namespace d2rsig

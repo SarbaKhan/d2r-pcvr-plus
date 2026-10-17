@@ -42,9 +42,9 @@ class DesktopLaunchTests(unittest.TestCase):
         for code in (0, 0xc0000005):
             with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
-                plugins = root / 'd2rloader/plugins'
+                plugins = root / 'mods/D2R-PCVR/d2rloader/plugins'
                 plugins.mkdir(parents=True)
-                for name in ('D2R.exe', 'D2RLoader.exe', 'd2rloader/plugins/d2rl-vrcam.dll'):
+                for name in ('D2R.exe', 'D2RLoader.exe', 'mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll'):
                     (root / name).write_bytes(b'fixture never executed')
                 (plugins / 'd2r_pcvr_plus_flat.ini').write_text('[mode]\nplatform=0\n')
                 request = root / 'request.json'
@@ -56,7 +56,7 @@ class DesktopLaunchTests(unittest.TestCase):
                         patch.object(launch_plus.subprocess, 'run', return_value=Mock(returncode=code)) as run:
                     self.assertEqual(launch.desktop_child(request), code)
                 run.assert_called_once()
-                self.assertEqual(run.call_args.args[0], [str(root / 'D2RLoader.exe')])
+                self.assertEqual(run.call_args.args[0], [str(root / 'D2RLoader.exe'), '-mod', 'D2R-PCVR'])
                 environment = run.call_args.kwargs['env']
                 self.assertEqual(environment['D2R_PCVR_PLUS_MODE'], 'flat')
                 self.assertEqual(environment['SteamAppId'], '2536520')

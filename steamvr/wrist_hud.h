@@ -2,6 +2,22 @@
 #include <cstdint>
 
 namespace framevr::wrist {
+// Borrow a corner layout without writing the game's saved map preference.
+// If the player changes it while borrowed, remember the new value to restore.
+class MapLayoutLease {
+    bool owned=false;
+    int saved=0;
+public:
+    int Step(bool active,int current) {
+        if(current<0||current>2){owned=false;return -1;}
+        if(active){
+            if(!owned||current!=1)saved=current;
+            owned=true;return current==1?-1:1;
+        }
+        if(!owned)return -1;
+        owned=false;return current==1&&saved!=1?saved:-1;
+    }
+};
 // Cumulative XP exceeds INT_MAX at high levels. Keep the native unsigned
 // values through subtraction and use double only for the displayed fraction.
 struct Experience {

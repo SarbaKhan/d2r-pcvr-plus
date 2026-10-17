@@ -12,7 +12,7 @@ import stage_native_installer as staging
 
 class StagingTests(unittest.TestCase):
     def fixture(self, root, extra=None, changed=False):
-        files = {'steamvr/setup_native.py': b'backend', 'bin/d2rl-vrcam.dll': b'plugin',
+        files = {'steamvr/setup_native.py': b'backend', 'steamvr/mod_identity.py': b'identity', 'bin/d2rl-pcvr.dll': b'plugin',
                  'bin/openxr_loader.dll': b'loader', **(extra or {})}
         manifest = {'platform': 'native-windows', 'source_commit': 'source',
                     'sha256': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}

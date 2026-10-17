@@ -9,13 +9,14 @@ inline Scene MakeScene(const interaction::Input& in,const interaction::Output& o
     if(!in.active||!in.tracked[0]||!in.tracked[1]||!out.beltReady||!interaction::Fresh(in.snapshot,in.session,in.at))return s;
     for(int i=0;i<4;++i) {
         const auto& b=in.snapshot.belt[i];
-        if(i==out.bottle||!b.known||!b.count||!b.Next().handle||!interaction::Valid(out.belt[i]))continue;
+        if(i==out.bottle||(out.flying&&i==out.flightColumn)||!b.known||!b.count||!b.Next().handle||!interaction::Valid(out.belt[i]))continue;
         s.items[s.count++]={out.belt[i],b.Next().code,false,i==out.nearBelt};
     }
     if(out.bottleHand>=0&&out.bottleHand<2&&out.bottleItem.handle) {
-        auto p=in.hand[out.bottleHand];p.p=Center(p.p,p.q);
+        auto p=in.hand[out.bottleHand];p.p=Center(p.p,p.q);p.q=HeldRotation(p.q);
         s.items[s.count++]={p,out.bottleItem.code,out.bottleEmpty,false};
     }
+    if(out.flying&&out.flightItem.handle&&s.count<s.items.size())s.items[s.count++]={out.flight,out.flightItem.code,false,false};
     return s;
 }
 }

@@ -12,12 +12,12 @@ class PlusTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.game = self.root / 'game'
-        self.plugins = self.game / 'd2rloader/plugins'
+        self.plugins = self.game / 'mods/D2R-PCVR/d2rloader/plugins'
         self.plugins.mkdir(parents=True)
         for name in ('D2R.exe', 'D2RLoader.exe'):
             (self.game / name).touch()
-        (self.plugins / 'd2rl-vrcam.dll').touch()
-        (self.plugins / 'd2r_vr.ini').write_text('background_full_speed=1\n[mode]\nplatform=1\n')
+        (self.plugins / 'd2rl-pcvr.dll').touch()
+        (self.plugins / 'd2r_pcvr.ini').write_text('background_full_speed=1\n[mode]\nplatform=1\n')
         (self.plugins / 'd2r_pcvr_plus_flat.ini').write_text('[mode]\nplatform=0\n')
 
     def test_profiles_untouched_and_environment_local(self):
@@ -27,7 +27,7 @@ class PlusTests(unittest.TestCase):
             self.assertEqual(plus.os.environ['D2R_PCVR_PLUS_MODE'], 'vr')
             self.assertEqual(env['D2R_PCVR_PLUS_MODE'],'flat')
             self.assertNotIn('XR_RUNTIME_JSON',env)
-        self.assertEqual(command, [str(self.game / 'D2RLoader.exe')])
+        self.assertEqual(command, [str(self.game / 'D2RLoader.exe'), '-mod', 'D2R-PCVR'])
         self.assertEqual(before,{p:p.read_bytes() for p in self.plugins.glob('*.ini')})
 
     def test_missing_flat_profile_does_not_fall_back_to_vr(self):
@@ -35,7 +35,7 @@ class PlusTests(unittest.TestCase):
         with self.assertRaises(ValueError): plus.prepare(self.game,'flat')
 
     def test_vr_profile_must_be_vr(self):
-        (self.plugins / 'd2r_vr.ini').write_text('[mode]\nplatform=0')
+        (self.plugins / 'd2r_pcvr.ini').write_text('[mode]\nplatform=0')
         with self.assertRaises(ValueError): plus.prepare(self.game,'vr')
 
     def test_flat_launch_never_calls_vr_launcher(self):

@@ -9,8 +9,10 @@ int main(int argc,char** argv){
     Snapshot s;s.ready=true;s.values[Motion]=1;s.values[Snap]=30;s.values[Foveation]=2;
     Model m;m.Open(s);const int page=argc>2?std::atoi(argv[2]):0;
     m.Click({Kind::Tab,page});
+    if(argc>3&&std::strcmp(argv[3],"--dropdown")==0)m.Click({Kind::ControllerMenu});
     framevr::calibration::Flow body;body.Begin();body.phase=framevr::calibration::Phase::Hold;body.hint=framevr::calibration::Hint::Pose;body.progress=.55f;
-    const auto pixels=Paint(m,{},"Foveated shading available. Eye-tracking samples are active.",page==3?&body:nullptr);
+    const auto pixels=Paint(m,{},page==int(Page::Video)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount?&body:nullptr,
+        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}});
     if(pixels.size()!=Width*Height*4)return 1;
     FILE* file=std::fopen(argc>1?argv[1]:"vr-settings-preview.ppm","wb");if(!file)return 2;
     const char* name=argc>1?argv[1]:"";

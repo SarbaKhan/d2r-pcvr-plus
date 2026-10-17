@@ -44,7 +44,10 @@ bool Start(HMODULE plugin){
     if(!len||len>=MAX_PATH)return false;
     std::wstring p(path);const auto last=p.find_last_of(L"\\/");if(last==p.npos)return false;
     p.resize(last);const auto parent=p.find_last_of(L"\\/");if(parent==p.npos)return false;
-    p.resize(parent+1);p+=L"logs\\d2r-vr-frame.log";
+    p.resize(parent+1);p+=L"logs";
+    // A fresh mod-folder install has no log directory until its first launch.
+    if(!CreateDirectoryW(p.c_str(),nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+    p+=L"\\d2r-vr-frame.log";
     file=CreateFileW(p.c_str(),FILE_APPEND_DATA,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
     if(file==INVALID_HANDLE_VALUE)return false;
     stop=CreateEventW(nullptr,TRUE,FALSE,nullptr);

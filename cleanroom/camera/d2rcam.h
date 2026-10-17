@@ -48,6 +48,8 @@ void SetCallbacks(ViewFn view, ProjFn proj);
 // Native stereo labels: project the game's original unit anchors with the
 // current scene matrices, bypassing inline reconstruction of a flat frustum.
 void SetStereoLabels(bool on);
+// Show ordinary monsters' health/name plates in native VR (default false).
+void SetOrdinaryMobBars(bool show);
 // Trial: paint the monster health panel after current-eye tooltip updates.
 void SetMonsterDrawOrder(bool on);
 // Main rendering thread only; -1 outside paired gameplay.
@@ -110,5 +112,10 @@ struct Status {
 	int  roomsLoaded;     // rooms tiled on demand so far
 };
 Status GetStatus();
+
+// Increase native renderer/entity TLSF capacity once per process. Zero leaves a
+// pool unchanged. False means initialization/decryption is pending; line reports
+// the result or reason for refusing. Changes take effect on the next game start.
+bool GrowPools(unsigned renderMb, unsigned entityMb, char* line, size_t lineSize);
 
 }   // namespace d2rcam

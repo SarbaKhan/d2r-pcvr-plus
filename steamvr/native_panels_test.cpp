@@ -1,67 +1,98 @@
-#include "input.h"
 #include "native_panels.h"
-#include "spatial_ui.h"
+#include "npc_dialogue.h"
 #include "panel_input_mode.h"
 #include "menu_controls.h"
 #include "quick_cast.h"
 #include "journal.h"
+#include "input.h"
+#include "vr_resolution.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    for(int preset=0;preset<3;++preset)for(bool main:{false,true}) {
+        const float distance=panels::MenuDistance(preset,main);
+        Check(std::fabs(distance-(main?.70f:.55f)-.30f*preset)<.00001f,"distance presets add 30 cm without changing canvas scale");
+        const auto p=panels::AtEyeLevel({0,1.7f,0},math::Yaw(.8f),distance);
+        Check(p.position.y==1.7f,"all distance presets retain eye-level anchor");
+    }
+    panels::TooltipDwell dwell;
+    Check(dwell.Ready(1,2,100,0,1),"instant tooltip on first hover");
+    Check(!dwell.Ready(1,2,110,1,1),"short mode starts fresh on setting change");
+    Check(!dwell.Ready(1,2,210,1,1),"short dwell not yet elapsed");
+    Check(!dwell.Ready(3,0,211,1,1),"empty neighboring grid cannot reset hovered item dwell");
+    Check(!dwell.Ready(1,2,310,1,1)&&dwell.Ready(1,2,410,1,1),"same item across pixels reaches 300 ms");
+    Check(!dwell.Ready(1,4,420,1,1),"different item resets dwell");
+    Check(!dwell.Ready(1,4,430,1,2),"ray miss or drag generation resets dwell");
+    Check(!dwell.Ready(1,4,1000,1,2),"stalled frame cannot mature a stale hover");
+    Check(!dwell.Ready(1,4,1,1,2),"clock reset restarts dwell");
+    Check(dwell.Ready(1,4,2,2,2),"Original mode delegates delay to native producer");
+    Check(!panels::ItemCursorSnap(true,true,true),"item draw uses laser coordinates outside pointer callbacks");
+    Check(panels::ItemCursorSnap(false,true,true)&&panels::ItemCursorSnap(true,false,true),"desktop and unrelated cursor queries remain native");
+    Check(panels::CursorBoundsCaller(0x7f4b2)&&panels::CursorBoundsCaller(0x14fb2a),
+        "native height and tail-called width clamp use full-source bounds");
+    for(auto address:panels::UiCanvasReturns)
+        Check(!panels::CursorBoundsCaller(address),"cursor bounds cannot enlarge native font/layout canvas");
+    for(auto address:{uintptr_t(0),uintptr_t(0x14fb46),uintptr_t(0x667ff1),uintptr_t(0x904b3d)})
+        Check(!panels::CursorBoundsCaller(address),"unrelated and approximate callers retain original size");
+    Check(panels::UiCanvasCaller(0x843ed5)&&panels::UiCanvasCaller(0x8453a9)&&
+        panels::UiCanvasCaller(0x846239)&&panels::UiCanvasCaller(0x14f31d),"native UI layout and cursor queries use VR canvas");
+    for(auto caller:{uintptr_t(0),uintptr_t(0x904b3d),uintptr_t(0x667ff1),uintptr_t(0x668003),uintptr_t(0x846238)})
+        Check(!panels::UiCanvasCaller(caller),"movies, engine queries and unknown return sites stay native");
     {
-        menus::ReleaseGate gate;PressEdge run;
-        menus::Pad p;
-        gate.Step(menus::Mode::World,0,p);
-        p.buttons=menus::RightStick;
-        Check(run.Update((gate.Step(menus::Mode::World,0,p).buttons&menus::RightStick)!=0),"run toggle starts on click");
-        Check(!run.Update((gate.Step(menus::Mode::World,0,p).buttons&menus::RightStick)!=0),"held stick does not repeat run toggle");
-        run.Update((gate.Step(menus::Mode::Native,1,p).buttons&menus::RightStick)!=0);
-        Check(!run.Update((gate.Step(menus::Mode::World,2,p).buttons&menus::RightStick)!=0),"menu-held sort cannot toggle run on close");
-        p.buttons=0;run.Update((gate.Step(menus::Mode::World,2,p).buttons&menus::RightStick)!=0);
-        p.buttons=menus::RightStick;
-        Check(run.Update((gate.Step(menus::Mode::World,2,p).buttons&menus::RightStick)!=0),"fresh click after menu toggles run");
+        bool anchored=false;panels::Placement menu{};
+        auto frame=[&](bool rendering,bool focused,bool tracked,math::Vec head) {
+            if(panels::CanAnchor(anchored,rendering,focused,tracked)) {
+                menu=panels::AtEyeLevel(head,math::Yaw(.4f),panels::MainDistance);
+                anchored=true;
+            }
+        };
+        frame(true,false,false,{0,0,0});
+        frame(true,true,false,{0,0,0});
+        frame(true,false,true,{0,0,0});
+        frame(false,true,true,{0,0,0});
+        Check(!anchored,"startup waits for rendering, focus and tracked position/orientation");
+        frame(true,true,true,{0,1.7f,0});
+        Check(anchored&&menu.position.y==1.7f,"first reliable pose anchors menu at standing eye height");
+        const auto fixed=menu.position;
+        frame(true,true,true,{.2f,1.5f,.1f});
+        Check(menu.position.x==fixed.x&&menu.position.y==fixed.y&&menu.position.z==fixed.z,"head movement does not drag an open menu");
+        anchored=false; // Focus return or explicit recenter invalidates placement.
+        frame(true,true,false,{0,0,0});
+        Check(!anchored,"reconnect cannot anchor from an untracked origin");
+        frame(true,true,true,{0,1.2f,0});
+        Check(anchored&&menu.position.y==1.2f,"reacquired tracking supports seated eye height");
     }
-
-    for(const auto head:{math::Vec{0,1.6f,3},math::Vec{0,10,1},math::Vec{-4,2,-5}}) {
-        const auto panel=spatialui::DialoguePanel({0,0,0},head);
-        const auto toward=math::Normalized(head-panel.p);
-        const auto normal=math::Rotate(panel.q,{0,0,1});
-        Check(math::Dot(normal,toward)>.9999f,"NPC dialogue faces viewer including overhead and opposite side");
-    }
-    Check(std::fabs(spatialui::DialogueWidth(20)/20-spatialui::DialogueWidth(2)/2)<.00001f,
-        "NPC text keeps angular size in distant F1 and nearby F2");
-    Check(std::fabs(spatialui::HudScale-2.f/3.f)<.00001f,"HUD dimensions shrink by one third without changing edge radius");
-
-    Check(spatialui::Spatial(1,true)&&spatialui::Spatial(2,true),"F1/F2 speech stays spatial");
-    Check(!spatialui::Spatial(1,false)&&!spatialui::Spatial(2,false),"F1/F2 management menus stay flat");
-    Check(spatialui::Spatial(3,false)&&spatialui::Spatial(4,false),"F3/F4 management menus stay spatial");
-    Check(!spatialui::Spatial(0,true),"invalid mode cannot enable spatial menus");
-    Check(spatialui::Dialogue("NpcDialogPanel")&&!spatialui::Dialogue("VendorPanelLayout"),"trade is not speech");
-    constexpr float pi=3.14159265359f;
-    const math::Vec center{2,.74f,3};
-    for(int i=0;i<16;++i) {
-        auto p=spatialui::HudSegment(center,.75f,0,1.8f,.2f,pi/18,i,16);
-        auto n=math::Rotate(p.q,{0,0,1});auto d=p.p-center;
-        Check(std::fabs(std::hypot(d.x,d.z)-.75f)<.0001f,"HUD follows table radius");
-        Check(n.x*d.x+n.z*d.z>0,"HUD faces outside, never the center");
-        Check(std::fabs(n.y-std::sin(pi/18))<.0001f,"HUD face tilts upward ten degrees");
-        Check(p.p.y>center.y,"HUD clears miniature ground");
-    }
-    const auto left=spatialui::HudSegment(center,.75f,0,1.8f,.2f,pi/18,0,16);
-    const auto right=spatialui::HudSegment(center,.75f,0,1.8f,.2f,pi/18,15,16);
-    Check(left.p.x<right.p.x,"HUD texture strips retain left-to-right reading order");
-    Check(spatialui::FollowAngle(.7f,center,center,.02f)==.7f,"inside dead zone keeps stable orientation");
-    auto angle=spatialui::FollowAngle(pi-.01f,center+math::Vec{-.01f,1,-1},center,.02f);
-    Check(std::fabs(angle-(pi-.01f))<.03f,"orbit takes short path across angle wrap");
-
+    for(auto name:{"WaypointPanel","WaypointPanelExpansion","WaypointPanelOriginal"})
+        Check(panels::Modal(name)&&panels::OpaqueBackground(name),"waypoint destinations use the shared opaque black background instead of different per-eye worlds");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
         "BankExpansionLayout","BankOriginalLayout","StashPanel","PlayerInventoryExpansionLayout",
         "PlayerInventoryOriginalLayout","HoradricCubeLayout","HirelingInventoryPanel","MercenaryInventoryLayout"})
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"management surfaces use the same opaque background in both eyes");
     for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","GoldTransferPanel","QuantityPanel","HUDPanel","HUDTradeHint","MiniMenuPanel","TooltipsPanel"})
         Check(!panels::OpaqueBackground(name),"dialogue, journal and auxiliary panels do not independently black out the world");
+    for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogSpeechPanel","QuestLogPanelExpansion","ConfirmationPanel"}) {
+        Check(!panels::BlockWorldEffects(panels::Modal(name),true,panels::OpaqueBackground(name)),
+            "spatial conversations, speech and journals keep sky, fog and cave ceiling behind their transparent UI");
+        Check(panels::BlockWorldEffects(panels::Modal(name),false,panels::OpaqueBackground(name)),
+            "unavailable spatial UI retains flat-menu suppression of world effects");
+    }
+    for(auto name:{"VendorPanelLayout","GamblePanel","WaypointPanel","UISwitcher","BankExpansionLayout"})
+        Check(panels::BlockWorldEffects(panels::Modal(name),true,panels::OpaqueBackground(name)),
+            "opaque management menus keep their black background and suppress world effects");
+    Check(!panels::BlockWorldEffects(false,false,false),"ordinary gameplay retains world effects without spatial UI");
+    Check(!panels::BlockWorldEffects(false,true,true),"a stale opaque flag alone cannot disable gameplay effects");
+    // An NPC conversation may open a merchant without closing all of its
+    // other roots. Any remaining opaque root owns the backdrop until closed.
+    for(bool merchant:{false,true,false})
+        Check(panels::BlockWorldEffects(true,true,panels::OpaqueBackground("NpcDialogPanel")||
+            (merchant&&panels::OpaqueBackground("VendorPanelLayout")))==merchant,
+            "dialogue to merchant to dialogue restores world effects when the opaque root closes");
+    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel","NpcDialogPanel","ScrollSpeechPanel"})
+        Check(panels::UpperBand(name),"inventory, merchants and both conversation roots center the same upper content band");
+    for(auto name:{"WaypointPanel","QuestLogPanelExpansion","QuantityPanel","ConfirmationPanel","HUDTradeHint","TooltipsPanel"})
+        Check(!panels::UpperBand(name),"unrelated layouts and auxiliary popups cannot independently shift the workspace");
     panels::InputModeLease mode;
     Check(!mode.PreserveController(100,true),"desktop input untouched without VR ownership");
     mode.Refresh(100);
@@ -74,6 +105,29 @@ int main(){
     Check(panels::FocusUsesPointer(mode.Active(800),true),"laser hover keeps exact widget focus");
     Check(!panels::FocusUsesPointer(mode.Active(800),false),"native navigation restores cursor snapping despite queued mouse-release lease");
     Check(mode.Active(800),"switching focus does not cancel protection for queued pointer events");
+    panels::ItemTooltipHover hover;
+    Check(!hover.Active(100),"desktop starts without immediate tooltip or automatic comparison ownership");
+    hover.Update(100,true,true,false);
+    Check(hover.Active(100),"first laser hit enables tooltips without a dwell timer");
+    int keyReads=0;
+    auto key=[&](int k){++keyReads;return k==0x11?1:0;};
+    Check(panels::ItemCompareKey(hover.Active(100),true,0x10,key)==1&&keyReads==0,
+        "native equipped-item comparison needs no physical Shift press");
+    Check(!panels::ItemCompareKey(hover.Active(100),false,0x10,key)&&keyReads==1,
+        "purchase, transfer and gameplay Shift queries retain native state");
+    Check(panels::ItemCompareKey(hover.Active(100),true,0x11,key)==1&&keyReads==2,
+        "other held modifiers retain native state even inside tooltip code");
+    Check(hover.Active(399)&&!hover.Active(400),"stopped XR frames expire tooltip ownership");
+    for(int lost=0;lost<3;++lost) {
+        hover.Update(500,true,true,false);
+        hover.Update(501,lost!=0,lost!=1,lost==2);
+        Check(!hover.Active(501),"focus/tracking/navigation loss, ray miss or drag clears item hover immediately");
+        Check(!panels::ItemCompareKey(hover.Active(501),true,0x10,key),"inactive laser cannot force native comparison");
+        Check(panels::ItemCompareKey(hover.Active(501),true,0x10,[](int){return 1;})==1,
+            "real Shift still compares items with automatic comparison inactive");
+    }
+    hover.Update(600,true,true,false);
+    Check(hover.Active(600),"reacquiring item hover is immediate after a miss or drag");
     // Reproduce a laser-started Amazon session: physical bow/javelin releases
     // and walking send no native A, so KB/M remains active and target lookup
     // never gives the semantic interact guard a usable item/entrance target.
@@ -159,6 +213,23 @@ int main(){
     // World -> stash -> world, with the same A/trigger/stick held across both
     // boundaries. New controls remain usable without releasing every grip.
     menus::ReleaseGate input;
+    // Quest's system menu button can be reserved by the runtime. The left
+    // grip/stick shortcut must not also open a wheel, sort items, or re-fire
+    // when the native menu changes epoch while both controls remain held.
+    {
+        menus::ReleaseGate gate;GripStickButton shortcut;menus::Pad p;
+        gate.Step(menus::Mode::World,0,{});
+        p.buttons=menus::LeftBumper|menus::LeftStick;
+        auto filtered=gate.Step(menus::Mode::World,0,p);
+        Check(shortcut.Update(filtered.buttons&menus::LeftStick,1)&&shortcut.Consumed(),"fresh grip/stick opens menu once");
+        filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(!shortcut.Update(filtered.buttons&menus::LeftStick,0)&&!shortcut.PlainPressed(),"held chord cannot act in newly opened menu");
+        p.buttons=menus::LeftStick;filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(!shortcut.Update(filtered.buttons&menus::LeftStick,0)&&!shortcut.PlainPressed(),"releasing grip first cannot sort or toggle a wheel");
+        gate.Step(menus::Mode::Native,1,{});shortcut.Update(false,0);
+        p.buttons=menus::LeftBumper|menus::LeftStick;filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(shortcut.Update(filtered.buttons&menus::LeftStick,1),"fresh chord can close the inventory menu");
+    }
     menus::Pad held;held.buttons=menus::A|menus::RightBumper;held.rt=255;held.lx=20000;
     input.Step(menus::Mode::World,0,{});
     Check(input.Step(menus::Mode::World,0,held).rt==255,"fresh world attack available");
@@ -223,13 +294,73 @@ int main(){
     for(int frame=0;frame<90;++frame)
         Check(inventory.Step(true,drop,true,.5f,.5f,false).buttons==menus::X,"X/drop is forwarded for the entire native hold duration");
     Check(!menus::Busy(sortGate.Step(menus::Mode::World,10,sort)),"closing inventory during a sort hold cannot swap in gameplay");
-    // Source pixels, physical panel and mouse mapping agree at multiple aspects.
-    for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200}}) {
+    const auto square=panels::Fit(4096,4096),wide=panels::Fit(3840,2160);
+    Check(std::fabs(square.height-1.06875f)<.00001f&&square.width==square.height,"4096 square inventory fits original workspace height without distortion");
+    Check(wide.width==panels::Width&&wide.height==square.height,"widescreen workspace remains unchanged");
+    const auto title=panels::Fit(4096,4096,2.f);
+    Check(title.width==1.125f&&title.height==1.125f,"square main menu fits original 2m widescreen envelope");
+    const auto missing=panels::Fit(0,0);
+    Check(missing.width==wide.width&&missing.height==wide.height,"missing source uses finite widescreen fallback");
+    // A reported widget box at 2535,498 on a 3072-square source looked valid
+    // but the owner saw only the right edge of the choices. Native widget
+    // coordinates cannot define the sampled region after resize. Exercise the
+    // whole visible surface through the actual ray and source/desktop mapping.
+    for(auto source:{journal::Rect{0,0,1536,1536},journal::Rect{0,0,3072,3072},
+        journal::Rect{0,0,4096,4096},journal::Rect{0,0,3840,2160},journal::Rect{0,0,2160,2400}}) {
+        const auto crop=dialogue::Canvas(source.w,source.h);
+        const auto size=panels::Fit(crop.w,crop.h);
+        Check(std::fabs(size.width/size.height-float(source.w)/source.h)<.00001f,"complete NPC canvas preserves text proportions at each render aspect");
+        const auto placed=panels::AtEyeLevel({0,1.65f,0},math::Yaw(.4f),panels::Distance);
+        const auto origin=placed.position+math::Rotate(placed.orientation,{0,panels::UpperBandOffset(size),0});
+        for(float u:{.01f,.2f,.5f,.8f,.99f})for(float v:{.01f,.3f,.7f,.99f}) {
+            const auto p=origin+math::Rotate(placed.orientation,{(u-.5f)*size.width,(.5f-v)*size.height,0});
+            const auto front=math::Rotate(placed.orientation,{0,0,1});math::PanelHit hit;math::Vec pixel{};
+            Check(math::IntersectPanel(p+front,front*-1,origin,placed.orientation,size.width,size.height,hit),"laser reaches both edges and every part of the complete NPC surface");
+            Check(journal::Pixel(crop,hit.u,hit.v,source.w,source.h,pixel)&&
+                std::fabs(pixel.x-u)<.00001f&&std::fabs(pixel.y-v)<.00001f,
+                "dialogue rendering and laser use the complete source rather than a shifted widget crop");
+            const int clientX=int(std::round(pixel.x*3839)),clientY=int(std::round(pixel.y*2159));
+            Check(std::abs(resolution::Coordinate(clientX,3840,source.w)-u*(source.w-1))<2&&
+                std::abs(resolution::Coordinate(clientY,2160,source.h)-v*(source.h-1))<2,
+                "NPC laser coordinates survive a desktop-to-VR resolution mismatch without edge truncation");
+        }
+    }
+    Check(!dialogue::Canvas(0,3072).w&&!dialogue::Canvas(4096,0).h,"missing NPC source cannot create an invalid XR surface");
+    Check(panels::UpperBandOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
+    Check(std::fabs(panels::UpperBandOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
+    for(float eyeHeight:{1.15f,1.75f})for(float pitch:{-.6f,0.f,.6f}) {
+        const math::Vec head{.2f,eyeHeight,-.3f};
+        const auto look=math::Multiply(math::Yaw(.65f),{std::sin(pitch/2),0,0,std::cos(pitch/2)});
+        for(float distance:{panels::Distance,panels::MainDistance}) {
+            const auto placed=panels::AtEyeLevel(head,look,distance);
+            Check(placed.position.y==eyeHeight,"seated/standing menu anchor is at eye level even when opening while looking up or down");
+            Check(std::fabs(math::Dot(placed.position-head,placed.position-head)-distance*distance)<.00001f,"menu stays at the requested close distance");
+            Check(placed.orientation.x==0&&placed.orientation.z==0,"menu remains upright without inheriting head pitch");
+        }
+        const auto placed=panels::AtEyeLevel(head,look,panels::Distance);
+        const auto origin=placed.position+math::Vec{0,panels::UpperBandOffset(square),0};
+        math::PanelHit hit;
+        const auto direction=math::Rotate(placed.orientation,{0,0,-1});
+        Check(math::IntersectPanel(head,direction,origin,placed.orientation,square.width,square.height,hit),"eye-level ray hits the lowered square menu");
+        Check(std::fabs(hit.u-.5f)<.00001f&&std::fabs(hit.v-.28125f)<.00001f,"eye-level ray targets center of upper widescreen inventory band");
+        Check(square.width/panels::Distance>1.45f*square.width/1.25f,"square inventory has substantially larger angular text size than first height candidate");
+    }
+    // Source pixels, physical panel and mouse mapping agree at both menu sizes,
+    // including square presets, portrait headset targets and ultrawide desktop.
+    for(float maximum:{panels::Width,2.f})
+    for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200},
+                  journal::Rect{0,0,1536,1536},journal::Rect{0,0,4096,4096},journal::Rect{0,0,2160,2400},journal::Rect{0,0,3440,1440}}) {
+        const auto surface=panels::Fit(size.w,size.h,maximum);
+        Check(surface.width<=maximum&&surface.height<=maximum*9.f/16.f,"native canvas stays within comfortable width and height");
+        Check(std::fabs(surface.width/surface.height-float(size.w)/size.h)<.00001f,"menu artwork retains source aspect");
+        const auto larger=panels::Fit(size.w*2,size.h*2,maximum);
+        Check(larger.width==surface.width&&larger.height==surface.height,"pixel density does not change physical menu size");
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {
-            const auto rot=math::Yaw(.65f);const math::Vec origin{.3f,1.4f,-1.25f};
-            auto point=origin+math::Rotate(rot,{(u-.5f)*panels::Width,(.5f-v)*panels::Height(size.w,size.h),0});
+            const auto placed=panels::AtEyeLevel({.3f,1.4f,0},math::Yaw(.65f),panels::Distance);
+            const auto rot=placed.orientation;const auto origin=placed.position+math::Vec{0,panels::UpperBandOffset(surface),0};
+            auto point=origin+math::Rotate(rot,{(u-.5f)*surface.width,(.5f-v)*surface.height,0});
             const auto front=math::Rotate(rot,{0,0,1});math::PanelHit hit;math::Vec pixel{};
-            Check(math::IntersectPanel(point+front,front*-1,origin,rot,panels::Width,panels::Height(size.w,size.h),hit),"rotated panel ray");
+            Check(math::IntersectPanel(point+front,front*-1,origin,rot,surface.width,surface.height,hit),"rotated panel ray");
             Check(journal::Pixel(size,hit.u,hit.v,size.w,size.h,pixel)&&std::fabs(pixel.x-u)<.00001f&&std::fabs(pixel.y-v)<.00001f,"native pixel mapping across both panes and tooltips");
         }
     }

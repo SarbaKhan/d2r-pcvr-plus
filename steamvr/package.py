@@ -34,14 +34,14 @@ def main():
     # Explicit allowlist. Never glob an install, backup, build or diagnostic tree.
     paths = ['INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
              'PCVR-PLUS-SETUP.md', 'd2r_pcvr_plus_flat.ini',
-             'steamvr/launch_plus.py', 'steamvr/process_guard.py', 'steamvr/vr_baseline.json',
+             'steamvr/launch_plus.py', 'steamvr/process_guard.py',
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
-             'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/plus_artwork.py', 'steamvr/plus_preferences.py',
-             'artwork/manifest.json', 'artwork/README.md',
-             'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
+             'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/hdr_check.py',
+             'docs/upstream-refresh-plus.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
+             'steamvr/plus_artwork.py', 'steamvr/plus_preferences.py', 'artwork/manifest.json', 'artwork/README.md',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
-             'external/reshade/LICENSE.md', 'steamvr/install.py',
+             'external/reshade/LICENSE.md', 'steamvr/install.py', 'steamvr/mod_identity.py',
              'steamvr/launch_windows.py']
     if args.platform == 'linux-proton':
         paths += ['INSTALL-LINUX.md', 'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py']
@@ -56,7 +56,7 @@ def main():
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
             files[path.relative_to(ROOT).as_posix()] = path
-    files['bin/d2rl-vrcam.dll'] = args.build / 'd2rl-vrcam.dll'
+    files['bin/d2rl-pcvr.dll'] = args.build / 'd2rl-pcvr.dll'
     if args.platform == 'linux-proton':
         files['bin/openxr-probe.exe'] = args.build / 'openxr-probe.exe'
     files['bin/openxr_loader.dll'] = args.openxr_loader

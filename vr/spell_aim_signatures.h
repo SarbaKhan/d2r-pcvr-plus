@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
-// D2R 3.3.93787. These queries are used throughout the UI/game. Only the two
-// audited calls inside the native cast resolver can bypass a selected target.
+// D2R 3.3.93787. Resolver target-query overrides are caller-scoped. The final
+// command override additionally requires a local controller cast MapClick.
 namespace spellaimabi {
 inline constexpr uint64_t ResolveRva=0x190440;
 inline constexpr uint8_t ResolveSig[]={0x48,0x8b,0xc4,0x44,0x88,0x40,0x18,0x48,0x89,0x50,0x10,0x55,0x53,0x56,0x57};
@@ -17,4 +17,12 @@ inline constexpr uint64_t HoverCallRva=0x190583;
 inline constexpr uint8_t HoverCallSig[]={0xe8,0x78,0x13,0xf6,0xff,0x8b,0x54,0x24,0x34};
 inline constexpr uint64_t PointCallRva=0x1906e2;
 inline constexpr uint8_t PointCallSig[]={0xe8,0xe9,0xb3,0xff,0xff,0xf3,0x0f,0x10,0x45,0x9f};
+// Both press and repeat validate the stack command after MapClick's SECOND
+// target lookup. Keep native validation/cost/cadence; only replace its aim.
+inline constexpr uint64_t CommandRva=0x1023d0;
+inline constexpr uint8_t CommandSig[]={0x40,0x53,0x48,0x83,0xec,0x20,0x8b,0x01,0x48,0x8b,0xd9,0xa8,0x10};
+inline constexpr uint64_t CastClickRva=0x14b305;
+inline constexpr uint64_t RepeatClickRva=0x14c4b7;
+inline constexpr uint8_t CastClickSig[]={0xe8,0xa6,0x30,0xfb,0xff};
+inline constexpr uint8_t RepeatClickSig[]={0xe8,0xf4,0x1e,0xfb,0xff};
 }

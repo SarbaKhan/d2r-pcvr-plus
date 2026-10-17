@@ -12,6 +12,7 @@ import shutil
 import sys
 
 import install
+import mod_identity
 import setup_windows as setup
 import steam_config
 import plus_artwork
@@ -128,7 +129,7 @@ def probe_backup_chain(game, root, folder=None):
             raise ValueError('An installation backup has an invalid or incomplete installed-file list.')
     if chain:
         baseline = {str(install.safe_relative(name)).lower() for name in chain[0][1]['installed']}
-        if str(uninstall.PLUGIN).lower() not in baseline:
+        if not any(str(plugin).lower() in baseline for plugin in uninstall.PLUGINS):
             raise ValueError('The original installation backup does not track the VR plugin. '
                              'Select a complete installation backup.')
     return chain
@@ -199,12 +200,21 @@ def write_probe(path, root, steam=None, game=None, managed_root=None, source_roo
         'battlenet_available': str(int('bin/CascLib.dll' in manifest['sha256'])),
         'profiles': str(len(accounts)),
         'backup_required': '0', 'backup_message': '', 'backup_folder': '',
+        'installed_mod': '', 'other_mod': '',
     }
+    values.update(setup.hdr_check.check())
     values.update(plus_preferences.preferences(game or steam_game) if (game or steam_game) else {'layout': 'WASD', 'text_locale': '', 'audio_locale': ''})
     if game is not None:
         required, message, folder = probe_backups(game.resolve(), Path(managed_root or root),
             accounts, steam_game, source_root, backup_hint)
         values.update(backup_required=required, backup_message=message, backup_folder=folder)
+        # Whose plugin is in the game folder. D2R VR's stops the wizard here; a
+        # d2rl-vrcam.dll without a record of this mod may still be an old D2R
+        # PCVR whose backup the wizard asks for next (validation decides).
+        found = mod_identity.survey(game.resolve(), [Path(managed_root or root) / 'setup-backups/game',
+                                                     backup_hint, folder or None])
+        values.update(installed_mod=mod_identity.MOD_ID if found.ours else '',
+                      other_mod=found.message if found.other == mod_identity.OTHER_MOD else '')
     for index, (profile, name) in enumerate(accounts):
         values[f'profile_{index}'] = profile.name
         values[f'profile_name_{index}'] = name
@@ -264,15 +274,17 @@ def validate_choices(values, root, managed_root=None):
     mode = MODES.get(values.get('mode'))
     if mode is None:
         raise ValueError('Choose Update / repair, Full install or Shortcuts only.')
+    legacy = Path(values['backups']).expanduser().resolve() if values.get('backups') else None
+    found = mod_identity.survey(game, [target / 'setup-backups/game', legacy])
+    if found.other:
+        raise ValueError(found.message + ' No game or Steam files were changed.')
     if mode == 2 and not all((game / name).is_file() for name in (
-            'D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2rl-vrcam.dll',
-            'd2rloader/plugins/d2r_vr.ini', 'd2rloader/plugins/d2r_pcvr_plus_flat.ini')):
+            'D2RLoader.exe', mod_identity.RESHADE, mod_identity.OPENXR_LOADER, mod_identity.PLUGIN, mod_identity.SETTINGS, mod_identity.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini')):
         raise ValueError('Shortcuts only requires a complete installed mod. Choose Update / repair instead.')
     options = setup.launch_options(target / '.runtime/python/python.exe', target / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     routing = {} if store == 'steam' else {'store': store, 'python': target / '.runtime/python/python.exe',
                                           'wrapper': target / 'steamvr/launch_windows.py', 'runtime': runtime}
     setup.preflight_steam(profile, steam, game, options, connections, **routing)
-    legacy = Path(values['backups']).expanduser().resolve() if values.get('backups') else None
     check_backups(game, target, legacy)
     managed_state(target)
     return dict(manifest=manifest, store=store, version=version, headset=headset, connections=connections,
@@ -282,7 +294,9 @@ def validate_choices(values, root, managed_root=None):
 def check_backups(game, root, legacy=None):
     """Fail before helper files are copied if an existing install cannot be removed."""
     record = install.read_record(game)
-    if record.get('snapshots') or (game / uninstall.PLUGIN).is_file():
+    # This mod's plugin under either name; never D2R VR's d2rl-vrcam.dll.
+    if (record.get('snapshots') or (game / uninstall.PLUGIN).is_file()
+            or mod_identity.plugin_owner(game / mod_identity.LEGACY_PLUGIN) not in (None, mod_identity.OTHER_MOD)):
         roots = [root / 'setup-backups/game'] + [Path(name).parent for name in record.get('snapshots', [])]
         if legacy is not None:
             roots.append(legacy)
@@ -400,7 +414,7 @@ def removal_plan(root):
         if game.is_relative_to(root.resolve()) or root.resolve().is_relative_to(game):
             raise ValueError('The managed game path overlaps the helper folder.')
         record = install.read_record(game) or entry.get('receipt', {})
-        if (game / install.RECORD).exists() or (game / uninstall.PLUGIN).exists():
+        if (game / install.RECORD).exists() or mod_identity.survey(game, [root / 'setup-backups/game']).ours:
             detected, _ = storage_config(game)
             if detected != entry['store'] or not (game / 'D2R.exe').is_file():
                 raise ValueError('The recorded game folder no longer matches its installation. Keep the backups.')

@@ -38,10 +38,15 @@
 #include "../steamvr/native_panels.h"
 #include "../steamvr/spatial_ui.h"
 #include "../steamvr/callback_ticket.h"
+#include "../steamvr/native_hud.h"
+#include "../steamvr/attack_speed.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
 #include "panel_input.h"
+#include "render_resolution.h"
+#include "sigscan.h"
+#include "memory.h"
 #endif
 
 using namespace D2RL;
@@ -57,6 +62,88 @@ const ThreadService* g_threads = nullptr;
 // (OpenPanel / ClosePanel 'AutoMap', the same messages its own key sends), and
 // set by sending those messages ourselves (SetAutoMap) - no key, no button.
 const WidgetService* g_widgets = nullptr;
+framevr::nativehud::VisibilityOverride g_toolbarVisibility;
+#ifdef D2RVR_NATIVE_OPENXR
+void MaintainMapLayout(bool capture) {
+    // D2R 3.3.93787 native automap mode setter: 0 full, 1 left, 2 right.
+    // This updates transient map geometry only, not the saved options file.
+    constexpr uint64_t modeRva=0xd3d80;
+    constexpr uint8_t modeSig[]={0x48,0x83,0xec,0x28,0x83,0xf9,0x01,0x0f,0x94,0x05,0x47,0x70,0x95,0x02,
+        0x3b,0x0d,0x3c,0x70,0x95,0x02,0x74,0x1d,0x33,0xc0,0x85,0xc9,0x0f,0x95,0xc0,
+        0x89,0x05,0x2d,0x70,0x95,0x02};
+    static bool checked=false;
+    static framevr::wrist::MapLayoutLease layout;
+    if(!checked){if(!d2rsig::Check(modeRva,modeSig,sizeof modeSig))return;checked=true;}
+    int small=0;uint8_t left=0;
+    if(!framevr::ReadMemory(&small,reinterpret_cast<void*>(d2rsig::Addr(0x2a2add0)),sizeof small)||
+       !framevr::ReadMemory(&left,reinterpret_cast<void*>(d2rsig::Addr(0x2a2add5)),sizeof left)||small<0||small>1)return;
+    const int action=layout.Step(capture,small?(left?1:2):0);
+    if(action>=0)reinterpret_cast<void(*)(int)>(d2rsig::Addr(modeRva))(action);
+}
+using ToolbarUpdate=void(*)(void*);
+ToolbarUpdate g_originalToolbarUpdate=nullptr;
+void OnToolbarUpdate(void* panel) {
+    if(hud::NativeToolbarHidden()) {
+        uintptr_t widgets[2]{};
+        const bool readable=panel&&framevr::ReadMemory(widgets,
+            reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(panel)+0x170),sizeof widgets);
+        if(framevr::nativehud::DeferUpdate(true,readable,widgets[0],widgets[1])) {
+            static ULONGLONG told=0;const auto now=GetTickCount64();
+            if(!told||now-told>=5000) {
+                told=now;framevr::logging::Write("Frame HUD: deferred hidden toolbar update; notification widgets not ready");
+            }
+            return;
+        }
+    }
+    g_originalToolbarUpdate(panel);
+}
+bool ProtectToolbarUpdate() {
+    if(g_originalToolbarUpdate)return true;
+    // 3.3.93787: HUDPanel update. Validate its entry AND both unconditional
+    // widget reads; another build must match before we hide its native HUD.
+    constexpr uint8_t entry[]={0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x48,0x89,0x7c,0x24,0x20};
+    constexpr uint8_t reads[]={0x49,0x8b,0x87,0x70,0x01,0x00,0x00,0x44,0x38,0xb0,0x45,0x01,0x00,0x00,0x75,0x2e,
+        0x49,0x8b,0x87,0x78,0x01,0x00,0x00,0x44,0x38,0xb0,0x45,0x01,0x00,0x00,0x75,0x1e};
+    if(!d2rsig::Check(0x150177b,reads,sizeof reads))return false;
+    if(!d2rsig::Hook(0x1500fe0,entry,sizeof entry,reinterpret_cast<void*>(&OnToolbarUpdate),
+        reinterpret_cast<void**>(&g_originalToolbarUpdate)))return false;
+    framevr::logging::Write("Frame HUD: hidden toolbar notification guard installed");
+    return true;
+}
+// UI-thread-only refreshes; native menu handlers may rebuild/show HUDPanel.
+framevr::CallbackTicket g_toolbarTicket;
+bool g_toolbarUpdating=false;
+void MaintainToolbar(const PluginContext* ctx) {
+    if(g_toolbarUpdating||!g_widgets||!g_widgets->findPanel||!g_widgets->setWidgetVisible)return;
+    const bool hide=hud::NativeToolbarHidden()&&ProtectToolbarUpdate();
+    if(!hide&&!g_toolbarVisibility.hidden)return;
+    g_toolbarUpdating=true;
+    Widgets::WidgetHandle toolbar=0;
+    const bool found=g_widgets->findPanel(ctx,"HUDPanel",&toolbar)==Widgets::Result::Success&&toolbar;
+    const bool previous=g_toolbarVisibility.hidden;
+    g_toolbarVisibility.Update(hide,found,[&](bool visible){
+        return g_widgets->setWidgetVisible(ctx,toolbar,visible)==Widgets::Result::Success;
+    });
+    if(previous!=g_toolbarVisibility.hidden)framevr::logging::Write(g_toolbarVisibility.hidden?
+        "Frame HUD: native HUDPanel hidden for VR session":"Frame HUD: native HUDPanel visibility released");
+    g_toolbarUpdating=false;
+}
+void __cdecl RefreshToolbar(const PluginContext* ctx,void* token) noexcept {
+    if(g_toolbarTicket.Claim(reinterpret_cast<uintptr_t>(token))){MaintainToolbar(ctx);ReadNpcChoicesRect();}
+}
+void RefreshToolbarAfterMessage(const PluginContext* ctx) {
+    if(g_toolbarUpdating)return;
+    MaintainToolbar(ctx);
+    if(!hud::NativeToolbarHidden()||!g_threads||!g_threads->runOnUiThread)return;
+    // Also run after the native message handler, not only before it. Coalesce
+    // bursts of panel messages; retry if the loader discards queued work.
+    const auto now=GetTickCount64();
+    if(g_toolbarTicket.Expired(now,1000))g_toolbarTicket.Cancel();
+    const auto token=g_toolbarTicket.Start(now);
+    if(token&&g_threads->runOnUiThread(ctx,&RefreshToolbar,reinterpret_cast<void*>(token))!=Threads::Result::Success)
+        g_toolbarTicket.Claim(token);
+}
+#endif
 std::atomic<int> g_autoMap{0};
 std::atomic<uint64_t> g_menuMapAt{0};
 framevr::wrist::MapLease g_menuMapLease;
@@ -73,7 +160,13 @@ std::atomic<uint32_t> g_weapon{D2RVR_WEAPON_UNKNOWN};
 std::atomic<uint32_t> g_menu{0};
 std::atomic<uint32_t> g_menuEpoch{0};
 std::atomic<bool> g_journalOnly{false};
-std::atomic<bool> g_opaqueMenu{false},g_dialogueOnly{false};
+std::atomic<bool> g_opaqueMenu{false};
+std::atomic<bool> g_upperBandMenu{false};
+std::atomic<bool> g_npcChoices{false};
+std::mutex npcChoicesMutex;
+int32_t npcChoicesRect[4]{};
+uint64_t npcChoicesAt=0;
+std::atomic<bool> g_dialogueOnly{false};
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -289,6 +382,84 @@ bool IsShield(const std::string& code) {
     return std::find(g_shieldTypes.begin(),g_shieldTypes.end(),type)!=g_shieldTypes.end();
 }
 
+// Weapons.txt "speed" (WSM) and "wclass"/"2handedwclass" in an Items row, for
+// the melee attack cycle (attack_speed.h). Found like the two-handed flag: the
+// one place every probe weapon reads its known value. WSM values are normal-
+// tier bases from the Amazon Basin wiki ("Weapon speed"). A failed search
+// leaves the cycle unknown, and an unknown cycle never gates melee.
+int g_wsmOffset = -2, g_wsmWidth = 0;        // -2 not tried yet, -1 failed
+int g_wclassOffset = -1, g_wclass2Offset = -1;
+std::atomic<int> g_attackWeapon{-1}, g_attackWsm{0};
+int SignedAt(const uint8_t* p, int width) {
+    if (width == 4) { int32_t v; memcpy(&v, p, 4); return (int)v; }
+    if (width == 2) { int16_t v; memcpy(&v, p, 2); return (int)v; }
+    return (int)(int8_t)*p;
+}
+void CalibrateAttack() {
+    g_wsmOffset = -1;
+    if (!g_tables || g_typeOffset < 0) return;
+    static const struct { const char* code; int wsm; } kSpeed[] = {
+        {"ssd ", 0}, {"scm ", -20}, {"sbr ", -10}, {"flc ", 20}, {"lsd ", -10}, {"axe ", 10}, {"lax ", -10}, {"clb ", -10},
+        {"mst ", 10}, {"whm ", 20}, {"gma ", 20}, {"dgr ", -20}, {"bld ", -10}, {"spr ", -10}, {"clm ", 10}, {"bar ", 10}};
+    std::vector<std::pair<const uint8_t*, int>> speed;
+    uint32_t speedSize = UINT32_MAX;
+    for (const auto& k : kSpeed) {
+        uint32_t size = 0;
+        if (const uint8_t* r = ItemRow(Four(k.code), &size)) { speed.push_back({r, k.wsm}); speedSize = std::min(speedSize, size); }
+    }
+    std::vector<int> found;
+    int width = 0;
+    if (speed.size() >= 12)
+        for (int w : {4, 2, 1}) {   // whole ints first
+            for (uint32_t o = 0; o + w <= speedSize; o += w) {
+                bool all = true;
+                for (const auto& [row, wsm] : speed) if (SignedAt(row + o, w) != wsm) { all = false; break; }
+                if (all) found.push_back((int)o);
+            }
+            if (!found.empty()) { width = w; break; }
+        }
+    if (found.size() == 1) { g_wsmOffset = found[0]; g_wsmWidth = width; }
+    static const struct { const char* code; const char* wclass; } kClass[] = {
+        {"ssd ", "1hs"}, {"dgr ", "1ht"}, {"jav ", "1ht"}, {"spr ", "2ht"}, {"sst ", "stf"}, {"sbw ", "bow"}, {"lxb ", "xbw"}};
+    std::vector<std::pair<const uint8_t*, const char*>> classes;
+    uint32_t classSize = UINT32_MAX;
+    for (const auto& k : kClass) {
+        uint32_t size = 0;
+        if (const uint8_t* r = ItemRow(Four(k.code), &size)) { classes.push_back({r, k.wclass}); classSize = std::min(classSize, size); }
+    }
+    std::vector<int> places;
+    if (classes.size() == std::size(kClass))
+        for (uint32_t o = 0; o + 3 <= classSize; ++o) {
+            bool all = true;
+            for (const auto& [row, wclass] : classes) if (memcmp(row + o, wclass, 3) != 0) { all = false; break; }
+            if (all) places.push_back((int)o);
+        }
+    // "wclass" and "2handedwclass" sit side by side and agree for these probes.
+    if (places.size() == 1 || (places.size() == 2 && places[1] == places[0] + 4)) {
+        g_wclassOffset = places[0];
+        g_wclass2Offset = places.size() == 2 ? places[1] : -1;
+    }
+    char b[260];
+    snprintf(b, sizeof b, "gamestate: attack speed fields - WSM %s at 0x%X/%d (%d place(s) fit, %d probes); weapon class %s at 0x%X (%d place(s) fit)",
+             g_wsmOffset >= 0 ? "found" : "NOT found - WSM 0", g_wsmOffset >= 0 ? g_wsmOffset : 0, width, (int)found.size(), (int)speed.size(),
+             g_wclassOffset < 0 ? "NOT found - melee cycle unknown" : g_wclass2Offset >= 0 ? "found with its two-handed column" : "found",
+             g_wclassOffset >= 0 ? g_wclassOffset : 0, (int)places.size());
+    Log(b);
+}
+// The attack cycle's inputs for one hand's item: weapon class (-1 unknown) and
+// WSM (0 when the field is unknown). twoHands: a two-handed weapon in both.
+void AttackInputs(const std::string& code, bool twoHands, int& weapon, int& wsm) {
+    weapon = -1; wsm = 0;
+    uint32_t size = 0;
+    const uint8_t* row = code.size() == 4 ? ItemRow(Four(code.c_str()), &size) : nullptr;
+    if (!row) return;
+    const int column = twoHands && g_wclass2Offset >= 0 ? g_wclass2Offset : g_wclassOffset;
+    framevr::attackspeed::Weapon w{};
+    if (column >= 0 && (uint32_t)column + 3 <= size && framevr::attackspeed::FromCode(reinterpret_cast<const char*>(row + column), w))
+        weapon = (int)w;
+    if (g_wsmOffset >= 0 && (uint32_t)(g_wsmOffset + g_wsmWidth) <= size) wsm = SignedAt(row + g_wsmOffset, g_wsmWidth);
+}
+
 void Publish() {
     if (!g_state) return;
     g_state->weaponClass = g_weapon.load();
@@ -313,12 +484,15 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     g_player.store(havePlayer ? player : 0);
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
+    MaintainToolbar(ctx);
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
     const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
     // Keep native widget calls on this UI callback, never on the XR thread.
+    const bool capture=g_menuMapLease.Active(now,g_menu.load()!=0);
+    MaintainMapLayout(capture);
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
-    hud::MenuMapCapture(g_menuMapLease.Active(now,g_menu.load()!=0));
+    hud::MenuMapCapture(capture);
 #endif
     if(!havePlayer)g_menuOpenUntil=0;
     else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);
@@ -411,6 +585,15 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     if (KindOf(code[1]) != 0) two |= D2RVR_LEFT_WEAPON;   // a weapon in the left hand (KindOf: no shield, no quiver)
     g_two.store(two);
     g_from.store((uint32_t)from);
+    if (g_wsmOffset == -2 && g_typeOffset >= 0) CalibrateAttack();
+    {   // The melee attack cycle's weapon: nothing but shields in hand is hand-to-hand.
+        int weapon = -1, wsm = 0;
+        if ((code[0].empty() || IsShield(code[0])) && (code[1].empty() || IsShield(code[1])))
+            weapon = (int)framevr::attackspeed::Weapon::HandToHand;
+        else AttackInputs(code[from], (two & D2RVR_TWO_HANDS_ON) != 0, weapon, wsm);
+        g_attackWeapon.store(weapon);
+        g_attackWsm.store(wsm);
+    }
     {   // FNV-1a over both codes: a new grip for any change of what the hands hold
         uint32_t h = 2166136261u;
         for (const std::string* c : {&code[0], &code[1]}) {
@@ -440,6 +623,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     interactionstate::Capture();
 #endif
     ReadJournalRect();
+    ReadNpcChoicesRect();
 }
 
 std::set<std::string> g_panels;   // open panels, UI thread only
@@ -460,7 +644,7 @@ bool Has(const char* s, const char* part) {
     return false;
 }
 
-SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const SharedEvents::UiMessageEvent* e, void*) noexcept {
+SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, const SharedEvents::UiMessageEvent* e, void*) noexcept {
     if (!e) return SharedEvents::UiMessageAction::Continue;
     const char* target = e->target ? e->target : "";
     const char* command = e->command ? e->command : "";
@@ -479,6 +663,8 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
         else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) g_panels.erase(text);
         else if (!strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panels.clear();
         g_autoMap.store(g_panels.count("AutoMap") ? 1 : 0);
+        g_upperBandMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
+            [](const auto& name){return framevr::panels::UpperBand(name);}));
         g_opaqueMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
             [](const auto& name){return framevr::panels::OpaqueBackground(name);}));
         bool menu = false;
@@ -494,6 +680,12 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
         }
         g_dialogueOnly=dialogue&&!other;
         g_journalOnly=menus==1&&quest;
+        const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
+        if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
+        if(!strcmp(text,"NpcDialogPanel")||!strcmp(text,"ScrollSpeechPanel")) {
+            char b[200];snprintf(b,sizeof b,"Frame NPC transition: %s %s; choices=%d speech=%d choice_surface=%d modal_roots=%d",
+                command,text,int(g_panels.count("NpcDialogPanel")!=0),int(g_panels.count("ScrollSpeechPanel")!=0),int(npc),menus);Log(b);
+        }
         if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
             std::string list;
@@ -501,6 +693,15 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
             char b[300]; snprintf(b, sizeof b, "gamestate: menu %s (open: %.200s)", menu ? "OPEN" : "closed", list.c_str()); Log(b);
         }
     }
+#ifdef D2RVR_NATIVE_OPENXR
+    // Native AcceptChanges is observed even when the output dimensions stay
+    // unchanged. Do not listen to ResolutionChanged here: our own WM_SIZE
+    // recovery emits that event and would schedule another resize forever.
+    if(!strcmp(target,"OptionsPanelMessage")&&!strcmp(command,"AcceptChanges"))
+        framevr::resolution::OptionsApplied();
+    if(!strcmp(target,"PanelManager")||!strcmp(target,"HUDPanel")||
+       (!strcmp(target,"SystemMessage")&&!strcmp(command,"ResolutionChanged")))RefreshToolbarAfterMessage(ctx);
+#endif
     if (g_state) {
         strncpy_s(g_state->lastUi, key.c_str(), _TRUNCATE);
         Publish();
@@ -630,6 +831,8 @@ bool LeftShield() {return g_leftShield.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }
+int AttackWeapon() { return g_attackWeapon.load(); }
+int AttackWsm() { return g_attackWsm.load(); }
 bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
@@ -645,6 +848,34 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
 
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
+bool UpperBandMenuOpen(){return g_upperBandMenu.load();}
+bool NpcChoicesOnly(){return g_npcChoices.load();}
+void ReadNpcChoicesRect() {
+    if(!g_npcChoices.load()||!g_widgets||!g_widgets->getWidgetRect||!g_widgets->findPanel)return;
+    Widgets::WidgetHandle panel=0,border=0;Widgets::Rect root{},box{},child{};
+    if(g_widgets->findPanel(g_ctx,"NpcDialogPanel",&panel)!=Widgets::Result::Success||
+       g_widgets->getWidgetRect(g_ctx,panel,&root)!=Widgets::Result::Success)return;
+    box=root;
+    // DialogBorder includes the title, all available choices and the outline;
+    // the panel also contains a full-screen click catcher which is not content.
+    if(g_widgets->findWidget&&g_widgets->findWidget(g_ctx,panel,"DialogBorder",&border)==Widgets::Result::Success) {
+        if(g_widgets->getWidgetRect(g_ctx,border,&child)==Widgets::Result::Success&&child.width>0&&child.height>0)
+            box={root.x+child.x,root.y+child.y,child.width,child.height};
+    }
+    if(box.width<16||box.height<16||box.width>3840||box.height>2160||
+       box.x<0||box.y<0||box.x>8192||box.y>8192)return;
+    std::lock_guard lock(npcChoicesMutex);
+    if(!npcChoicesAt||npcChoicesRect[2]!=box.width||npcChoicesRect[3]!=box.height) {
+        char b[240];snprintf(b,sizeof b,"Frame NPC choices: native bounds %d,%d %dx%d; root %d,%d %dx%d; border %d,%d %dx%d",
+            box.x,box.y,box.width,box.height,root.x,root.y,root.width,root.height,child.x,child.y,child.width,child.height);Log(b);
+    }
+    npcChoicesRect[0]=box.x;npcChoicesRect[1]=box.y;npcChoicesRect[2]=box.width;npcChoicesRect[3]=box.height;npcChoicesAt=GetTickCount64();
+}
+bool NpcChoicesRect(int32_t out[4]) {
+    std::lock_guard lock(npcChoicesMutex);
+    if(!g_npcChoices.load()||!npcChoicesAt||GetTickCount64()-npcChoicesAt>650)return false;
+    std::copy_n(npcChoicesRect,4,out);return true;
+}
 bool DialogueOnly(){return g_dialogueOnly.load();}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;

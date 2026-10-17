@@ -21,7 +21,7 @@ calibration supersedes the legacy manual reach multiplier. Arm proportions are
 bounded to 0.65–1.6 of the rig's authored length. This measures controller reach,
 not full head-top height or fingertip wingspan.
 
-Measurements are saved atomically to the existing `d2r_vr.ini` on the settings
+Measurements are saved atomically to the existing `d2r_pcvr.ini` on the settings
 thread, with the same original-config backup, conflict checks and save status as
 the settings menu. The record is `[calibration] version=1`, `eye_height_m` and
 `arm_span_m`. Cancel leaves the previous calibration intact. A failed/conflicting

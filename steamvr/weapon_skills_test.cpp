@@ -1,5 +1,7 @@
 #include "gameplay.h"
 #include "melee_contact.h"
+#include "skill_pad.h"
+#include "body_tracking.h"
 #include "../vr/shield_pose.h"
 #include "../vr/native_skill_dispatch.h"
 #include <cassert>
@@ -16,6 +18,53 @@ struct Sim {
     void Draw(){in.trigger=1;Step();assert(out.bowDrawing);for(int i=0;i<10;++i){in.hand[0].p.z+=.04f;Step();}}
 };
 int main() {
+    {
+        // Shield contact -> XR reports -> native alternate-bank sequencer.
+        // Vary producer cadence and the phase of the game's 25 Hz polling.
+        // The former 65 ms gesture pulse was swallowed by bank preparation.
+        const int slot=skills::TriggerSlot(1);
+        for(int xrMs:{11,22,33,40})for(int phase=1;phase<=40;++phase) {
+            weaponskills::Pulse pulse;skills::SkillPad pad;
+            assert(pulse.Start(slot,weaponskills::Smite,-1,7,1.0));
+            int reported=-1,edges=0;uint16_t previous=0;uint32_t packet=0;
+            for(int ms=0;ms<300;++ms) {
+                if(ms%xrMs==0) {
+                    reported=pulse.Get(slot,weaponskills::Smite,-1,7,1.0+ms/1000.0);++packet;
+                }
+                if(ms>=phase&&(ms-phase)%40==0) {
+                    const auto buttons=pad.Poll(skills::Buttons(reported),skills::Alternate(reported),packet,1000+ms);
+                    if(buttons&&!previous) {++edges;pulse.Cancel();} // native completion
+                    previous=buttons;
+                }
+            }
+            assert(edges==1);
+        }
+        weaponskills::Pulse pulse;
+        assert(pulse.Start(slot,weaponskills::Smite,-1,7,1.0));
+        assert(pulse.Get(slot,weaponskills::Smite,-1,7,1.10)==slot);
+        assert(pulse.Get(slot,weaponskills::Smite,-1,8,1.11)==-1); // reassignment cancels
+        assert(pulse.Start(slot,weaponskills::Smite,-1,8,2.0));
+        assert(pulse.Get(slot,weaponskills::Smite,-1,8,2.181)==-1); // bounded, no queued cast
+        assert(pulse.Start(0,12,-1,9,3.0));
+        assert(pulse.Get(0,12,-1,9,3.066)==-1); // other gestures retain their duration
+    }
+    {
+        Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.selectedSkill=47;
+        s.in.bowSlot=4;s.in.bowSkill=12;s.in.bowOwner=-1;s.in.skillContext=7;s.Step(3);
+        s.Draw();s.in.trigger=0;s.Step();assert(s.out.nativeBowRelease&&s.out.skill==4&&s.engine.Selection()==0);
+    }
+    {
+        Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.selectedSkill=47;
+        s.in.bowSlot=4;s.in.bowSkill=12;s.in.skillContext=7;s.in.hand[0].p.x=.5f;s.Step(3);
+        s.in.trigger=1;s.Step();assert(s.out.skill==0&&!s.out.bowDrawing);
+        for(int i=0;i<10;++i){s.in.hand[0].p.x-=.05f;s.Step();assert(s.out.skill==0&&!s.out.bowDrawing);}
+        s.in.trigger=0;s.Step();assert(!s.out.nativeBowRelease);
+    }
+    {
+        Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.bowSlot=4;s.in.bowSkill=12;s.Step(3);
+        s.Draw();s.in.bowSlot=-1;s.in.bowSkill=-1;s.in.trigger=0;s.Step();
+        assert(!s.out.nativeBowRelease&&!s.out.bowRelease&&s.out.block);
+    }
     for(int id:{6,7,11,12,16,21,22,26,27,31}) {
         Sim s;s.Select(id);s.Draw();assert(s.out.skill==-1&&!s.out.attack&&!s.out.bowRelease);
         s.in.trigger=0;s.Step();assert(s.out.nativeBowRelease&&s.out.skill==2&&!s.out.bowRelease&&!s.out.attack);
@@ -76,6 +125,30 @@ int main() {
     }
     {
         using namespace skel::bow;
+        // A 60 cm authored arm used to stop a shield wrist well short of a
+        // real 85 cm reach. Check forward, lateral and raised targets against
+        // an independent two-segment solver, including calibration/model scale.
+        for(float units:{2.f,4.f,8.f})for(Vec direction:{Vec{0,0,1},Vec{1,0,0},Vec{0,1,0},Normalized(Vec{1,1,1})}) {
+            const Vec shoulder{.2f*units,1.4f*units,.1f*units};
+            const float upper=.32f*units,lower=.28f*units;
+            const Vec wanted=shoulder+direction*(.85f*units);
+            Vec oldTarget=wanted,elbow;
+            assert(body::Knee(shoulder,upper,lower,oldTarget,{0,-1,.2f},elbow));
+            assert(Length(oldTarget-wanted)>.24f*units); // reproduce the old limit
+            const float fit=skel::shield::ReachScale(shoulder,wanted,upper,lower);
+            Vec fittedTarget=wanted;
+            assert(body::Knee(shoulder,upper*fit,lower*fit,fittedTarget,{0,-1,.2f},elbow));
+            assert(Length(fittedTarget-wanted)<.0001f);
+            const Vec nearby=shoulder+direction*(.35f*units);
+            assert(skel::shield::ReachScale(shoulder,nearby,upper,lower)==1); // no permanent growth
+        }
+        assert(skel::shield::ReachScale({},{0,0,100},.3f,.3f)==2);
+        assert(skel::shield::ReachScale({},{NAN,0,0},.3f,.3f)==1);
+        assert(skel::shield::ReachScale({},{0,0,1},0,.3f)==1);
+        assert(skel::shield::ReachScale({},{0,0,1},INFINITY,.3f)==1);
+    }
+    {
+        using namespace skel::bow;
         auto bindWrist=Identity(),bindShield=Identity(),tracked=Identity(),result=Identity();
         Position(bindWrist,{2,1,0});Position(bindShield,{2,1.2f,.1f});
         bindShield.m[0]=-1; // the left attachment is allowed to be mirrored
@@ -83,6 +156,11 @@ int main() {
         assert(skel::shield::Follow(bindWrist,bindShield,tracked,result));
         assert(Length(Position(result)-(Position(tracked)+Vector(tracked,{0,.2f,.1f})))<.0001f);
         assert(Dot({result.m[0],result.m[1],result.m[2]},Cross({result.m[4],result.m[5],result.m[6]},{result.m[8],result.m[9],result.m[10]}))<0);
+        const auto original=result;
+        const Vec movement{.6f,.3f,-.7f};Position(tracked,Position(tracked)+movement);
+        assert(skel::shield::Follow(bindWrist,bindShield,tracked,result));
+        assert(Length(Position(result)-Position(original)-movement)<.0001f);
+        for(int i=0;i<12;++i)assert(std::fabs(result.m[i]-original.m[i])<.0001f); // no shield growth or rotation from reach
         bindWrist.m[0]=0;assert(!skel::shield::Follow(bindWrist,bindShield,tracked,result));
     }
     {

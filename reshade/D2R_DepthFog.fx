@@ -14,7 +14,7 @@
 // With the sky on, the fog fades into the sky's horizon instead of FogColor.
 //
 // vrcam joins ReShade as an add-on and sets every uniform each frame from
-// d2r_vr.ini [fog] and [sky] - the settings window's sliders. It also switches
+// d2r_pcvr.ini [fog] and [sky] - the settings window's sliders. It also switches
 // the technique on and off. Values typed into ReShade's own UI are overwritten
 // while vrcam is running.
 //
@@ -149,7 +149,7 @@ sampler2D HudMaskSmp { Texture = HudMaskTex; MinFilter = POINT; MagFilter = POIN
 sampler2D HudMaskOldSmp { Texture = HudMaskOldTex; MinFilter = POINT; MagFilter = POINT; };
 
 // Painted skies (tools/gen_sky.py, or any picture), one pair per act. vrcam sets
-// the file names as preprocessor definitions from d2r_vr.ini [sky] texture_* /
+// the file names as preprocessor definitions from d2r_pcvr.ini [sky] texture_* /
 // cap_* (bare names are looked for in reshade-shaders\Textures); a slot with no
 // picture keeps the act 1 files here and is never sampled. Pictures of another
 // size are scaled to the declared one.
@@ -283,14 +283,23 @@ texture2D SkyCap6Tex < source = D2R_SKYCAP_SNOW; > { Width = 1024; Height = 1024
 sampler2D SkyCap6Smp { Texture = SkyCap6Tex; AddressU = WRAP; AddressV = WRAP; };
 
 texture2D FogColorTex : COLOR;
-texture2D FogDepthTex : DEPTH;
+// Private depth channel adapted from natpoh/diablo2-vr-port 4b6284c (MIT, BodyWalkVR).
+texture2D FogDepthTex : D2RVR_DEPTH;
+texture2D FogDepthRsTex : DEPTH;
 sampler2D FogColorSmp { Texture = FogColorTex; };
 sampler2D FogDepthSmp { Texture = FogDepthTex; MinFilter = POINT; MagFilter = POINT; };
+sampler2D FogDepthRsSmp { Texture = FogDepthRsTex; MinFilter = POINT; MagFilter = POINT; };
+uniform bool OwnDepth < hidden = true; > = false;
 // The part of the depth buffer the game draws the scene into (vrcam, from the game's
 // viewport): 1 without an upscaler; DLSS draws at 0.5 - 0.67 of the screen into the top
 // left of a screen-size buffer, so every read of the depth goes through DepthAt (2026-10-08).
 uniform float2 DepthScale < hidden = true; > = float2(1.0, 1.0);
-float4 DepthAt(float2 duv) { return tex2Dlod(FogDepthSmp, float4(duv * DepthScale, 0, 0)); }
+float4 DepthAt(float2 duv) {
+    const float4 c = float4(duv * DepthScale, 0, 0);
+    return OwnDepth ? tex2Dlod(FogDepthSmp, c) : tex2Dlod(FogDepthRsSmp, c);
+}
+// under 16: no depth bound
+int DepthWidth() { return OwnDepth ? tex2Dsize(FogDepthSmp, 0).x : tex2Dsize(FogDepthRsSmp, 0).x; }
 
 void VS_Fullscreen(in uint id : SV_VertexID, out float4 pos : SV_Position, out float2 uv : TEXCOORD)
 {
@@ -1040,7 +1049,7 @@ sampler2D VoidFogTmpSmp { Texture = VoidFogTmpTex; AddressU = CLAMP; AddressV = 
 
 float PS_VoidFog(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 {
-    if (!FogOn || tex2Dsize(FogDepthSmp, 0).x < 16) return 0.0;
+    if (!FogOn || DepthWidth() < 16) return 0.0;
     const float2 duv = UpsideDown ? float2(uv.x, 1.0 - uv.y) : uv;
     const float down = UpsideDown ? -BUFFER_RCP_HEIGHT : BUFFER_RCP_HEIGHT;
     const float2 hit = FirstDepthBelowAt(duv, down);
@@ -1258,6 +1267,21 @@ float3 VoidGlowAt(float2 uv)
     return lerp(wide, close, saturate(g8.a * 4.0));
 }
 
+// Sky and added-ceiling composition estimate transparent effects' fog from
+// nearby scenery below them. This is not the effects' own depth.
+float ParticleFog(float2 uv, float2 duv)
+{
+    float t = saturate(tex2Dlod(VoidFogSmp, float4(uv, 0, 0)).x);
+    const float down = UpsideDown ? -BUFFER_RCP_HEIGHT : BUFFER_RCP_HEIGHT;
+    float dn = 0.0;
+    [unroll] for (int s = 1; s <= 4; ++s) {
+        const float d = DepthAt(duv + float2(0.0, down * exp2((float)s))).x;
+        dn = dn > 0.0 ? dn : d;
+    }
+    if (dn > 1e-6) t = max(t, FogAmount(dn));
+    return t;
+}
+
 float3 DepthFogWorld(float4 pos, float2 uv, int eye)
 {
     const float3 colour = tex2D(FogColorSmp, uv).rgb;
@@ -1269,22 +1293,26 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
     // dark speck of the ground. ReShade then binds a tiny empty texture, not a
     // screen-sized buffer. (Probing for empty depth low on the screen was wrong:
     // looking up, the sky is down there too, and the sky went out.)
-    if (tex2Dsize(FogDepthSmp, 0).x < 16) return colour;
+    if (DepthWidth() < 16) return colour;
 
     // The pixel's four neighbours. Where the drawn distance ends, the far
     // ground has single empty pixels (depth 0): each was taken for the void,
     // got the sky, and the sky showed through the fog as dots along the
     // horizon. The void is now only where the pixel AND its neighbours are
-    // empty; the fog takes the farthest of the five (reverse-Z: the smallest),
-    // which also drowns single near pixels the game's dithered transparencies
-    // leave in far ground.
+    // empty; the fog takes the farthest drawn sample (reverse-Z: the smallest
+    // positive depth), which also drowns single near pixels the game's dithered
+    // transparencies leave in far ground. Empty neighbours must not turn a
+    // nearby silhouette into full fog: that cut a black outline through effects
+    // drawn over the pillars behind Tyrael. With no drawn sample, keep zero.
     const float2 px = float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT);
     const float d1 = DepthAt(duv + float2(px.x, 0)).x;
     const float d2 = DepthAt(duv - float2(px.x, 0)).x;
     const float d3 = DepthAt(duv + float2(0, px.y)).x;
     const float d4 = DepthAt(duv - float2(0, px.y)).x;
     const float dNear = max(max(d, d1), max(max(d2, d3), d4));
-    const float dFar = min(min(d, d1), min(min(d2, d3), d4));
+    const float dFar = min(min(d > 0.0 ? d : dNear, d1 > 0.0 ? d1 : dNear),
+                           min(min(d2 > 0.0 ? d2 : dNear, d3 > 0.0 ? d3 : dNear),
+                               d4 > 0.0 ? d4 : dNear));
 
     float3 fogColour = FogColor;
     if (SkyOn || CeilOn) {
@@ -1380,16 +1408,7 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
             // the sky's none into the far ground at the horizon, and the foam along the
             // far water's edge stood out of the fog there (2026-10-05).
             float tf = 0.0;
-            if (FogOn && k < 0.999) {
-                tf = saturate(tex2Dlod(VoidFogSmp, float4(uv, 0, 0)).x);
-                const float down = UpsideDown ? -px.y : px.y;
-                float dn = 0.0;
-                [unroll] for (int s2 = 1; s2 <= 4; ++s2) {
-                    const float dd = DepthAt(duv + float2(0.0, down * exp2((float)s2))).x;
-                    dn = dn > 0.0 ? dn : dd;
-                }
-                if (dn > 1e-6) tf = max(tf, FogAmount(dn));
-            }
+            if (FogOn && k < 0.999) tf = ParticleFog(uv, duv);
             // Only what is clearly off black: the near-black spill the game leaves round
             // people and trees over the void, added in full, stood as a pale haze round
             // them (2026-10-05). k fades it in over the same 0.03..0.08 as the void test.
@@ -1410,6 +1429,19 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
         if (SkyOn && !FogFixed) fogColour = (SkyTex > 0.5 ? PaintedSky(fogDir) : SkyGradient(fogDir.y)) * SkyBrightness + dither;
     }
     if (!FogOn) return colour;
+
+    if (!SkyOn && !CeilOn && dNear <= 1e-6) {
+        // In unroofed interiors such as Tal Rasha's Chamber, zero depth belongs
+        // to the background, not to Tyrael's wings drawn over it. Fogging that
+        // whole pixel as infinitely far cut the wings to the pillars' outlines.
+        // Keep the background's original fog and the effect's native light.
+        // Borrowing distance from the ground below (ParticleFog) shaded columns
+        // of the same wing differently and changed its brightness at pillars.
+        // Without the effect's own depth, leave it at its authored brightness;
+        // actual drawn scenery still uses its distance in the path below.
+        if (ShowDistance) return 0.0;
+        return fogColour * FogAmount(dFar) + colour;
+    }
 
     // The depth smeared: the fog of a 3x3 grid FogBlur pixels apart, averaged
     // (the fog, not the depth - an empty pixel is "far", not a zero to average).
@@ -1766,7 +1798,7 @@ float DioramaCoverage(float2 uv, float d, int eye)
 float3 TableKey(float2 uv, int eye)
 {
     const float3 c = tex2D(FogColorSmp, uv).rgb;
-    if (!TableKeyOn || tex2Dsize(FogDepthSmp, 0).x < 16) return c;
+    if (!TableKeyOn || DepthWidth() < 16) return c;
     // The toolbar and the map drawn back (PS_GameHud, [hud_floor]) are never the void,
     // wherever bar_x / bar_y put them - over the room or past the board's edge: kept,
     // their dark lifted like the game's so the headset's key does not cut them.

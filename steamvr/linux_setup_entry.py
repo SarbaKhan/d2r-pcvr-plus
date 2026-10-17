@@ -60,7 +60,7 @@ def main():
         import plus_artwork
         assert len(plus_artwork.assets(root / 'artwork', list(setup_linux.NAMES))) == 3
         assert len(setup_linux.LANGUAGES) == 14
-        assert (root / 'bin/d2rl-vrcam.dll').is_file()
+        assert (root / 'bin/d2rl-pcvr.dll').is_file()
         assert (root / 'd2r_pcvr_plus_flat.ini').is_file()
         assert launch_linux.route(['/bin/true'], {}, {}) == (['/bin/true'], {}, None)
         print('Embedded runtime, installation modules and payload: OK')

@@ -451,6 +451,11 @@ uintptr_t Addr(uint64_t rva) {
 	return r ? g_base + r : 0;
 }
 
+bool NotInBuild(uint64_t rva) {
+	const int i = Index(rva);
+	return i >= 0 && g_resolved.load() && g_e[i].state.load() == Missing;
+}
+
 namespace {
 // Not where 3.3.93787 has it: the loader's own checks would compare the old bytes.
 bool Moved(int i) { return g_e[i].searched.load() || g_e[i].rva.load() != kSigs[i].rva; }

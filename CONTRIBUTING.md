@@ -70,6 +70,8 @@ run the relevant Python fixture tests, for example:
 .\deps\python\python.exe -m unittest discover -s steamvr -p launch_windows_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p battlenet_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p uninstall_windows_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p setup_native_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p mod_identity_test.py
 ```
 
 Report the commands you ran and any failures. Documentation-only changes
@@ -113,6 +115,11 @@ main-integrity ruleset. Do not disable protection to land a change.
 
 GitHub's live settings are authoritative. The intended configuration and
 maintenance notes are kept in [`.github/rulesets/`](.github/rulesets/README.md).
+
+Release tags matching `v*` are restricted to the repository owner. Future
+releases use GitHub release immutability: prepare a draft, attach and verify
+all assets, then publish. Published immutable assets require a new release
+version for corrections. Existing releases are not made immutable retroactively.
 
 ## Reporting problems and suggesting features
 

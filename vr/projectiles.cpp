@@ -11,6 +11,7 @@
 #include "logging.h"
 #include "combat.h"
 #include "bow.h"
+#include "crossbow.h"
 
 namespace gamestate {uint64_t LocalPlayer();}
 
@@ -19,6 +20,12 @@ namespace {
 constexpr uint64_t ClientRva=0x1B7760,ServerRva=0x5371A0,VelocityRva=0x342AE0;
 constexpr uint64_t ReleaseRva=0x771A10,RemoveReleaseRva=0x70DC70,OwnerRva=0x09A7B0;
 constexpr uint64_t ReleaseStorageRva=0x6E3CD0,RegistryRva=0x2677170;
+constexpr uint64_t TransformStorageRva=0x2035b0,TransformParentRva=0xe3a94c,InstanceEntitiesRva=0x7507f1;
+constexpr uint8_t TransformStorageSig[]={0x48,0x89,0x5c,0x24,0x20,0x56,0x57,0x41,0x56,0x48,0x83,0xec,0x40,0x48,0x8b,0xf9,0xe8,0x2b,0x83,0x00,0x00};
+constexpr uint8_t TransformParentSig[]={0x44,0x8b,0xb7,0xc0,0x00,0x00,0x00};
+constexpr uint64_t TransformStrideRva=0xe3a998;
+constexpr uint8_t TransformStrideSig[]={0x4c,0x69,0xc0,0xd0,0x00,0x00,0x00};
+constexpr uint8_t InstanceEntitiesSig[]={0x48,0x8b,0x44,0x24,0x68,0x0f,0x29,0xb4,0x24,0xd0,0x03,0x00,0x00,0x48,0x8b,0x48,0x10,0x48,0x8b,0x40,0x18,0x48,0x89,0x4d,0xb8};
 constexpr uint8_t ClientSig[]={0x89,0x54,0x24,0x10,0x55,0x57,0x41,0x55,0x41,0x57,0x48,0x8d,0x6c,0x24,0xc1};
 constexpr uint8_t ServerSig[]={0x40,0x55,0x57,0x41,0x56,0x48,0x8d,0x6c,0x24,0xc0,0x48,0x81,0xec,0x40,0x01,0x00,0x00};
 constexpr uint8_t VelocitySig[]={0x48,0x85,0xc9,0x74,0x55,0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x20};
@@ -68,9 +75,40 @@ struct Scope {
     }
     ~Scope(){creation=saved;}
 };
-uintptr_t Client(uintptr_t params,int flags) {Scope scope(params,0);return originalClient(params,flags);}
+// Read-only diagnostics at actual native missile creation, separate from the
+// earlier aim resolver. Do not claim a correct flight from the input ray alone.
+void ReportSpell(uintptr_t params,int side,uintptr_t created) {
+    uintptr_t owner=0;uint32_t missile=0,flags=0;int points[4]{};
+    if(!enabled.load()||!Read(params+0x20,missile)||missile==0||
+       !Read(params+8,owner)||!IsLocalOwner(owner))return;
+    static std::atomic<ULONGLONG> reported[2]{};
+    const auto now=GetTickCount64();auto before=reported[side].load();
+    if(now-before<1000||!reported[side].compare_exchange_strong(before,now))return;
+    if(!Read(params,flags)||!Read(params+0x24,points))return;
+    char line[240];snprintf(line,sizeof line,"Frame spell missile: %s id %u, flags %x, origin %d,%d target %d,%d, created %s",
+        side?"server":"client",missile,flags,points[0],points[1],points[2],points[3],created?"yes":"no");
+    framevr::logging::Write(line);
+}
+uintptr_t Client(uintptr_t params,int flags) {
+    std::array<uint8_t,0x98> adjusted{};framevr::crossbow::Launch bolt;
+    const bool crossbow=enabled.load()&&crossbowvr::Prepare(params,adjusted,bolt);
+    if(crossbow)params=reinterpret_cast<uintptr_t>(adjusted.data());
+    crossbowvr::BeginClient(crossbow?&bolt:nullptr);
+    Scope scope(params,0);const auto unit=originalClient(params,flags);
+    if(crossbow&&unit)bowvr::CrossbowClient(unit,bolt.flight);
+    crossbowvr::EndClient();ReportSpell(params,0,unit);return unit;
+}
 uintptr_t Server(uintptr_t game,uintptr_t params) {
+    std::array<uint8_t,0x98> adjusted{};
+    const int spell=bowvr::SpellParams(game,params,adjusted);
+    if(spell<0)return 0;
+    if(spell>0)params=reinterpret_cast<uintptr_t>(adjusted.data());
+    std::array<uint8_t,0x98> boltParams{};framevr::crossbow::Launch bolt;
+    const bool crossbow=enabled.load()&&!bowvr::DirectCrossbow()&&crossbowvr::Prepare(params,boltParams,bolt,true);
+    if(crossbow)params=reinterpret_cast<uintptr_t>(boltParams.data());
     Scope scope(params,1);const auto unit=originalServer(game,params);
+    if(crossbow)crossbowvr::ServerDone(bolt,unit&&bowvr::AdoptCrossbow(game,unit,bolt.flight));
+    ReportSpell(params,1,unit);
     if(unit)bowvr::Created(game,params,unit);
     return unit;
 }
@@ -106,15 +144,30 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 }
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
-    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&framevr::bowflight::BasicMissile(missile)) {
+    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&
+       (framevr::bowflight::BasicMissile(missile)||missile==31||bowvr::OwnsVisual(unit))) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
         if(EntityAlive(registry,entity)) {
             const auto storage=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(ReleaseStorageRva))(registry);
             const bool hasReleasePoint=HasComponent(storage,entity);
-            // This callback also visits the unit root. Only the release mesh
-            // may own the physical world transform; the root has no component.
-            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint);
+            // Arrows bind the release mesh; spells bind the actual root.
+            // Ice Bolt's child has no release component, so absence alone
+            // can bind that child and subtract its authored height twice.
+            bool root=false;
+            if(!framevr::bowflight::BasicMissile(missile)&&missile!=31) {
+                const auto transforms=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(TransformStorageRva))(registry);
+                root=VisualRoot(definition,transforms,entity,[](uintptr_t p,auto& value){return Read(p,value);});
+            }
+            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint,root);
+            if(missile==59) {
+                static std::atomic<unsigned> samples{0};
+                if(samples.fetch_add(1)<8) {
+                    char line[160];std::snprintf(line,sizeof line,"Frame Ice Bolt visual: entity=%u instance_root=%d release_component=%d owned=%d",
+                        entity,int(root),int(hasReleasePoint),int(physical));
+                    framevr::logging::Write(line);
+                }
+            }
             if(hasReleasePoint&&(physical||(missile==0&&direct.load()&&IsLocalOwner(owner)))) {
                 // Use the native removal operation, on the same renderer
                 // thread as initialization. The base arrow transform/heading
@@ -142,7 +195,11 @@ void Install() {
     if(velocityIn&&clientIn&&serverIn&&!speedHooksReady.exchange(true))
         framevr::logging::Write("Frame bow flight: client/server velocity hooks ready (local basic arrows only)");
     if(!releaseIn&&d2rsig::Check(OwnerRva,OwnerSig,sizeof OwnerSig)&&d2rsig::Check(RemoveReleaseRva,RemoveSig,sizeof RemoveSig)&&
-       d2rsig::Check(ReleaseStorageRva,StorageSig,sizeof StorageSig)) {
+       d2rsig::Check(ReleaseStorageRva,StorageSig,sizeof StorageSig)&&
+       d2rsig::Check(TransformStorageRva,TransformStorageSig,sizeof TransformStorageSig)&&
+       d2rsig::Check(TransformParentRva,TransformParentSig,sizeof TransformParentSig)&&
+       d2rsig::Check(TransformStrideRva,TransformStrideSig,sizeof TransformStrideSig)&&
+       d2rsig::Check(InstanceEntitiesRva,InstanceEntitiesSig,sizeof InstanceEntitiesSig)) {
         releaseIn=d2rsig::Hook(ReleaseRva,ReleaseSig,sizeof ReleaseSig,reinterpret_cast<void*>(&Release),reinterpret_cast<void**>(&originalRelease));
         if(releaseIn)framevr::logging::Write("Frame bow flight: native release-point handoff hook ready");
     }

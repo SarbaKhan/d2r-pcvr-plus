@@ -91,7 +91,7 @@ void SetCategories(const char* cats) {
 }
 
 #if D2RVR_FIRST_PERSON
-// [screen] menu_distance_m in the game's d2r_vr.ini (D2R VR Settings > UI: F4
+// [screen] menu_distance_m in the game's d2r_pcvr.ini (d2r_vr.ini before D2R PCVR 0.3.15) (D2R VR Settings > UI: F4
 // body): how far FlatVR is to push its screen while a panel is open in first
 // person, 0 = leave it. This plugin lives in BodyWalk, not beside the ini, so
 // the ini is found through the game's process: <game folder>\d2rloader\plugins
@@ -113,7 +113,7 @@ bool FindGameIni(wchar_t* out, size_t cap) {
         if (QueryFullProcessImageNameW(h, 0, path, &n)) {
             while (n && path[n - 1] != L'\\') --n;
             path[n] = 0;
-            for (const wchar_t* rel : {L"d2rloader\\plugins\\d2r_vr.ini", L"d2r_vr.ini"}) {
+            for (const wchar_t* rel : {L"d2rloader\\plugins\\d2r_pcvr.ini", L"d2r_pcvr.ini", L"d2rloader\\plugins\\d2r_vr.ini", L"d2r_vr.ini"}) {
                 if (wcslen(path) + wcslen(rel) + 1 > cap) continue;
                 wcscpy_s(out, cap, path);
                 wcscat_s(out, cap, rel);

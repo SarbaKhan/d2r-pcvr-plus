@@ -15,6 +15,7 @@ import setup_native as native
 import setup_windows as setup
 import steam_config as steam
 import install
+import mod_identity
 import uninstall_windows as uninstall
 
 LOCAL = '"UserLocalConfigStore" { "friends" { "PersonaName" "Player" } "Software" { "Valve" { "Steam" { "apps" { "2536520" { "LaunchOptions" "-original-option" } } } } } }'
@@ -85,15 +86,26 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_clean_game_always_outputs_empty_backup_folder(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             result = self.probe(root, app, game, client, saves)
             self.assertEqual(result['backup_required'], '0')
             self.assertEqual(result['backup_folder'], '')
 
+    def test_probe_reports_hdr_advice_without_changing_game_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            with patch.object(setup.hdr_check, 'query', return_value=[setup.hdr_check.Display('Fixture HDR', True)]):
+                result = self.probe(root, app, game, client, saves)
+            self.assertEqual(result['hdr_status'], 'on')
+            self.assertIn('Fixture HDR', result['hdr_warning'])
+            self.assertIn('Use HDR Off', result['hdr_warning'])
+            self.assertIn('continue setup', result['hdr_warning'])
+
     def test_probe_finds_complete_legacy_chain_from_steam_wrapper_with_unicode_and_spaces(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             game = self.steam_game(game, client)
             helper = root / 'old extracted 日本語 with spaces'
@@ -110,14 +122,14 @@ class NativeSetupTests(unittest.TestCase):
             self.assertEqual(result['backup_required'], '1')
             self.assertEqual(result['backup_folder'], str(folder.resolve()))
             chain = native.check_backups(game, app, Path(result['backup_folder']))
-            self.assertEqual([path for path, _ in chain], [original, upgrade])
+            self.assertEqual([path.resolve() for path, _ in chain], [original.resolve(), upgrade.resolve()])
             self.assertIn(game / 'ReShade.ini', uninstall.restore_plan(game, chain))
             self.assertFalse((game / install.RECORD).exists())
 
     def test_probe_finds_source_preview_and_managed_development_backup_roots(self):
         for location in ('source-preview', 'managed-development'):
             with self.subTest(location=location), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory).resolve()
+                root = Path(directory)
                 app, game, client, saves, profile, values = self.fixture(root)
                 source = root / 'downloaded installer'
                 folder = (source / 'd2r-pcvr-preview/setup-backups/game' if location == 'source-preview'
@@ -130,7 +142,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_explicit_snapshot_hint_includes_later_upgrades_and_beats_other_candidates(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             folder = root / 'chosen backup'
             original = self.snapshot(folder / '20260101', game, saves)
@@ -156,7 +168,7 @@ class NativeSetupTests(unittest.TestCase):
         cases += [('malformed-' + str(index), value) for index, value in enumerate(malformed)]
         for label, value in cases:
             with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory).resolve()
+                root = Path(directory)
                 app, game, client, saves, profile, values = self.fixture(root)
                 source = root / 'valid fallback'
                 self.snapshot(source / 'setup-backups/game/20260101', game, saves)
@@ -178,7 +190,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_probe_ignores_corrupt_candidates_and_rejects_distinct_valid_chains(self):
         for corrupt in (True, False):
             with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory).resolve()
+                root = Path(directory)
                 app, game, client, saves, profile, values = self.fixture(root)
                 game = self.steam_game(game, client)
                 source, old_helper = root / 'source', root / 'old helper'
@@ -201,7 +213,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_deduplicates_same_chain_discovered_by_source_and_launch_routing(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             game = self.steam_game(game, client)
             helper = root / 'old helper'
@@ -214,7 +226,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_probe_recovers_original_without_losing_a_recorded_upgrade_in_another_folder(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             game = self.steam_game(game, client)
             helper = root / 'original helper'
@@ -232,12 +244,12 @@ class NativeSetupTests(unittest.TestCase):
             self.assertEqual(result['backup_required'], '1')
             self.assertEqual(result['backup_folder'], str(folder.resolve()))
             chain = native.check_backups(game, app, Path(result['backup_folder']))
-            self.assertEqual([path for path, _ in chain], [original, upgrade])
+            self.assertEqual([path.resolve() for path, _ in chain], [original.resolve(), upgrade.resolve()])
             self.assertIn(game / 'ReShade.ini', uninstall.restore_plan(game, chain))
 
     def test_steam_wrapper_for_another_game_copy_is_not_used(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             self.steam_game(game, client)
             other = root / 'another Steam copy'
@@ -252,7 +264,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_battlenet_shortcut_discovery_requires_matching_icon_game_and_wrapper(self):
         for mismatch in ('none', 'icon', 'game', 'wrapper', 'truncated'):
             with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory).resolve()
+                root = Path(directory)
                 app, game, client, saves, profile, values = self.fixture(root, 'battlenet')
                 helper = root / 'old Battle.net 日本語 helper'
                 folder = helper / 'setup-backups/game'
@@ -264,8 +276,9 @@ class NativeSetupTests(unittest.TestCase):
                 entries = steam.decode_binary(shortcut)
                 item = entries['shortcuts']['0']
                 if mismatch == 'icon':
+                    item.pop('D2RPCVRPlusGame', None)  # legacy entry has no ownership tag
+                    item.pop('D2RPCVRPlusStore', None)
                     item['icon'] = str(root / 'other game/D2R.exe')
-                    item['D2RPCVRPlusGame'] = str(root / 'other game')
                 elif mismatch == 'game':
                     item['LaunchOptions'] = item['LaunchOptions'].replace(str(game), str(root / 'other game'))
                 elif mismatch == 'wrapper':
@@ -278,7 +291,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_adopted_backups_are_automatically_remembered_by_receipt_in_new_helper(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             source = root / 'old helper'
             folder = source / 'build-frame/backups'
@@ -299,7 +312,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_managed_receipts_keep_two_game_copies_and_same_named_snapshots_separate(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
+            root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             other = root / 'another game copy'
             for index, target in enumerate((game, other)):
@@ -317,6 +330,50 @@ class NativeSetupTests(unittest.TestCase):
                 chain = native.check_backups(target, app)
                 self.assertEqual([str(path) for path, _ in chain], expected)
                 self.assertEqual(Path(chain[0][1]['game']), target)
+
+    def test_d2r_vr_in_the_game_folder_stops_the_wizard_without_touching_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            plugin = self.put(game / mod_identity.LEGACY_PLUGIN, b'MZ D2R VR BodyWalk Game Link')
+            ini = self.put(game / mod_identity.LEGACY_SETTINGS, b'[mode]\nplatform=1\n')
+            result = self.probe(root, app, game, client, saves)
+            self.assertIn('D2R VR', result['other_mod'])
+            self.assertEqual(result['installed_mod'], '')
+            self.assertEqual(result['backup_required'], '0')
+            for mode in ('repair', 'full'):
+                with self.subTest(mode=mode), patch.object(setup, 'verify_release', return_value={'sha256': {}}):
+                    with self.assertRaisesRegex(ValueError, 'Remove D2R VR with its own uninstaller'):
+                        native.validate_choices({**values, 'mode': mode}, app)
+            self.assertEqual(plugin.read_bytes(), b'MZ D2R VR BodyWalk Game Link')
+            self.assertEqual(ini.read_bytes(), b'[mode]\nplatform=1\n')
+            self.assertEqual(list(app.iterdir()), [])
+
+    def test_old_release_under_old_names_is_offered_update_and_validates(self):
+        for recorded in (True, False):
+            with self.subTest(recorded=recorded), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root)
+                folder = root / 'old-zip/build-frame/backups'
+                original = folder / '20261001'
+                self.put(original / 'manifest.json', json.dumps(dict(game=str(game), saves=str(saves), previous_mod=False,
+                    installed=[str(mod_identity.LEGACY_PLUGIN), str(mod_identity.LEGACY_SETTINGS), str(install.RECORD)])).encode())
+                self.put(original / 'saves/Settings.json', b'{}')
+                self.put(game / mod_identity.LEGACY_PLUGIN, b'MZ old D2R PCVR ' + 'd2r_vr_icons'.encode('utf-16-le'))
+                self.put(game / mod_identity.LEGACY_SETTINGS, b'[body_calibration]\nheight=1.83\n')
+                if recorded:
+                    install.write_record(game, {'game': str(game), 'snapshots': [str(original)]})
+                hint = None if recorded else folder
+                result = self.probe(root, app, game, client, saves, backup_hint=hint)
+                self.assertEqual(result['other_mod'], '')
+                self.assertEqual(result['installed_mod'], 'd2r-pcvr')
+                values = {**values, 'mode': 'repair', 'backups': '' if recorded else str(folder)}
+                with patch.object(setup, 'verify_release', return_value={'sha256': {}}):
+                    self.assertEqual(native.validate_choices(values, app)['mode'], 0)
+                    if not recorded:
+                        # Without the old backup the plugin is not provably this mod's.
+                        with self.assertRaisesRegex(ValueError, 'did not install'):
+                            native.validate_choices({**values, 'backups': ''}, app)
 
     def test_probe_only_arguments_are_rejected_for_install_actions(self):
         with patch.object(sys, 'argv', ['setup_native.py', '--install', 'fixture.ini', '--backup-hint', 'backup']), \
@@ -506,8 +563,8 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_repeated_repair_preserves_calibration_and_keeps_one_managed_entry(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
-            calibration = self.put(game / 'd2rloader/plugins/d2r_vr.ini', b'calibrated player')
+            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            calibration = self.put(game / mod_identity.SETTINGS, b'calibrated player')
             values['mode'] = 'repair'
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Steam Frame',
                 connections=['steamvr'], steam=client, game=game, profile=profile, saves=saves,
@@ -516,7 +573,7 @@ class NativeSetupTests(unittest.TestCase):
                 self.assertEqual(kwargs['mode'], 0)
                 self.assertTrue(kwargs['hide_console'])
                 self.put(game / uninstall.PLUGIN, b'new plugin')
-                self.put(game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\n')
+                self.put(game / 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\n')
                 self.put(game / 'd2rloader/config/d2rloader.toml', b'text_locale=""\naudio_locale=""\n')
                 if not install.read_record(game).get('snapshots'):
                     snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
@@ -543,7 +600,7 @@ class NativeSetupTests(unittest.TestCase):
                 self.assertIn(str(game), command)
                 snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
                 self.put(game / uninstall.PLUGIN, b'new plugin')
-                self.put(game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\n')
+                self.put(game / 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\n')
                 self.put(game / 'd2rloader/config/d2rloader.toml', b'text_locale=""\naudio_locale=""\n')
                 install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
             with patch.object(setup, 'require_closed'), patch.object(setup, 'verify_release', return_value={'sha256': {}}), \
@@ -583,7 +640,7 @@ class NativeSetupTests(unittest.TestCase):
                 snapshot = args.backup_dir / 'fixture-failed-attempt'
                 (snapshot / 'saves').mkdir(parents=True)
                 shutil.copy2(args.saves / 'Settings.json', snapshot / 'saves/Settings.json')
-                plugin = Path('d2rloader/plugins/d2rl-vrcam.dll')
+                plugin = Path('mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll')
                 (snapshot / 'manifest.json').write_text(json.dumps(dict(game=str(args.game),
                     saves=str(args.saves), installed=[str(plugin)], previous_mod=False)))
                 (args.game / plugin).parent.mkdir(parents=True, exist_ok=True)
@@ -613,7 +670,7 @@ class NativeSetupTests(unittest.TestCase):
 
     def test_checksum_hashes_reach_wizard_and_log_without_game_changes(self):
         with tempfile.TemporaryDirectory() as directory:
-            app, game, client, saves, profile, values = self.fixture(Path(directory).resolve())
+            app, game, client, saves, profile, values = self.fixture(Path(directory))
             before = {path: path.read_bytes() for folder in (game, saves, profile)
                       for path in folder.rglob('*') if path.is_file()}
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Quest 3',

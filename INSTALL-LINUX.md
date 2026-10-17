@@ -40,7 +40,7 @@ Windows/Quest verification is in [steamvr/QUEST_TESTING.md](steamvr/QUEST_TESTIN
    ```sh
    python3 steamvr/install.py \
      --game "$HOME/.local/share/Steam/steamapps/common/Diablo II Resurrected" \
-     --plugin bin/d2rl-vrcam.dll --deps deps --download-deps
+     --plugin bin/d2rl-pcvr.dll --deps deps --download-deps
    ```
 
    The installer downloads checksum-pinned D2RLoader 1.3.1-beta and ReShade
@@ -129,7 +129,7 @@ native height fog, VSync off, DLSS off and non-temporal anti-aliasing. Fixed
 foveation uses a full-quality center and 2x2 peripheral shading on supported
 D3D12 VRS hardware; unsupported devices stay at full quality. This default uses
 a fixed center. To compare, set `[render] fixed_foveation=0` in
-`GAME/d2rloader/plugins/d2r_vr.ini`. Settings reload live.
+`GAME/mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini` (`d2rloader/plugins/d2r_vr.ini` up to 0.3.15). Settings reload live.
 
 Current source also includes an **experimental Steam Frame eye-tracking mode**,
 disabled by default and included in the v0.2 handoff packages. See
@@ -153,7 +153,7 @@ to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
 ## Troubleshooting and removal
 
 - **Square light patches that differ between eyes:** the latest development build
-  enables `[render] symmetric_projection=1` in `d2r_vr.ini` (reloads live).
+  enables `[render] symmetric_projection=1` in `d2r_pcvr.ini` (reloads live).
   This removed the reported waypoint patches in an initial Steam Frame test,
   with some image softness. Other scenes/headsets are unverified. Set 0 to
   restore the original projection; older preview binaries lack this option.
@@ -174,7 +174,7 @@ to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
   for `Couldn't start services.exe` / `Failed to open service manager`.
 - **No VR / flat view:** check the headset is connected and the correct OpenXR
   runtime is active. Read `GAME/d2rloader/logs/d2r-vr-frame.log`, the startup
-  `d2r-vr-vrcam.log`, and `GAME/ReShade.log`. Linux Proton logs are in the
+  `d2r-pcvr-vrcam.log` (`d2r-vr-vrcam.log` up to 0.3.15), and `GAME/ReShade.log`. Linux Proton logs are in the
   extracted folder's `build-frame/`. Share log excerpts with your agent.
 - **Menus:** click/focus the game window on the PC if pointer input is ignored.
 - **ReShade stays “Compiling”:** reinstall with `--download-deps` using the

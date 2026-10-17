@@ -146,11 +146,12 @@ and grab-to-mouth belt potions. Fresh installs set `[gameplay] motion_controls=1
 `0` for legacy button controls. See that document for cancellation rules and the distinction
 between gesture-triggered native attacks and physical collision combat.
 
-Hold **left grip**, then **click the left stick** to reset eye height to the
-current headset position. Use it after sitting down or standing up. It preserves
-heading and horizontal room movement; ordinary left-stick clicks still toggle
-the map. Release the stick before another reset. F11 also resets height as part
-of its full camera recenter, including horizontal position and facing.
+Hold **left grip**, then **click the left stick** to open or close the native
+inventory/character/skills menu. This works even when the runtime reserves the
+controller's menu button. A plain stick click still toggles that hand's wheel
+with motion controls enabled. Release the stick before another menu toggle.
+Reset eye height using **VR Settings > Reset eye height**. F11 also resets height
+as part of its full camera recenter, including horizontal position and facing.
 
 Each saved-game load calibrates from the current headset position at the first
 tracked, focused game frame, then recenters facing. Movement during launch is
@@ -379,7 +380,7 @@ The prioritized feature backlog and headset verification checklist live in
 [TASKS.md](TASKS.md), including UI, combat gestures and eye-tracked foveation.
 
 For a bounded performance capture, change `[debug] profile_capture` to a new
-positive integer in the installed `d2r_vr.ini` while gameplay is running. The
+positive integer in the installed `d2r_pcvr.ini` while gameplay is running. The
 next 360 valid stereo pairs record per-eye CPU spans, sampled mod callbacks,
 OpenXR wait/locate/input/acquire/copy/fence/release/submit spans, and optional
 D3D12 timestamps. The probes then become idle automatically. Use a stationary
@@ -507,7 +508,7 @@ include a UTC offset when analyzing logs away from the capture machine's timezon
 
 - Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,
-  `d2r-vr-vrcam.log`, remains for loader/startup messages. Live syscall sampling
+  `d2r-pcvr-vrcam.log` (`d2r-vr-vrcam.log` up to 0.3.15), remains for loader/startup messages. Live syscall sampling
   identified repeated main-thread `fsync()` waits on that old file during hitches.
   The new logger's concurrent-producer and shutdown-drain test passes in Proton.
   The user confirmed improved hitches after deployment. A subsequent 599-sample

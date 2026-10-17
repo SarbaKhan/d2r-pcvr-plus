@@ -26,6 +26,8 @@ void Resolve(const D2RL::PluginContext* ctx, bool rescan = false);
 uint64_t Rva(uint64_t rva);
 // The game's base + Rva(rva), or 0 when not found.
 uintptr_t Addr(uint64_t rva);
+// True after the signature search conclusively rejects this build; false while waiting for decryption.
+bool NotInBuild(uint64_t rva);
 
 // The loader's expected-byte check, hook and patch, at the address this build
 // has. Where it moved, bytes that move with the code (call targets,

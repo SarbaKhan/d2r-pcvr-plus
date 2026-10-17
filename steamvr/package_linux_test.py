@@ -11,20 +11,20 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
-    files = ['LICENSE', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'LINUX-SETUP.md', 'd2r_vr.ini',
+    files = ['LICENSE', 'docs/upstream-refresh-plus.md', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'LINUX-SETUP.md', 'd2r_pcvr.ini',
              'd2r_pcvr_plus_flat.ini', 'reshade/D2R_DepthFog.fx']
-    modules = ['launch_linux', 'linux_test', 'launch_plus', 'install', 'game_install',
+    modules = ['launch_linux', 'linux_test', 'launch_plus', 'install', 'game_install', 'mod_identity',
                'process_guard', 'prepare_icons', 'steam_assets', 'game_assets', 'casc_assets',
                'prepare_potions', 'potion_assets', 'vendor/bitknit']
     files += ['steamvr/' + name + '.py' for name in modules]
-    files += ['steamvr/vr_baseline.json', 'external/reshade/LICENSE.md', 'third_party/minhook/LICENSE.txt']
+    files += [ 'external/reshade/LICENSE.md', 'third_party/minhook/LICENSE.txt']
     for folder, pattern in [('steamvr/licenses', '*.txt'), ('reshade/sky', '*.png')]:
         files += [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / folder).glob(pattern))]
     files += ['artwork/manifest.json', 'artwork/README.md']
     files += ['artwork/' + mode + '/' + kind + '.png' for mode in ('flat', 'steamvr', 'wivrn', 'virtual-desktop')
               for kind in ('icon', 'cover', 'wide-cover', 'background', 'logo')]
     payload = {name: (ROOT / name).read_bytes() for name in files}
-    for name in ('d2rl-vrcam.dll', 'openxr-probe.exe'):
+    for name in ('d2rl-pcvr.dll', 'openxr-probe.exe'):
         payload['bin/' + name] = (ROOT / 'build-frame/windows-native' / name).read_bytes()
     manifest = {'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'status': 'CLI routes validated on CachyOS/Quest 2; new setup requires acceptance testing',

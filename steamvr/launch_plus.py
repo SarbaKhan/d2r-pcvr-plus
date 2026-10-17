@@ -9,14 +9,15 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import mod_identity
 
 
 def prepare(game, mode):
-    plugin = game / 'd2rloader/plugins'
-    for path in (game / 'D2R.exe', game / 'D2RLoader.exe', plugin / 'd2rl-vrcam.dll'):
+    plugin = game / mod_identity.PLUGIN.parent
+    for path in (game / 'D2R.exe', game / 'D2RLoader.exe', game / mod_identity.PLUGIN):
         if not path.is_file():
             raise ValueError(f'Missing installation file: {path}')
-    profile = plugin / ('d2r_pcvr_plus_flat.ini' if mode == 'flat' else 'd2r_vr.ini')
+    profile = plugin / ('d2r_pcvr_plus_flat.ini' if mode == 'flat' else mod_identity.SETTINGS.name)
     config = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
     if not profile.is_file():
         raise ValueError(f'Missing profile: {profile}')
@@ -26,7 +27,7 @@ def prepare(game, mode):
         raise ValueError('VR profile must have [mode] platform=1.')
     environment = os.environ.copy()
     environment['D2R_PCVR_PLUS_MODE'] = mode
-    return [str(game / 'D2RLoader.exe')], environment
+    return [str(game / 'D2RLoader.exe'), '-mod', mod_identity.MOD_NAME], environment
 
 
 def main(arguments=None):

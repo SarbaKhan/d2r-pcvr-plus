@@ -3,6 +3,10 @@
 namespace gamestate {
 bool JournalOnly();
 bool OpaqueMenuOpen();
+bool UpperBandMenuOpen();
+bool NpcChoicesOnly();
+bool NpcChoicesRect(int32_t out[4]);
+void ReadNpcChoicesRect(); // UI thread only
 bool DialogueOnly();
 bool JournalRect(int32_t out[4]);
 void ReadJournalRect(); // UI thread only
@@ -12,6 +16,12 @@ bool LayerFound();
 void DioramaHudFrame(bool active,int eye);
 uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height);
 void UiFrame(bool active,bool workspace,int eye);
+// Hide the native HUDPanel for the entire XR session, including menus/loading.
+// Per-eye gameplay cropping is separate so native menu content is not erased.
+void NativeSession(bool active);
+void NativeGameplay(bool active);
+void EndNativeEye();
+bool NativeToolbarHidden();
 // Menu map lease is maintained by the game's UI thread. Each XR pair must
 // capture a new native map before its texture can be submitted in either eye.
 void MenuMapCapture(bool active);

@@ -25,7 +25,9 @@
 #include "game_layout.h"
 #include "mat4.h"
 #include "deferred_draw.h"
+#include "monster_bars.h"
 #include "../sigscan/sigscan.h"
+#include "../pools/pools.h"
 
 #include <D2RLPlugin/api.h>
 
@@ -73,6 +75,7 @@ ReleaseCameraFn o_releaseCamera = nullptr;
 WorldToScreenFn o_worldToScreen = nullptr;
 UnitToScreenFn o_unitToScreen = nullptr;
 std::atomic<bool> g_stereoLabels{false};
+std::atomic<bool> g_showOrdinaryMobBars{false};
 thread_local uint32_t t_labelProjection=0;
 std::atomic<int> g_traceLabelEye{-1};
 std::atomic<uint32_t> g_traceLabelCount{0};
@@ -493,6 +496,19 @@ bool InstallMonsterDrawOrder() {
 #endif
 
 bool __fastcall HookUnitToScreen(void* context,void* unit,float* out,uint8_t above) {
+#ifdef D2RVR_NATIVE_OPENXR
+    const Frame& frame=Current();
+    if(monsterbars::Hide(t_stereoUiEye>=0&&frame.ourView&&frame.ourProj,
+        g_showOrdinaryMobBars.load(std::memory_order_relaxed),above!=0,
+        reinterpret_cast<uintptr_t>(unit),[](uintptr_t address,auto& value) {
+            return framevr::ReadMemory(&value,reinterpret_cast<void*>(address),sizeof value);
+        })) {
+        // Supply culled coordinates as well for callers that use the anchor
+        // even when native visibility is false (as the world projection does).
+        if(out){out[0]=-1000000.f;out[1]=-1000000.f;}
+        return false;
+    }
+#endif
     LabelAnchor anchor;anchor.previous=t_labelAnchor;t_labelAnchor=&anchor;
     ++t_labelProjection;
     const bool shown=Orig(o_unitToScreen)(context,unit,out,above);
@@ -605,7 +621,14 @@ bool Install(const D2RL::PluginContext* ctx) {
     if(cameraOk&&g_monsterDrawOrder.load()&&!InstallMonsterDrawOrder())
         framevr::logging::Write("Frame labels: draw-order signature checks failed; keeping native paint order");
 #endif
-    if(cameraOk&&g_stereoLabels.load()){
+    // Keep the unit-label hook available for live toggles, including when
+    // stereo anchor correction is disabled. Desktop calls remain unchanged.
+#ifdef D2RVR_NATIVE_OPENXR
+    const bool wantUnitLabels=true;
+#else
+    const bool wantUnitLabels=g_stereoLabels.load();
+#endif
+    if(cameraOk&&wantUnitLabels){
         const bool was=o_worldToScreen&&o_unitToScreen;
         const bool ok=Hook(WorldToScreen,&HookWorldToScreen,&o_worldToScreen)&&Hook(UnitToScreen,&HookUnitToScreen,&o_unitToScreen);
         if(ok&&!was){
@@ -622,6 +645,7 @@ bool Install(const D2RL::PluginContext* ctx) {
 
 void SetEnabled(bool on) { g_enabled.store(on); }
 void SetStereoLabels(bool on){g_stereoLabels.store(on);}
+void SetOrdinaryMobBars(bool show){g_showOrdinaryMobBars.store(show);}
 void SetMonsterDrawOrder(bool on){g_monsterDrawOrder.store(on);}
 void SetStereoUiEye(int eye){
 #ifdef D2RVR_NATIVE_OPENXR
@@ -691,6 +715,10 @@ void SetRenderRadius(int rooms) { drawdist::SetRadius(rooms); }
 int  GetRenderRadius() { return drawdist::Radius(); }
 bool  SetModelRadius(float units) { return drawdist::SetModelRadius(units); }
 float GetModelRadius() { return drawdist::ModelRadius(); }
+
+bool GrowPools(unsigned renderMb, unsigned entityMb, char* line, size_t lineSize) {
+	return pools::Grow(renderMb, entityMb, line, lineSize);
+}
 
 Status GetStatus() {
 	const Frame& f = Current();

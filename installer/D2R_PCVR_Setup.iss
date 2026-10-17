@@ -3,7 +3,7 @@
   #error PayloadDir must point to a verified native Windows package with its private Python runtime.
 #endif
 #ifndef ModVersion
-  #define ModVersion "0.1.2"
+  #define ModVersion "0.4.0"
 #endif
 #ifndef InstallerOutput
   #define InstallerOutput "Output"
@@ -36,6 +36,13 @@ CloseApplications=no
 RestartApplications=no
 UninstallDisplayName=D2R PCVR Plus (Windows Flat/VR mod)
 UninstallDisplayIcon={app}\.runtime\python\python.exe
+; The setup program's own file properties: D2R PCVR Plus (D2R PCVR), not D2R VR.
+VersionInfoVersion={#ModVersion}
+VersionInfoProductName=D2R PCVR Plus
+VersionInfoProductVersion={#ModVersion}
+VersionInfoCompany=D2R PCVR contributors
+VersionInfoDescription=D2R PCVR Plus setup (Diablo II reimagined for physical, immersive VR; D2R PCVR, based on D2R VR by BodyWalkVR, MIT)
+VersionInfoCopyright=MIT licence. D2R PCVR contributors; D2R VR (c) 2026 BodyWalkVR
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -52,6 +59,7 @@ Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new sho
 var
   EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage, KeyboardPage, TextPage, AudioPage: TInputOptionWizardPage;
   PathsPage, RuntimePage, BackupPage: TInputDirWizardPage;
+  HDRPage: TOutputMsgWizardPage;
   ProfileIDs: TStringList;
   PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition, BackupGame, PreferencesGame: String;
   SetupFailed, BackendBusy: Boolean;
@@ -62,12 +70,29 @@ begin
   Result := '"' + Value + '"';
 end;
 
+function IsSecurityBlock: Boolean;
+begin
+  Result := Pos('[PCVR_SECURITY_BLOCK]', LastOutput) > 0;
+end;
+
+function SecurityBlockMessage: String;
+begin
+  Result := 'Windows Security interrupted setup. To finish installing:'#13#10#13#10 +
+    '1. Open Windows Security > Virus & threat protection > Manage settings.'#13#10#13#10 +
+    '2. Temporarily turn Real-time protection Off.'#13#10#13#10 +
+    '3. Run this installer again and choose Update / repair.'#13#10#13#10 +
+    '4. Turn Real-time protection back On immediately afterward, even if setup does not complete.'#13#10#13#10 +
+    'Your saves and settings have been kept.';
+end;
+
 procedure BackendOutput(const S: String; const Error, FirstLine: Boolean);
 begin
   Log(S);
   if Trim(S) <> '' then LastOutput := S;
   if BackendBusy then begin
-    WizardForm.StatusLabel.Caption := Copy(S, 1, 180);
+    if IsSecurityBlock then
+      WizardForm.StatusLabel.Caption := 'Windows Security interrupted setup. Follow the steps shown to retry.'
+    else WizardForm.StatusLabel.Caption := Copy(S, 1, 180);
     WizardForm.StatusLabel.Update;
     SaveStringToFile(ExpandConstant('{app}\setup-last.log'), S + #13#10, True);
   end;
@@ -233,7 +258,9 @@ begin
   ModePage.Add('Full install with recommended settings (resets calibration)');
   ModePage.Add('Only configure Steam shortcuts (keep the installed mod)');
   ModePage.SelectedValueIndex := 1;
-  BackupPage := CreateInputDirPage(ModePage.ID, 'Locate an older installation backup',
+  HDRPage := CreateOutputMsgPage(ModePage.ID, 'Check HDR before playing',
+    'HDR can affect VR visuals', '');
+  BackupPage := CreateInputDirPage(HDRPage.ID, 'Locate an older installation backup',
     'Keep the original files available for removal',
     'Setup fills in a verified backup when it can find one. Otherwise select the original snapshot or its backup folder (usually setup-backups\game or build-frame\backups in the old mod folder). Setup will copy it into the helper folder and remember it for this game. If it is unavailable, cancel and keep the current installation.', False, '');
   BackupPage.Add('Original installation backup folder:');
@@ -263,7 +290,13 @@ begin
   end;
   Result := ((PageID = RuntimePage.ID) and not UsesSteamVR) or
             ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1)) or
+            ((PageID = HDRPage.ID) and (GetIniString('detected', 'hdr_warning', '', ProbeFile) = '')) or
             ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
+end;
+
+function InstalledHere: Boolean;
+begin
+  Result := GetIniString('detected', 'installed_mod', '', ProbeFile) = 'd2r-pcvr';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -297,12 +330,17 @@ begin
         PreferencesGame := PathsPage.Values[1];
       end;
       if RuntimePage.Values[0] = '' then RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
-      if FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then ModePage.SelectedValueIndex := 0
+      // Another VR mod (D2R VR) in this game folder: its files stay as they are and setup does not go on.
+      if Result and (GetIniString('detected', 'other_mod', '', ProbeFile) <> '') then begin
+        MsgBox(GetIniString('detected', 'other_mod', '', ProbeFile), mbError, MB_OK);
+        Result := False;
+      end;
+      // D2R PCVR already here (d2rl-pcvr.dll, or d2rl-vrcam.dll of a release up to 0.3.16): offer Update / repair.
+      if InstalledHere then ModePage.SelectedValueIndex := 0
       else ModePage.SelectedValueIndex := 1;
     end;
   end;
-  if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and
-      FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then
+  if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and InstalledHere then
     Result := MsgBox('Full install resets body calibration and applies recommended video settings. Continue?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   if CurPageID = BackupPage.ID then begin
     if not DirExists(BackupPage.Values[0]) then begin
@@ -347,7 +385,8 @@ var
   Connection: String;
 begin
   if ExpandConstant('{param:CONFIG|}') <> '' then begin
-    Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}');
+    Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}') + NewLine +
+      GetIniString('detected', 'hdr_warning', '', ProbeFile);
     Exit;
   end;
   Connection := ConnectionPage.CheckListBox.Items[ConnectionPage.SelectedValueIndex];
@@ -366,6 +405,8 @@ begin
   if BackupPage.Values[0] <> '' then Result := Result + 'Original backup location: ' + BackupPage.Values[0] + NewLine;
   Result := Result + NewLine +
     'Save and exit D2R, then fully exit Steam before installing. Use an offline character in VR.';
+  if GetIniString('detected', 'hdr_warning', '', ProbeFile) <> '' then
+    Result := Result + NewLine + NewLine + GetIniString('detected', 'hdr_warning', '', ProbeFile);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -373,8 +414,10 @@ begin
   Result := '';
   if ExpandConstant('{param:CONFIG|}') <> '' then ChoicesFile := ExpandConstant('{param:CONFIG|}')
   else WriteChoices;
-  if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then
-    Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
+  if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then begin
+    if IsSecurityBlock then Result := SecurityBlockMessage
+    else Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -388,20 +431,28 @@ begin
     end;
     if SetupFailed then begin
       Log('Game configuration did not complete. Helper files and backups are retained for repair.');
-      MsgBox(LastOutput + #13#10#13#10 + 'Setup did not complete. Your helper files and backups have been kept. See setup-last.log in ' + ExpandConstant('{app}') + ', then rerun Setup to repair.', mbError, MB_OK);
+      if IsSecurityBlock then MsgBox(SecurityBlockMessage, mbInformation, MB_OK)
+      else MsgBox(LastOutput + #13#10#13#10 + 'Setup did not complete. Your helper files and backups have been kept. See setup-last.log in ' + ExpandConstant('{app}') + ', then rerun Setup to repair.', mbError, MB_OK);
     end;
   end;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if CurPageID = HDRPage.ID then
+    HDRPage.MsgLabel.Caption := GetIniString('detected', 'hdr_warning', '', ProbeFile);
   if CurPageID = wpFinished then begin
     if SetupFailed then begin
-      WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR Plus setup needs attention';
-      WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
+      if IsSecurityBlock then begin
+        WizardForm.FinishedHeadingLabel.Caption := 'One more step to finish setup';
+        WizardForm.FinishedLabel.Caption := SecurityBlockMessage;
+      end else begin
+        WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR Plus setup needs attention';
+        WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
+      end;
     end else WizardForm.FinishedLabel.Caption :=
-      'Your shortcuts are ready in Steam. Use SteamVR, Virtual Desktop or Flat Screen with an OFFLINE character.'#13#10#13#10 +
-      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Plus Start menu folder.';
+      'Your shortcuts are ready in Steam. Use the matching Flat Screen, SteamVR or Virtual Desktop shortcut with an OFFLINE character.'#13#10#13#10 +
+      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the ' + ExpandConstant('{groupname}') + ' Start menu folder.';
   end;
 end;
 

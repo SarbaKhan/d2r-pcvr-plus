@@ -8,6 +8,7 @@ import sys
 from datetime import datetime, timezone
 
 from launch_plus import prepare
+import mod_identity
 
 ROOT = Path(__file__).resolve().parent.parent
 FLAGS = {'--plus-flat': 'flat', '--plus-steamvr': 'steamvr', '--plus-wivrn': 'wivrn'}
@@ -86,6 +87,8 @@ def route(arguments, config, environment):
             env['XR_RUNTIME_JSON'] = manifest
         env['PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES'] = '1'
     command[index] = str(game / 'D2RLoader.exe')
+    if not probe:
+        command += ['-mod', mod_identity.MOD_NAME]
     if probe:
         executable = ROOT / 'bin/openxr-probe.exe'
         if not executable.is_file():

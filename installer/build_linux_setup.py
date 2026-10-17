@@ -79,10 +79,10 @@ def main():
     if result.returncode != 17:
         raise ValueError('Frozen stock launcher smoke test failed')
     shutil.copy2(ROOT / 'LINUX-SETUP.md', bundle / 'README.md')
-    (bundle / 'build.json').write_text(json.dumps({'source_commit': commit, 'version': '0.2.3-preview',
+    (bundle / 'build.json').write_text(json.dumps({'source_commit': commit, 'version': '0.4.0-preview',
         'python': sys.version, 'packages': {p: importlib.metadata.version(p) for p in ('PySide6', 'PyInstaller')},
         'hardware_validation': 'Earlier CLI routes validated on CachyOS/Quest 2; Qt installation requires acceptance testing.'}, indent=2))
-    output = ROOT / 'dist-plus/D2R-PCVR-PLUS-Setup-0.2.3-Linux-x86_64.tar.gz'
+    output = ROOT / 'dist-plus/D2R-PCVR-PLUS-Setup-0.4.0-Linux-x86_64.tar.gz'
     output.parent.mkdir(exist_ok=True)
     with tarfile.open(output, 'w:gz') as archive:
         archive.add(bundle, arcname=NAME)

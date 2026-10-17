@@ -15,7 +15,7 @@ several seconds for the view to return. Reopen Video to see the actual
 | 3072 × 3072 | Fixed square preset | 5 |
 | 4096 × 4096 | Fixed square preset | 6 |
 
-The preference is `[render] vr_resolution` in `d2rloader/plugins/d2r_vr.ini`.
+The preference is `[render] vr_resolution` in `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini`.
 Missing or invalid values retain Desktop. Start with a moderate preset and
 increase only if frame timing permits. Independent sizes respect both eyes'
 OpenXR limits and the system's swapchain limits, with an additional cap of
@@ -77,7 +77,7 @@ sky or fog across nearby scenery. The private channel requires a matching
 color target, a current-eye binding and a known resource state. It clears
 stale/destroyed resources and suppresses depth effects if no suitable source
 is available. Desktop rendering retains ReShade's normal depth channel.
-Update both `d2rl-vrcam.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
+Update both `d2rl-pcvr.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
 together when testing this fix.
 
 Native inventory/character workspaces and the main menu fit inside their
@@ -98,20 +98,22 @@ placement and laser-to-pixel mapping. The owner found the first fitted-height
 candidate too small/far away; closer placement and visible-band centering
 await a fresh headset comparison.
 
-NPC choice menus use their live `NpcDialogPanel`/`DialogBorder` bounds to
-display a separate, eye-level region at the same 0.55 m distance. The region
-has four times the previous workspace's pixel pitch, preserving text aspect
-and remapping laser hits into the native dialogue coordinates. The adjustment
-applies only when NPC choices are the sole modal panel; trade, inventory,
-confirmations over shops and scrolling quest speech retain their existing
-surfaces. Missing/stale/invalid bounds retain the full native surface. Automated
-tests cover crop limits, magnification and laser mapping; live layout mapping
-and headset readability still need owner validation.
-The first NPC candidate incorrectly scaled live source-pixel bounds as authored
-HD coordinates, clipping the left side of Charsi's choices at 4096 square.
-The corrected crop uses the live pixels directly, with border padding. A
-regression fixture uses both rectangles captured in the owner's recording;
-the corrected visual result still awaits headset confirmation.
+NPC conversations retain the complete captured native canvas on Frame, Index
+and Touch controllers. The widget-based crop and its separate four-times
+magnification were removed after the owner saw only the right edge of the
+choices at 3072 square. The SDK's parent-local widget bounds cannot safely be
+treated as texture coordinates after a resize; a plausible in-bounds rectangle
+can still sample the wrong pixels. The complete canvas uses the existing
+uniformly fitted workspace and menu-distance setting. Both NPC choices and
+scrolling speech use the same upper-band offset, and changing between them
+keeps the room-space anchor while rearming pointer input.
+
+The laser uses that same fitted surface, offset and full source region.
+Regression coverage exercises both edges and interior choices at 1536, 3072
+and 4096 square, widescreen and portrait sizes, including a 3840x2160 desktop
+with a differently sized VR source. Sky/world visibility and merchant/journal
+policies remain independently controlled. Headset visibility and readability
+of the complete NPC surface still require owner verification.
 
 The native lighting depth reduction also assumes square tiles when calculating
 the row for a linear sample index. Its 32x20 grid has rectangular tiles at
@@ -126,6 +128,32 @@ is distributed. Failure to compile or create the replacement retains native
 lighting. Logs report both a matching pipeline and actual VR activation.
 
 ## Validation and remaining headset checks
+
+The native UI's client-size query also needs the applied VR dimensions. In
+3.3.93787, `0x6545d0` reads the physical client independently of `WM_SIZE`;
+UI root/safe-area sizing, layout globals and cursor bounds consume that value.
+With a 3840-wide desktop and a 3072-wide VR source, the character-selection
+list and outer inventory tabs can therefore fall outside the rendered texture.
+A hook guarded by the complete 48-byte query and seven UI call sites returns
+the applied VR width and a fitting widescreen height only to UI root/layout
+and cursor consumers. For example, a 3072-square world uses a 3072 x 1728 UI
+band at the top of its full-size texture. Feeding the full square height to
+the native UI triggered a text-rendering crash during startup in the first
+candidate; the fitted band also keeps font sizing in the native layout's
+aspect. The world source and laser-to-source coordinates remain full-size.
+Movie and other engine consumers retain their original dimensions. Before
+resize, after XR shutdown and in Desktop mode,
+it returns the original result. No global `GetClientRect` override is used.
+If the hook installs after the first resize, it queues one reflow on the window
+thread. Unsupported code retains the original query. The real-window fixture
+checks square/portrait sizes, pointer agreement, deferred reflow and restoration;
+the guards match a local 3.3.93787 code snapshot. The final combined candidate
+passed all 57 automated checks and launched with 3072-square SteamVR eye
+textures. A desktop capture shows the complete character-selection list and
+both outer menu edges; the process continued rendering normally. This probe
+used the native skip-logo-video launch option and did not enter a character.
+Headset edge visibility, inventory tabs, merchant/tooltips and laser selection
+still require testing with this candidate.
 
 Automated Windows fixtures cover runtime limits, invalid choices, asynchronous
 window resize/coalescing, physical-window preservation, desktop restoration,
@@ -172,12 +200,51 @@ physical and recommended dimensions; matching depth allocations; and the
 OpenXR session's actual eye size. A missing pointer hook or unavailable runtime
 limits retains the desktop path rather than enabling misaligned input.
 
+Native mouse messages also need conversion: `WM_MOUSEMOVE` and client-coordinate
+button events bypass `ScreenToClient`. They now use the same applied render
+dimensions as polled cursor positions. This prevents the laser's hover/click
+coordinates from remaining at desktop resolution after a VR resize. The mapping
+updates on the window thread when the resize is applied, including live preset
+changes; queued sizes are not used prematurely. Wheel messages retain their
+screen coordinates, captured drags retain signed coordinates outside the window,
+and other windows/Desktop mode remain native.
+
+The real-window pointer fixture checks event/poll agreement at center and edge
+targets and during an outside drag at 1536, 3072, 4096 and portrait dimensions,
+then checks Desktop restoration. All 56 focused native checks passed. Quest 3
+with Virtual Desktop/VDXR still needs a headset retest of Play/Create Character
+at 3K and after changing resolution. These checks do not establish headset
+validation.
+
+The Quest/VDXR retest showed that scaling mouse messages alone did not restore
+the bottom row. Native `SetCursorPosition` subsequently clamps X/Y using
+desktop width/height. At a 1440-high desktop, a button at source Y=1650 is
+unreachable regardless of the correct incoming event. Two audited size-query
+return sites now receive the full applied VR source for that clamp. Height
+uses a direct call; width tail-calls the query, so both the caller and tail
+jump are signature-checked. UI layout/font callers still receive only the
+widescreen band. Desktop mode retains the native bounds.
+
+The real-window fixture reproduces the desktop-height truncation and verifies
+bottom-row coordinates survive the corrected clamp after each live size
+change, with desktop restoration. The three added branch guards match the
+local 3.3.93787 code snapshot. All 56 focused checks pass; a new headset retest
+of the entire bottom row is required. The prior event-only build failed that
+headset scenario.
+
 Merchant trade/repair and gambling screens bypass UISwitcher. They now receive
 its upper widescreen-band height correction too, keeping the approved 0.55 m
 distance and existing scale. At 4096 square this lowers the full canvas by
 about 23.4 cm, centering the visible shop and inventory panes at eye height.
 The laser uses the same pose; tooltips and confirmations remain on the complete
-canvas. NPC choice crops and waypoint/journal placement are unchanged. The
+canvas. Waypoint/journal placement is unchanged. The
 October 13 20:22 recording confirms the previously high merchant placement;
 the correction still needs an offline headset check of trading, repairs,
 confirmation buttons and item dragging.
+
+## Release validation update (October 14)
+
+The owner confirmed the complete bottom row is now clickable on Quest 3 through
+Virtual Desktop/VDXR with the combined cursor-bounds build. The earlier failed
+mouse-event-only test above is retained as diagnostic history. This does not
+establish every resolution/runtime combination.

@@ -46,7 +46,7 @@ def main():
         p.error('Run configure first')
     if args.action == 'install':
         command = [sys.executable, str(ROOT / 'steamvr/install.py'), '--game', config['game'],
-                   '--plugin', str(ROOT / 'bin/d2rl-vrcam.dll'), '--deps', str(ROOT / 'deps'),
+                   '--plugin', str(ROOT / 'bin/d2rl-pcvr.dll'), '--deps', str(ROOT / 'deps'),
                    '--backup-dir', str(ROOT / 'installation-backups'), '--download-deps', '--preserve-settings']
         if config.get('saves'):
             command += ['--saves', config['saves']]

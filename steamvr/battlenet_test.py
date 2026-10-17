@@ -70,7 +70,7 @@ class BattleNetTests(unittest.TestCase):
             runtime.write_text('{}')
             args = [launch.BATTLENET_OPTION + str(bnet), launch.EXPERIMENTAL_OPTION,
                     '--frame-vr', launch.RUNTIME_OPTION + str(runtime)]
-            self.assertEqual(launch.prepare(args), ([str(bnet / 'D2RLoader.exe')], str(bnet)))
+            self.assertEqual(launch.prepare(args), ([str(bnet / 'D2RLoader.exe'), '-mod', 'D2R-PCVR'], str(bnet)))
             with patch.dict(os.environ, {'SteamAppId': '2536520', 'SteamGameId': '999', 'SteamOverlayGameId': '888', 'D2R_FIXTURE': 'keep'}):
                 environment = launch.launch_environment(args)
                 self.assertFalse(any(k.lower() in ('steamappid', 'steamgameid', 'steamoverlaygameid') for k in environment))

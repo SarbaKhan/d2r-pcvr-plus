@@ -24,8 +24,8 @@ class IntegrationTests(unittest.TestCase):
             fixture = setup_native_test.NativeSetupTests()
             app,game,client,saves,profile,_ = fixture.fixture(Path(tmp).resolve())
             shutil.copytree(ART, app/'artwork')
-            vr = fixture.put(game/'d2rloader/plugins/d2r_vr.ini', b'calibrated VR settings')
-            fixture.put(game/'d2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\ncustom=keep\n')
+            vr = fixture.put(game/'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini', b'calibrated VR settings')
+            fixture.put(game/'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini', b'[input]\nflat_layout=WASD\ncustom=keep\n')
             loader = fixture.put(game/'d2rloader/config/d2rloader.toml', b'text_locale=""\naudio_locale=""\ncustom=true\n')
             callback = []
             with patch.object(setup_windows,'require_closed'), patch.object(setup_windows,'run_installer') as installer:
@@ -146,8 +146,8 @@ class IntegrationTests(unittest.TestCase):
             fixture=setup_native_test.NativeSetupTests()
             app,game,client,saves,profile,values=fixture.fixture(root)
             values.update(connections='flat',mode='full')
-            flat=fixture.put(game/'d2rloader/plugins/d2r_pcvr_plus_flat.ini',b'[input]\nflat_layout=WASD\ncustom=keep\n')
-            vr=fixture.put(game/'d2rloader/plugins/d2r_vr.ini', b'original VR controls and panels')
+            flat=fixture.put(game/'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini',b'[input]\nflat_layout=WASD\ncustom=keep\n')
+            vr=fixture.put(game/'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini', b'original VR controls and panels')
             loader=fixture.put(game/'d2rloader/config/d2rloader.toml',b'text_locale="enUS"\naudio_locale="frFR"\ncustom=true\n')
             with patch.object(setup_windows,'verify_release',return_value={'sha256':{}}):
                 for language in prefs.LANGUAGES:

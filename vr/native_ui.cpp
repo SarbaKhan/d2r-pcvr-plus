@@ -16,14 +16,20 @@
 #include "controller_bindings.h"
 #include "skill_slots.h"
 #include "spell_aim.h"
+#include "spell_cast.h"
 #include "weapon_skills.h"
 #include "panel_input.h"
-namespace gamestate {uint32_t DataBank();}
+#include "spells.h"
+#include "bow.h"
+#include "../steamvr/attack_speed.h"
+namespace gamestate {uint32_t DataBank();bool MenuOpen();int AttackWeapon();int AttackWsm();uint32_t HandsKey();uint32_t WeaponSet();}
+namespace melee {void SetAttackCycle(uint64_t session,uint32_t milliseconds);}
 namespace nativeui {
 namespace {
 const D2RL::PluginContext* context=nullptr;
 const D2RL::LocalizationService* strings=nullptr;
 const D2RL::DataTableService* tables=nullptr;
+D2RL::Reimplementations::GetLevelIdFromUnitFn getLevelId=nullptr;
 std::map<int,std::string> names;
 bool ready=false;
 bool bindingReady=false;
@@ -51,7 +57,7 @@ bool BindingReady() {
     bindingReady=true;framevr::logging::Write("Frame skill editor: native assignment, clear and catalog readers verified");return true;
 }
 int Slot(int wheel) {
-    if(wheel<0||wheel>=8)return -1;
+    if(wheel<0||wheel>=framevr::skills::Count)return -1;
     return reinterpret_cast<int(*)(int,bool)>(d2rsig::Addr(abi::ButtonSlotRva))(
         framevr::skills::Buttons(wheel),framevr::skills::Alternate(wheel));
 }
@@ -76,7 +82,13 @@ std::string Name(int id) {
     std::snprintf(text,sizeof text,"Skill %d",id);return text;
 }
 }
-void Init(const D2RL::PluginContext* c){context=c;c->QueryService(&strings);c->QueryService(&tables);}
+void Init(const D2RL::PluginContext* c){
+    context=c;c->QueryService(&strings);c->QueryService(&tables);
+    const auto core=GetModuleHandleW(L"D2RCore.dll");
+    getLevelId=core?reinterpret_cast<D2RL::Reimplementations::GetLevelIdFromUnitFn>(
+        GetProcAddress(core,MAKEINTRESOURCEA(D2RL::Reimplementations::GetLevelIdFromUnitInfo.ordinal))):nullptr;
+    if(!getLevelId)framevr::logging::Write("Frame navigation: loader level accessor unavailable");
+}
 void Capture(framevr::interaction::Snapshot& s) {
     int reason=1;uintptr_t player=0;uint32_t id=0,clientId=0;
     struct Trace {
@@ -105,6 +117,35 @@ void Capture(framevr::interaction::Snapshot& s) {
     if(!combat::ObserveUiPlayer(player,s.session))return;
     if(!combat::LocalPlayerId(id))return;
     reason=5;if(id!=h[2])return;
+    // The supported loader accessor reads this live, identity-checked UI player.
+    // Copy its current table row/name on the UI thread every capture so warps,
+    // loading gaps and language changes cannot reuse a previous area's label.
+    {
+        const int level=getLevelId?getLevelId(reinterpret_cast<const void*>(player)):0;
+        D2RL::DataTables::RowView row{};row.structSize=sizeof row;
+        auto result=D2RL::DataTables::Result::Unavailable;
+        if(level>0&&tables&&tables->findRowById)
+            result=tables->findRowById(context,D2RL::DataTables::Bank(gamestate::DataBank()),
+                D2RL::DataTables::TableId::Levels,uint32_t(level),&row);
+        if(result==D2RL::DataTables::Result::Success)
+            s.location=framevr::navigation::ReadLocation(level,reinterpret_cast<uintptr_t>(row.row),row.rowSize,
+                [](uintptr_t p,auto& value){return Read(p,value);},
+                [](const char* key,char* text,uint32_t size){return strings&&strings->getStringByKey&&
+                    strings->getStringByKey(context,key,text,size,nullptr)==D2RL::Localization::Result::Success;});
+        // Trace changes, including unavailable data, so a layout/lookup failure
+        // can be distinguished from a loading gap without a memory dump.
+        static int previousLevel=-1;static uint32_t previousSize=0;static auto previousResult=result;
+        static framevr::navigation::Location previous;
+        if(previousLevel!=level||previousSize!=row.rowSize||previousResult!=result||previous!=s.location) {
+            previousLevel=level;previousSize=row.rowSize;previousResult=result;previous=s.location;
+            char line[420];std::snprintf(line,sizeof line,
+                "Frame navigation: level=%d bank=%u table_result=%u row_size=%u act=%d area=%s",
+                level,gamestate::DataBank(),uint32_t(result),row.rowSize,s.location.act,
+                framevr::navigation::AreaLabel(s.location));
+            framevr::logging::Write(line);
+        }
+    }
+    spellvr::Feedback(s.session,player,id,!gamestate::MenuOpen()&&(h[3]==1||h[3]==2||h[3]==3));
     auto stat=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(abi::StatRva));
     s.health=stat(player,6,0)/256.f;s.maxHealth=stat(player,7,0)/256.f;
     s.mana=stat(player,8,0)/256.f;s.maxMana=stat(player,9,0)/256.f;
@@ -128,6 +169,25 @@ void Capture(framevr::interaction::Snapshot& s) {
            Read(base+(e.level+1)*xp.rowSize,e.next))e.known=true;
         e.known=e.Valid();
     }
+    // Attack speed for free-swing melee (attack_speed.h): class, IAS from the
+    // player's items (ItemStatCost 93, item_fasterattackrate) and the weapon in
+    // hand. Skill speed (Fanaticism, Frenzy, Burst of Speed) and slows are not
+    // read yet. An unknown class or weapon gives cycle 0, which never gates.
+    {
+        const int weapon=gamestate::AttackWeapon(),wsm=gamestate::AttackWsm(),ias=stat(player,93,0);
+        const int frames=weapon>=0?framevr::attackspeed::Frames(int(h[1]),framevr::attackspeed::Weapon(weapon),ias,wsm):0;
+        melee::SetAttackCycle(s.session,framevr::attackspeed::Milliseconds(frames));
+        bowvr::SetCrossbowCycle(s.session,gamestate::HandsKey()^(gamestate::WeaponSet()<<30),
+            weapon==int(framevr::attackspeed::Weapon::Crossbow)?framevr::attackspeed::Milliseconds(frames):0);
+        static int told[5]={-2,-2,-2,-2,-2};
+        const int now[5]={int(h[1]),weapon,ias,wsm,frames};
+        if(!std::equal(now,now+5,told)) {
+            std::copy(now,now+5,told);
+            char line[220];std::snprintf(line,sizeof line,"Frame melee attack speed: class=%d weapon_class=%d ias=%d eias=%d wsm=%d -> %d frames (%u ms per landed hit)",
+                now[0],weapon,ias,framevr::attackspeed::Eias(ias),wsm,frames,framevr::attackspeed::Milliseconds(frames));
+            framevr::logging::Write(line);
+        }
+    }
     // Lookup asserts on a missing skill list during load/teardown. The
     // signature-checked accessor's +0x100 layout is guarded separately.
     uintptr_t skillList=0;
@@ -135,7 +195,16 @@ void Capture(framevr::interaction::Snapshot& s) {
     const int bank=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::ControllerBankRva))();
     if(bank!=0&&bank!=16)return;
     s.bindingBank=bank;
-    for(int i=0;i<8;++i) {
+    unsigned usedSlots=0;
+    for(int i=0;i<framevr::skills::Count;++i){
+        const int slot=Slot(i);
+        // A customized/unsupported controller layout must not alias two hand
+        // bindings. Leave the skill surface unavailable rather than edit/cast
+        // a different slot. Equipment, vitals and native menus remain usable.
+        if(slot<0||slot>=16||(usedSlots&(1u<<slot)))return;
+        usedSlots|=1u<<slot;
+    }
+    for(int i=0;i<framevr::skills::Count;++i) {
         const int slot=Slot(i);
         if(slot<0||slot>=16)continue;
         auto& skill=s.skills[i];
@@ -143,6 +212,9 @@ void Capture(framevr::interaction::Snapshot& s) {
         if(!framevr::interaction::ReadControllerBinding(d2rsig::Addr(abi::ControllerTableRva),bank,slot,
             [](uintptr_t p,auto& value){return Read(p,value);},binding))continue;
         int skillId=binding.skill;
+        // Keep the physical right-primary interaction safe for existing layouts.
+        // Explicit skill assignments replace it; clearing restores Interact.
+        if(i==8&&skillId<=0)skillId=357;
         // Preserve the native controller getter's combined Town Portal shortcut:
         // use a scroll when its base level is positive, otherwise the tome.
         if(skillId==359) {
@@ -164,10 +236,16 @@ void Capture(framevr::interaction::Snapshot& s) {
            Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile)) {
             skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
             skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
+            int16_t start=-1,secondary=-1;
+            uint8_t los=255;
+            if(Read(row+0x4c,start)&&Read(row+0x68,secondary)&&Read(row+0x231,los))skill.physical=skill.owner==-1&&los==0&&
+                framevr::spellcast::Candidate(h[1],skillId,start,serverFunction,missile,flags,secondary);
         }
         const auto name=Name(skillId);std::snprintf(skill.name,sizeof skill.name,"%s",name.c_str());
     }
     if(BindingReady()) {
+        auto& interact=s.catalog[s.skillCount++];interact.id=357;interact.known=interact.available=true;
+        std::snprintf(interact.name,sizeof interact.name,"Interact / pick up");
         uintptr_t node=0;bool valid=Read(skillList,node);
         unsigned visited=0;
         for(;valid&&node&&visited<256;++visited) {
@@ -196,12 +274,12 @@ void Capture(framevr::interaction::Snapshot& s) {
             const int order=std::strcmp(a.name,b.name);return order?order<0:a.owner<b.owner;
         });
     }
-    static uint64_t lastSession=0;static int lastBank=-1;static std::array<int,8> lastIds{};static unsigned lastDirected=0;
-    unsigned directed=0;std::array<int,8> ids{};
-    for(int i=0;i<8;++i){ids[i]=s.skills[i].known?s.skills[i].id:-2;if(s.skills[i].directed)directed|=1u<<i;}
+    static uint64_t lastSession=0;static int lastBank=-1;static std::array<int,framevr::skills::Count> lastIds{};static unsigned lastDirected=0;
+    unsigned directed=0;std::array<int,framevr::skills::Count> ids{};
+    for(int i=0;i<framevr::skills::Count;++i){ids[i]=s.skills[i].known?s.skills[i].id:-2;if(s.skills[i].directed)directed|=1u<<i;}
     if(lastSession!=s.session||lastBank!=bank||lastIds!=ids||lastDirected!=directed) {
-        char line[200];std::snprintf(line,sizeof line,"Frame wheel assignments: controller bank=%d skills=%d,%d,%d,%d,%d,%d,%d,%d directed=0x%02X",
-            bank,ids[0],ids[1],ids[2],ids[3],ids[4],ids[5],ids[6],ids[7],directed);
+        char line[240];std::snprintf(line,sizeof line,"Frame hand assignments: controller bank=%d skills=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d directed=0x%03X",
+            bank,ids[0],ids[1],ids[2],ids[3],ids[4],ids[5],ids[6],ids[7],ids[8],ids[9],directed);
         framevr::logging::Write(line);lastSession=s.session;lastBank=bank;lastIds=ids;lastDirected=directed;
     }
 }
@@ -210,8 +288,8 @@ bool Assign(const framevr::interaction::Request& r,const framevr::interaction::S
     const int slot=Slot(r.index);
     const int bank=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::ControllerBankRva))();
     if(slot<0||slot>=16||bank!=r.bank)return false;
-    bool left=false;
-    if(r.skill>=0) {
+    bool left=r.skill==357;
+    if(r.skill>=0&&r.skill!=357) {
         const int index=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::LocalIndexRva))();
         if(index<0||index>=8)return false;
         const auto player=reinterpret_cast<uintptr_t(*)(int)>(d2rsig::Addr(abi::ClientPlayerRva))(index);

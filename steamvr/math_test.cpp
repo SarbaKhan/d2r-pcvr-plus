@@ -36,7 +36,7 @@ int main() {
     const auto l=Vec{head.x-.032f,head.y,head.z}-origin;
     const auto r=Vec{head.x+.032f,head.y,head.z}-origin;
     Near(r.x-l.x,.064f);
-    framevr::HeightResetButton button;
+    framevr::GripStickButton button;
     auto expect=[](bool condition){if(!condition)std::exit(1);};
     // Actual Frame frusta: native light-bin reconstruction uses the projection
     // diagonal alone. Centered render frusta must enclose both recommended FOVs
@@ -73,14 +73,14 @@ int main() {
     expect(!inventory.Update(true)); // holding inventory cannot toggle repeatedly
     expect(!inventory.Update(false));
     expect(inventory.Update(true));
-    expect(button.Update(true,.8f)&&!button.MapPressed());
-    expect(!button.Update(true,.8f)&&!button.MapPressed());
-    expect(!button.Update(true,0)&&!button.MapPressed()); // grip released first
-    expect(!button.Update(false,0)&&!button.MapPressed());
-    expect(!button.Update(true,0)&&button.MapPressed()); // ordinary click
-    expect(!button.Update(true,.8f)&&button.MapPressed()); // grip after click
+    expect(button.Update(true,.8f)&&!button.PlainPressed());
+    expect(!button.Update(true,.8f)&&!button.PlainPressed());
+    expect(!button.Update(true,0)&&!button.PlainPressed()); // grip released first
+    expect(!button.Update(false,0)&&!button.PlainPressed());
+    expect(!button.Update(true,0)&&button.PlainPressed()); // ordinary click
+    expect(!button.Update(true,.8f)&&button.PlainPressed()); // grip after click
     button.Update(false,.8f);
-    expect(button.Update(true,.8f)&&!button.MapPressed()); // a fresh press
+    expect(button.Update(true,.8f)&&!button.PlainPressed()); // a fresh press
     PanelHit hit;
     expect(IntersectPanel({0,0,0},{0,0,-1},{0,0,-2},Yaw(0),2,1,hit));
     Near(hit.u,.5f);Near(hit.v,.5f);Near(hit.distance,2);

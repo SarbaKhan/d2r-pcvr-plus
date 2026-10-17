@@ -48,6 +48,6 @@ int main(){
         s.faces=0;s.Step();s.faces=1;Check(s.Step()==0,"fresh press after availability");
         s.trigger=std::numeric_limits<float>::quiet_NaN();Check(s.Step()==-1,"invalid modifier cancels");
     }
-    Check(Buttons(-1)==0&&Buttons(8)==0&&!Alternate(8),"invalid slots do not map to controls");
+    Check(Buttons(-1)==0&&Buttons(Count)==0&&!Alternate(Count),"invalid slots do not map to controls");
     std::puts("Quick cast: eight slots, native mappings, ownership, release, bank changes and interruption rearm passed");
 }

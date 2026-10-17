@@ -22,6 +22,57 @@ both hands without restarting; projectiles already in flight keep their original
 direction. Charged Bolt retains its native planar wandering in either mode.
 The saved preference is `[gameplay] planar_spell_aim=1` (or `0` for free aim).
 
+## Optional projectile aim assist
+
+In **VR Settings > Controls**, cycle **Projectile aim assist** through **Off**
+(the default), **Light**, and **Strong**, then press **Apply**. The saved setting
+is `[gameplay] projectile_aim_assist=0`, `1`, or `2`, respectively. This applies
+only to the five supported Sorceress hand spells above, independently for each
+hand. Bow, javelin and native fallback skills retain their existing aiming.
+
+Light permits up to four degrees of launch correction; Strong permits twelve.
+On an accepted cast, assist checks living hostile monster bodies within a
+12-metre ray reach and requires a clear path from the hand muzzle. A shot
+already intersecting an eligible body keeps its exact launch direction. Otherwise,
+Light aims halfway inside the body's radius; Strong aims at its axis, capped
+at the correction limit. This leaves more room for enemy movement than aiming
+at the edge, but does not predict movement or guarantee a hit. Assist favors
+a small correction into a nearby body, with a slight preference
+for the previous target during uninterrupted repeat casts. That preference
+never widens the angle or range limits and expires after 750 ms without a cast.
+Release, lifecycle and assignment changes reset it. Aim outside the assist
+range or away from eligible bodies and the shot keeps its original direction.
+
+Planar aiming permits horizontal corrections only, so a straight spell cannot
+be assisted into a body entirely below or above its launch height. Free aiming
+also permits a small vertical correction. Charged Bolt uses the target's ground
+footprint and adjusts the volley's heading, preserving native spread and
+wandering, with launch-only assistance even on Strong.
+
+For Fire Bolt, Fireball, Ice Bolt and Ice Blast, **Strong adds gentle homing**
+toward the one enemy selected at launch, including a directly aimed target.
+Steering is limited to 60 degrees/second, 45 degrees total, and 1.5 seconds.
+Planar shots stay horizontal; free-aim shots can also bend vertically. The
+projectile never acquires a different enemy after launch. Death, disappearance,
+loss of hostility, a blocked path, a teleport, or passing the target ends
+steering permanently; the projectile continues on its last heading. Normal
+wall/body collisions and native lifetime still apply. Turning your hand or
+casting from the other hand does not redirect an existing shot.
+
+Off uses free aim; Light remains launch-only. Neither assistance mode adds a
+movement lock, target indicator or changes to damage, mana costs and cadence.
+
+Target scanning is bounded and runs only after native cast acceptance, avoiding
+repeated scans while a held trigger is refused for insufficient mana or town
+restrictions. It reuses the existing native hostility, body and wall queries;
+no new native address hooks are required. Strong rechecks only its acquired
+enemy on each native missile tick, resolving its ID afresh without retaining
+a native target pointer. The collision bodies and launch-floor approximation
+still apply. There is no predicted lead, and neither mode guarantees a hit;
+enemies can evade the limited steering or leave the projectile's height.
+
+## Native casting and collision
+
 The native skill-start and skill-dispatch routines validate and consume mana
 on the game thread. Each hand supplies its own skill in a scoped selection;
 the original selection is restored before returning. No controller cast button
@@ -29,6 +80,19 @@ or native casting animation is sent for these supported spells. Each hand
 uses the ordinary Sorceress casting frames, including Faster Cast Rate. Two
 hands intentionally permit twice the single-hand throughput, at the combined
 native mana cost. There is no unlimited or free casting mode.
+
+An insufficient-mana attempt requests the character's normal localized spoken
+warning. A town-restricted spell requests the native "not in town" response,
+including when mana is also low. The native town and mana predicates are sampled
+while that hand's skill is selected, before native skill-start can clear it on
+refusal. Successful starts and unrelated refusals do not request a warning. Both hands
+share a coalesced notification, delivered to the current local client player
+on the UI thread. The game's speech routine retains its voice selection and
+75-tick repeat cooldown. Notifications expire after 500 ms and are discarded
+on a player/session mismatch or while a menu or death animation is active.
+Speech does not send a cast input, consume mana or change movement/cast timing.
+These optional native entry points are separately checked; an unsupported
+speech layout leaves hand casting available without this warning.
 
 Straight projectile flight shares the bow's swept body collision and conservative wall checks.
 Before native hit handling, the missile's actual position and room membership
@@ -79,17 +143,50 @@ all headings, vertical fallback, Charged Bolt eligibility and native path
 displacement, and visible emitter alignment. Existing bow, wheel and
 controller fixtures must also pass. These fixtures do not execute the injected
 game routines.
+The feedback fixture also checks refusal classification before selection is
+cleared, town priority, successful-start suppression, simultaneous failures,
+reason changes, held-input coalescing, expiry, menu/death cancellation,
+character/session changes and clock regression.
+
+The aim-assist fixtures cover angular limits across headings and pitches,
+unchanged direct shots, planar/free/ground targeting, corrected-path wall
+rejection, selection preference and its reset conditions, independent hands,
+and settings normalization, interaction and INI persistence. Follow-up fixtures
+cover sideways target movement, the wider Strong limit, homing versus straight
+flight, steering bounds, continuous positions through turns, visual heading,
+planar/free/ground behavior, and permanent loss of steering.
+The Windows build and all 57 checks passed; its settings layout was also
+inspected with the synthetic preview. The initial headset test reported
+Fireballs passing beside moving enemies even on Strong. Subsequent runtime
+logs confirmed launch corrections were applied, but that launch-only policy
+did not track enemy movement during flight. The gentle homing change still
+needs headset validation.
+
+The existing runtime log now includes `Frame spell assist` counters per hand:
+the sampled mode (0 Off, 1 Light, 2 Strong), casts, nearby bodies, bodies outside
+the launch height, eligible candidates considered for selection, paths blocked
+by terrain, direct shots, launch corrections, homing steps, ended homing tracks,
+and the last launch correction angle. These
+periodic diagnostics distinguish weak correction from a missing target or an
+unexpected setting without retaining native enemy pointers after launch.
 
 On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
 
 1. Assign Fireball to the right trigger and Charged Bolt to the left. Fire each
    separately, then together at different targets. Check mana deductions and
    the separate repeat intervals, including insufficient mana for both.
+   Exhaust mana and try each hand, then hold both: confirm the character's
+   mana voice plays without overlap or rapid repeats. Drink a mana potion and
+   confirm casting resumes immediately. In town, confirm the town restriction
+   voice plays with full or low mana instead of the mana warning. Allow the native
+   speech cooldown between attempts. Repeat while walking and with each supported
+   projectile spell. Audible behavior requires a live headset test.
 2. Walk forward, backward and sideways while casting. Physically rotate and
    snap-turn through all headings; tilt the controllers up and down. Check that
    straight projectiles stay level at the muzzle height, without snapping to
    cardinal headings; Charged Bolt stays on the floor even with a raised hand.
-   Old shots keep their trajectory.
+   Off/Light shots keep their trajectory; Strong shots can follow only the
+   enemy acquired at launch, independently of later hand/head movement.
    Turn Planar spell aiming Off, Apply, and check up/down fire from both hands;
    restore On and confirm new shots return to level flight. Reopen settings and
    restart to check that the chosen mode persists.
@@ -100,6 +197,17 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
    and change areas while holding a trigger. Confirm there are no delayed casts.
 5. Check Town Portal and unsupported skills through their existing native path;
    check bow and javelin flight and normal unmodded desktop play separately.
+6. Compare aim assist Off, Light and Strong against single and clustered enemies,
+   using both hands at different targets. Check direct shots, small misses,
+   deliberate shots away from enemies, walls, closed doors and room boundaries.
+   Repeat with planar aiming On/Off and enemies at different heights; confirm
+   Charged Bolt stays grounded. Check target changes after releasing a trigger,
+   opening a menu, changing skills and turning. Reopen settings and restart to
+   verify persistence. Record headset/runtime and edition with the results.
+7. On Strong, cast at enemies moving sideways and confirm a gentle visible
+   curve. Kill the target with the other hand, let it move behind a wall, and
+   fire past it: the old shot must not loop around or switch enemies. Compare
+   Light's straight flight and confirm Charged Bolt retains its native spread.
 
 Native behavior was investigated using the locally owned game's code and data,
 with the public [D2MOO research](https://github.com/ThePhrozenKeep/D2MOO) as a

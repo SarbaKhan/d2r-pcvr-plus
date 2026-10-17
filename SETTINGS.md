@@ -2,7 +2,7 @@
 
 `D2R_VR_Settings.exe` sits next to `D2R.exe` (Start menu: *D2R VR Settings*).
 Every change applies at once while the game runs; nothing needs a restart unless
-the label says so. The settings live in `d2rloader\plugins\d2r_vr.ini`.
+the label says so. The settings live in `mods\D2R-PCVR\d2rloader\plugins\d2r_pcvr.ini` (`d2rloader\plugins\d2r_vr.ini` up to 0.3.15; setup carries it over).
 
 Keys in the game: **F1 - F4** pick the view, **F12** goes to the next one,
 **F11** makes "straight ahead" wherever you are looking. In this program

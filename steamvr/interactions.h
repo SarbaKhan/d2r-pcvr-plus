@@ -1,8 +1,11 @@
 #pragma once
 #include "shoulder_swap.h"
+#include "skill_slots.h"
 #include "frame_math.h"
 #include "potion_pose.h"
 #include "wrist_hud.h"
+#include "hand_vitals.h"
+#include "navigation_info.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -28,15 +31,48 @@ inline Pose UprightBody(Pose head,Quat previousYaw={0,0,0,1}) {
 // Grip +/-Y is the thumb/knuckle edge, not either face of the wrist.
 // https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#semantic-path-grip-pose
 inline Vec WristNormal(Pose hand) {return math::Normalized(math::Rotate(hand.q,{-1,0,0}));}
-inline Pose WristPanel(Pose hand,Pose head) {
-    const Vec normal=WristNormal(hand);
+inline Vec PalmNormal(Pose hand) {return math::Normalized(math::Rotate(hand.q,{1,0,0}));}
+inline Pose HandFacePanel(Pose hand,Pose head,Vec normal,Vec offset) {
     // Keep the panel on the watch face, rotating only within that plane so
     // the text reads upright instead of sideways when the forearm is crossed.
     auto right=math::Cross(math::Rotate(head.q,{0,1,0}),normal);
     if(math::Dot(right,right)<.01f)right=math::Cross(math::Rotate(hand.q,{0,0,-1}),normal);
     right=math::Normalized(right);
-    return {hand.p+math::Rotate(hand.q,{-.055f,0,.06f}),
+    return {hand.p+math::Rotate(hand.q,offset),
         math::FromAxes(right,math::Cross(normal,right),normal)};
+}
+inline Pose WristPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,WristNormal(hand),{-.055f,0,.06f});}
+inline Pose PalmPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,PalmNormal(hand),{.055f,0,-.04f});}
+inline Pose VitalsPanel(Pose hand,Pose head,bool palm,float tiltDegrees=0) {
+    auto panel=palm?PalmPanel(hand,head):WristPanel(hand,head);
+    // Pitch about the readable panel's horizontal axis, keeping its center
+    // fixed. Positive tilt brings the top edge toward the viewer. Navigation
+    // retains the original hand-face plane and its existing spacing.
+    const float half=vitals::NormalizeTilt(tiltDegrees)*.00872664626f;
+    panel.q=math::Multiply(panel.q,{std::sin(half),0,0,std::cos(half)});
+    return panel;
+}
+constexpr float PalmWidth=.20f,PalmHeight=.10f;
+constexpr float WristWidth=.24f,WristHeight=.12f,WristMapSize=.24f;
+// Navigation uses one face and one layout for both the map and compass.
+// Reserve space for vitals only when they are displayed on that same face.
+inline Pose NavigationMapPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+    auto panel=palm?PalmPanel(hand,head):WristPanel(hand,head);
+    if(vitalsOnFace)panel.p=panel.p+math::Rotate(panel.q,{0,((palm?PalmHeight:WristHeight)+WristMapSize)*.5f+.01f,0});
+    return panel;
+}
+constexpr float WristCompassWidth=.24f,WristCompassHeight=.045f;
+inline Pose NavigationCompassPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+    auto panel=NavigationMapPanel(hand,head,palm,vitalsOnFace);
+    panel.p=panel.p+math::Rotate(panel.q,{0,(WristMapSize+WristCompassHeight)*.5f+.01f,0});
+    return panel;
+}
+constexpr float NavigationInfoWidth=WristCompassWidth;
+constexpr float NavigationInfoHeight=NavigationInfoWidth*navigation::Height/navigation::Width;
+inline Pose NavigationInfoPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+    auto panel=NavigationCompassPanel(hand,head,palm,vitalsOnFace);
+    panel.p=panel.p+math::Rotate(panel.q,{0,(WristCompassHeight+NavigationInfoHeight)*.5f+.006f,0});
+    return panel;
 }
 inline bool WristPresented(Pose hand,Pose head) {
     if(!Valid(hand)||!Valid(head))return false;
@@ -44,6 +80,17 @@ inline bool WristPresented(Pose hand,Pose head) {
     const float distance2=math::Dot(toward,toward);
     return distance2>.01f&&distance2<.75f*.75f&&
         math::Dot(WristNormal(hand),math::Normalized(toward))>.55f;
+}
+inline bool PalmPresented(Pose hand,Pose head,bool keeping=false) {
+    if(!Valid(hand)||!Valid(head))return false;
+    const auto toward=head.p-hand.p,normal=PalmNormal(hand);
+    const float distance2=math::Dot(toward,toward);
+    if(distance2<.15f*.15f||distance2>(keeping?.80f*.80f:.70f*.70f))return false;
+    // Face upward, toward the eyes, and stay in front of the player. A casting
+    // pose with the palm facing sideways or behind the head is not a reveal.
+    return normal.y>(keeping?.50f:.70f)&&toward.y>.10f&&toward.y<(keeping?.75f:.60f)&&
+        math::Dot(normal,math::Normalized(toward))>(keeping?.35f:.55f)&&
+        math::Dot(math::Rotate(head.q,{0,0,-1}),math::Normalized(toward)*-1)>(keeping?.35f:.50f);
 }
 enum class Owner { Combat, Wheel, Bottle, Holster, Journal, Rearm };
 enum class Potion { Unknown, Health, Mana, Rejuvenation, Antidote, Thawing, Stamina };
@@ -71,6 +118,38 @@ inline const char* PotionName(Potion type) {
     constexpr const char* names[]={"Unknown", "Health", "Mana", "Rejuvenation", "Antidote", "Thawing", "Stamina"};
     return names[unsigned(type)<=unsigned(Potion::Stamina)?unsigned(type):0];
 }
+// A released Health/Rejuvenation/Antidote/Thawing bottle flies in room metres and lands on the
+// world floor. Only its landing point leaves the engine; the game thread
+// decides whether it fell at the hireling's feet, and the native belt key's
+// mercenary use (not an item edit) gives the potion to the mercenary.
+// Launch speed is the PEAK hand speed in the last ThrowWindow before the grip
+// opens (the hand is already slowing by then), 1:1 with the real hand. Fast
+// samples are capped at ThrowMaxSpeed, never discarded; only tracking jumps
+// above ThrowGlitchSpeed are ignored.
+constexpr float ThrowGravity=9.81f,ThrowMinSpeed=1.4f,ThrowMaxSpeed=20.f,ThrowGlitchSpeed=30.f,ThrowClearOfBelt=.15f;
+constexpr double ThrowWindow=.12,ThrowMaxFlight=3.;
+// Potions the game itself lets a mercenary take from the belt with Shift.
+inline bool Throwable(Potion type) {
+    return type==Potion::Health||type==Potion::Rejuvenation||type==Potion::Antidote||type==Potion::Thawing;
+}
+inline double LandingTime(Vec p,Vec v,float floor) {
+    const double drop=double(p.y)-floor;
+    if(!std::isfinite(drop)||drop<=0||!std::isfinite(v.y))return -1;
+    const double t=(v.y+std::sqrt(double(v.y)*v.y+2*ThrowGravity*drop))/ThrowGravity;
+    return t>0&&t<=ThrowMaxFlight?t:-1;
+}
+inline Vec Ballistic(Vec p,Vec v,float t) {return p+v*t+Vec{0,-.5f*ThrowGravity*t*t,0};}
+// Stage-to-world frame of the current view (yaw only): world metres =
+// anchor + base * (room - origin). Walking, turning and recentering change it.
+// A thrown bottle lives in the world once released, so it is integrated in
+// world metres and only mapped back to room space for drawing.
+struct Stage {
+    bool known=false;
+    Vec origin{},anchor{};Quat base{0,0,0,1};
+    Vec World(Vec room) const {return anchor+math::Rotate(base,room-origin);}
+    Vec Room(Vec world) const {return origin+math::Rotate(math::Conjugate(base),world-anchor);}
+    bool operator==(const Stage&) const=default;
+};
 struct Belt {
     std::array<Item,4> items{}; // bottom first; native belt action uses bottom
     uint32_t revision=0;
@@ -82,17 +161,26 @@ struct Belt {
 struct Skill {
     int32_t id=-1,level=0,charges=-1;
     int32_t owner=-1;
-    bool known=false,available=false,directed=false,motion=false;
+    bool known=false,available=false,directed=false,motion=false,physical=false;
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };
+// The local hireling, sampled on the game thread during VR gameplay.
+struct Mercenary {
+    bool known=false;
+    float health=0,maxHealth=0;
+    uint32_t classId=0,unitId=0;
+    bool operator==(const Mercenary&) const=default;
+};
+constexpr float MercLowHealth=.5f; // cue threshold: below 50% life
+inline bool MercLow(const Mercenary& m) {return m.known&&m.maxHealth>0&&m.health>0&&m.health<m.maxHealth*MercLowHealth;}
 struct Snapshot {
     uint64_t session=0,at=0;
     uint32_t revision=0,activeSet=0;
     bool equipmentKnown=false,beltKnown=false;
     std::array<std::array<Item,2>,2> sets{};
     std::array<Belt,4> belt{};
-    std::array<Skill,8> skills{};
+    std::array<Skill,skills::Count> skills{};
     std::array<Skill,128> catalog{}; // currently owned, active (non-passive) skills
     uint32_t skillCount=0;
     int32_t bindingBank=-1;
@@ -100,19 +188,22 @@ struct Snapshot {
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
     wrist::Experience experience;
+    navigation::Location location;
     bool actionKnown=false;
     uint32_t actionMode=0;
+    Mercenary merc;
 };
 struct SkillCue {
     int slot=-1,id=-1,owner=-1;
     bool known=false,available=false,temporary=false,expanded=false,busy=false,motionUnavailable=false;
+    bool gesture=false;
     char name[64]{},hint[64]{};
     bool operator==(const SkillCue&) const=default;
 };
 inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
 }
-enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill };
+enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill, FeedMerc };
 enum class Result { None, Pending, Applied, Refused, Cancelled };
 struct Request {
     Action action=Action::None;
@@ -121,9 +212,13 @@ struct Request {
     Item item{};
     uint32_t revision=0;
     int skill=-1,skillOwner=-1,bank=-1,previousSkill=-1,previousOwner=-1;
+    // FeedMerc: the landing point in world metres (and room metres for
+    // diagnostics). The transport adds the rendered player and scale.
+    Vec point{},world{},player{};
+    float unitsPerMetre=0;
 };
 inline bool CanBind(const Snapshot& s,const Request& r,uint64_t now) {
-    if(!Fresh(s,r.session,now)||!s.bindingsEditable||r.index<0||r.index>=8||
+    if(!Fresh(s,r.session,now)||!s.bindingsEditable||r.index<0||r.index>=skills::Count||
        s.bindingBank!=r.bank||(r.bank!=0&&r.bank!=16)||s.skills[r.index].id!=r.previousSkill||
        s.skills[r.index].owner!=r.previousOwner)return false;
     if(r.skill==-1)return r.skillOwner==-1;
@@ -162,7 +257,7 @@ inline MenuBounds FooterBounds(int index,MenuPage page) {
 inline int FooterCell(int index,MenuPage page) {
     constexpr int tabs[]={9,12,10,11};return Editing(page)?9+index:tabs[index];
 }
-inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spells) {
+inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spells,int hand=-1) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)return -1;
     for(int i=0;i<FooterCount(page);++i)if(FooterBounds(i,page).Contains(u,v))return FooterCell(i,page);
     if(page==MenuPage::Map)return -1; // no invisible spells behind the map
@@ -178,6 +273,7 @@ inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spe
     if(r<.105f)return 8;
     if(r<.14f||r>.405f)return -1;
     float a=std::atan2(x,-y);if(a<0)a+=2*Pi;
+    if(hand>=0&&page==MenuPage::Spells)return int(std::floor((a+Pi/5)/(2*Pi/5)))%5;
     if(previous>=0&&previous<8) {
         const float difference=std::remainder(a-WheelPhase-previous*Pi/4,2*Pi);
         if(std::fabs(difference)<Pi/8+.035f)return page==MenuPage::Equipment&&previous==2?-1:previous;
@@ -194,21 +290,32 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
+    vitals::Location navigationLocation=vitals::Location::Wrist;
+    vitals::Location vitalsLocation=vitals::Location::Wrist;
+    float vitalsTilt=0;
+    bool criticalAlerts=false,leftCasting=false;
+    bool floorKnown=false; float floor=0; // room-space height of the world ground under the player
+    Stage stage{};
     Pose head{},hand[2]{};
+    Vec handVelocity[2]{}; bool velocityKnown[2]{}; // runtime-reported room-space m/s at the pose time
     float trigger=0,leftTrigger=0,grip[2]{};
-    int hover=-1;
+    int hover=-1,wheelHand=-1;
     Snapshot snapshot{};
     Reply reply{};
 };
 struct Output {
-    SkillCue cue{};
+    SkillCue cue{},leftCue{};
     Owner owner[2]{Owner::Combat,Owner::Combat};
     bool block=false,wheel=false,utility=false,map=false,stowed=false,wrist=false,cancelPending=false,critical=false,settings=false;
+    bool vitals=false,palm=false,navigation=false,navigationPalm=false;
+    int wheelHand=-1;
+    bool inventory=false;
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
     int feedback=0,feedbackHand=0;
     Result result=Result::None;
     Item bottleItem{};
     bool bottleEmpty=false,beltReady=false;
+    bool flying=false; Pose flight{}; Item flightItem{}; int flightColumn=-1; // thrown bottle, model pose
     Pose body{},belt[4]{},holster[2]{};
     Request request{};
     int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0;
@@ -217,8 +324,15 @@ struct Output {
 inline MenuPage Page(const Output& out) {
     return out.editor==2?MenuPage::EditSkills:out.editor?MenuPage::EditSlots:out.map?MenuPage::Map:out.utility?MenuPage::Equipment:MenuPage::Spells;
 }
-inline bool MapWanted(const Input& in,const Output& out,uint64_t now) {
+inline bool MenuMapWanted(const Input& in,const Output& out,uint64_t now) {
     return in.active&&out.wheel&&out.map&&!out.editor&&Fresh(in.snapshot,in.session,now);
+}
+inline bool NavigationWanted(const Input& in,const Output& out,uint64_t now) {
+    return in.active&&in.navigationLocation!=vitals::Location::Off&&out.navigation&&!out.wheel&&!out.settings&&
+        in.tracked[1]&&Fresh(in.snapshot,in.session,now);
+}
+inline bool MapWanted(const Input& in,const Output& out,uint64_t now) {
+    return MenuMapWanted(in,out,now)||NavigationWanted(in,out,now);
 }
 class Engine {
     Config config{};
@@ -232,22 +346,70 @@ class Engine {
     Vec holsterGrab{};
     Request held{},pending{};
     Result result=Result::None;
-    int editor=0,editSlot=-1,editPage=0,editBank=-1,choiceCount=0;
+    int editor=0,editSlot=-1,editPage=0,editBank=-1,choiceCount=0,lastWheelHand=-1;
     Skill previousBinding{};
     shoulder::Gesture shoulderSwap;
+    vitals::PalmReveal palmReveal;
     std::array<Skill,128> choices{};
-    void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;}
+    // p, v and q are in WORLD metres/orientation; stage is the latest frame
+    // used to draw it, kept through a brief loss of the view frame.
+    struct Flight {bool active=false;double start=0,land=0;Vec p{},v{};Quat q{0,0,0,1};int column=-1,hand=-1;Item item{};uint32_t revision=0;Stage stage{};} flight;
+    struct Motion {double at=0;Vec v{};};
+    std::array<Motion,32> motion{};unsigned motionNext=0;
+    Vec bottleWas{};bool bottleTracked=false;
+    void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;
+        bottleTracked=false;motion={};motionNext=0;}
+    // Fastest recent sample, capped in magnitude, keeping its direction.
+    bool PeakVelocity(double now,Vec& out) const {
+        float best=0;
+        for(const auto& m:motion) {
+            if(!m.at||now-m.at>ThrowWindow||m.at>now)continue;
+            const float s=std::sqrt(math::Dot(m.v,m.v));
+            if(s>best){best=s;out=m.v;}
+        }
+        if(best<ThrowMinSpeed)return false;
+        if(best>ThrowMaxSpeed)out=out*(ThrowMaxSpeed/best);
+        return true;
+    }
+    // Grip released with recent deliberate motion, away from the belt: launch.
+    // A slow or still release keeps the original behaviour (back to the belt).
+    bool Throw(const Input& in,bool fresh,Vec slot) {
+        Vec throwVelocity{};
+        if(spent||!in.floorKnown||!in.stage.known||!fresh||!SameBelt(in.snapshot,held)||!Throwable(PotionType(held.item.code))||
+           !PeakVelocity(in.time,throwVelocity))return false;
+        const auto& hand=in.hand[bottleHand];
+        const Vec p=potions::Center(hand.p,hand.q);
+        if(math::Dot(p-slot,p-slot)<ThrowClearOfBelt*ThrowClearOfBelt)return false;
+        // Release: freeze the bottle into the world. The floor under the
+        // player at release is the landing plane (yaw-only frame: heights map 1:1).
+        const auto& stage=in.stage;
+        const Vec worldP=stage.World(p),worldV=math::Rotate(stage.base,throwVelocity);
+        const double land=LandingTime(worldP,worldV,stage.anchor.y+(in.floor-stage.origin.y));
+        if(land<=0)return false;
+        flight={true,in.time,in.time+land,worldP,worldV,math::Multiply(stage.base,potions::HeldRotation(hand.q)),
+            bottle,bottleHand,held.item,held.revision,stage};
+        return true;
+    }
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;map=false;editSlot=-1;shoulderSwap.Reset();}
+    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;map=false;editSlot=-1;shoulderSwap.Reset();}
     MenuPage Page() const {return editor==2?MenuPage::EditSkills:editor?MenuPage::EditSlots:map?MenuPage::Map:utility?MenuPage::Equipment:MenuPage::Spells;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
     Output Step(const Input& in) {
-        Output out;
+        Output out;out.wheelHand=in.wheelHand;
         // Passive vitals need the left hand and head only. Combat/interactions
         // still require both hands; a resting/occluded right hand must not hide
         // a correctly presented watch or permit an input through the guard.
         out.wrist=in.active&&in.session&&in.tracked[1]&&std::isfinite(in.time)&&WristPresented(in.hand[1],in.head);
+        const bool palmAllowed=in.active&&in.tracked[1]&&(vitals::Palm(in.vitalsLocation)||vitals::Palm(in.navigationLocation))&&
+            !in.wheel&&!in.cancel&&!in.leftCasting&&in.leftTrigger<.2f&&in.grip[1]<.6f&&
+            !in.reservedLeft&&bottleHand!=1&&holsterHand!=1&&Fresh(in.snapshot,in.session,in.at);
+        const bool palm=palmReveal.Step(in.session,in.epoch,in.time,palmAllowed,
+            PalmPresented(in.hand[1],in.head),PalmPresented(in.hand[1],in.head,true));
+        out.palm=palm&&vitals::Palm(in.vitalsLocation);
+        out.vitals=out.palm||(out.wrist&&vitals::Wrist(in.vitalsLocation));
+        out.navigationPalm=palm&&vitals::Palm(in.navigationLocation);
+        out.navigation=out.navigationPalm||(out.wrist&&vitals::Wrist(in.navigationLocation));
         const bool trigger=in.trigger>(triggerWas?.2f:.55f);
         const bool grips[2]={in.grip[0]>.6f,in.grip[1]>.6f};
         const uint64_t now=in.at;
@@ -262,25 +424,28 @@ public:
             body=Valid(in.head)?UprightBody(in.head,body.q):Pose{};out.block=true;out.stowed=stowed;out.cancelPending=true;return out;
         }
         lastTime=in.time;
-        const bool triggerEdge=trigger&&!triggerWas;
+        const bool handChanged=in.wheelHand!=lastWheelHand;
+        if(handChanged){editor=0;editSlot=-1;map=utility=false;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
+        const bool triggerEdge=trigger&&!triggerWas&&!handChanged;
         const bool edges[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
         if(!in.wheel){wheelLatch=false;editor=0;map=false;editSlot=-1;}
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
-        if(in.cancel) {Drop();rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=false;editSlot=-1;}
+        if(in.cancel) {Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=false;editSlot=-1;}
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=result==Result::Applied?2:3;
                 out.feedbackHand=pendingHand;
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;
-                if(result==Result::Applied&&pending.action==Action::BindSkill&&editor){editor=1;editSlot=-1;}
+                if(result==Result::Applied&&pending.action==Action::BindSkill&&editor){editor=in.wheelHand>=0?0:1;editSlot=-1;}
                 pending={};
             } else if(in.time-pendingAt>1.5) {result=Result::Refused;resultAt=in.time;out.feedback=3;pending={};out.cancelPending=true;}
         }
         if(result!=Result::Pending&&in.time-resultAt>2.5)result=Result::None;
         const auto& stats=in.snapshot;
-        const bool low=fresh&&stats.vitalsKnown&&stats.health>0&&stats.maxHealth>0&&
+        const bool low=in.criticalAlerts&&in.vitalsLocation!=vitals::Location::Off&&
+            fresh&&stats.vitalsKnown&&stats.health>0&&stats.maxHealth>0&&
             (stats.health/stats.maxHealth<.25f||(in.spell&&stats.maxMana>0&&stats.mana/stats.maxMana<.10f));
         if(low&&in.time>=criticalAgain){criticalUntil=in.time+1.5;criticalAgain=in.time+10;out.feedback=4;out.feedbackHand=1;}
         if(!low)criticalUntil=criticalAgain=0;
@@ -313,10 +478,10 @@ public:
         if(wheel) {
             out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;
             owner[0]=owner[1]=Owner::Wheel;
-            if(editor&&fresh&&in.snapshot.bindingBank!=editBank){editor=1;editSlot=-1;editBank=in.snapshot.bindingBank;rearm=true;}
+            if(editor&&fresh&&in.snapshot.bindingBank!=editBank){editor=in.wheelHand>=0?0:1;editSlot=-1;editBank=in.snapshot.bindingBank;rearm=true;}
             if(!rearm&&triggerEdge&&pending.action==Action::None) {
                 if(editor==2) {
-                    if(in.hover==11){editor=1;editSlot=-1;}
+                    if(in.hover==11){editor=in.wheelHand>=0?0:1;editSlot=-1;}
                     else if(in.hover==9)editPage=std::max(0,editPage-1);
                     else if(in.hover==10)editPage=std::min(std::max(0,(choiceCount-1)/8),editPage+1);
                     else if(in.hover==8||(in.hover>=0&&in.hover<8&&editPage*8+in.hover<choiceCount)) {
@@ -335,12 +500,17 @@ public:
                         choices=in.snapshot.catalog;choiceCount=std::min<int>(in.snapshot.skillCount,choices.size());editor=2;
                     } else out.feedback=3;
                     rearm=true;
-                } else if(in.hover==11){editor=1;editBank=in.snapshot.bindingBank;editSlot=-1;map=false;out.map=false;utility=false;out.utility=false;rearm=true;}
+                } else if(in.wheelHand>=0&&in.hover==11){out.inventory=true;out.wheel=false;wheelLatch=true;rearm=true;}
+                else if(in.wheelHand>=0&&!utility&&!map&&in.hover>=0&&in.hover<5&&fresh&&in.snapshot.bindingsEditable){
+                    editSlot=skills::HandSlot(in.wheelHand,in.hover);editPage=0;editBank=in.snapshot.bindingBank;previousBinding=in.snapshot.skills[editSlot];
+                    choices=in.snapshot.catalog;choiceCount=std::min<int>(in.snapshot.skillCount,choices.size());editor=2;rearm=true;
+                }
+                else if(in.hover==11){editor=1;editBank=in.snapshot.bindingBank;editSlot=-1;map=false;out.map=false;utility=false;out.utility=false;rearm=true;}
                 else if(in.hover==10){out.settings=true;out.wheel=false;wheelLatch=true;rearm=true;}
                 else if(in.hover==12){map=true;out.map=true;utility=false;out.utility=false;rearm=true;}
                 else if(in.hover==9){utility=map?false:!utility;out.utility=utility;map=false;out.map=false;rearm=true;}
-                else if(!map&&in.hover==8) {out.select=-1;stowed=false;wheelLatch=true;out.wheel=false;rearm=true;out.feedback=1;}
-                else if(!map&&in.hover>=0&&in.hover<8&&(!utility||in.hover!=2)) {
+                else if(!map&&in.hover==8) {if(in.wheelHand<0)out.select=-1;stowed=false;wheelLatch=true;out.wheel=false;rearm=true;out.feedback=1;}
+                else if(!map&&in.hover>=0&&in.hover<8&&(in.wheelHand<0||utility)&&(!utility||in.hover!=2)) {
                     if(!utility) {
                         const auto& skill=in.snapshot.skills[in.hover];
                         if(!fresh||!skill.known||skill.available) {
@@ -357,15 +527,16 @@ public:
                     rearm=true;
                 }
             }
-            if(!editor&&!map&&utility&&!rearm&&edges[0]&&in.hover>=4&&in.hover<8) {
+            const int pointerHand=in.wheelHand>=0?1-in.wheelHand:0;
+            if(!editor&&!map&&utility&&!rearm&&!flight.active&&edges[pointerHand]&&in.hover>=4&&in.hover<8) {
                 const auto& b=in.snapshot.belt[in.hover-4];
                 if(fresh&&b.known&&b.count&&b.Next().handle) {
-                    bottle=in.hover-4;bottleHand=0;held={Action::Potion,0,session,now,bottle,b.Next(),b.revision};
-                    owner[0]=Owner::Bottle;wheelLatch=true;out.wheel=false;out.feedback=1;
+                    bottle=in.hover-4;bottleHand=pointerHand;held={Action::Potion,0,session,now,bottle,b.Next(),b.revision};
+                    owner[pointerHand]=Owner::Bottle;wheelLatch=true;out.wheel=false;out.feedback=1;out.feedbackHand=pointerHand;
                 }
             }
         } else if(bottle<0&&holster<0)owner[0]=owner[1]=Owner::Combat;
-        if(!wheel&&!in.quickCast&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&fresh) {
+        if(!wheel&&!in.quickCast&&!rearm&&bottle<0&&holster<0&&!flight.active&&pending.action==Action::None&&fresh) {
             float nearestHand=.095f;
             for(int h=0;h<2;++h) {
                 if(h==1&&in.reservedLeft)continue;
@@ -407,13 +578,41 @@ public:
         if(bottle>=0) {
             out.block=true;
             held.at=now;
-            if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
+            // Prefer the runtime's own controller velocity; fall back to the
+            // pose difference when the runtime does not report one.
+            const Vec handNow=in.hand[bottleHand].p;
+            if(in.velocityKnown[bottleHand]||bottleTracked) {
+                const Vec v=in.velocityKnown[bottleHand]?in.handVelocity[bottleHand]:(handNow-bottleWas)*(1/float(dt));
+                if(math::Dot(v,v)<=ThrowGlitchSpeed*ThrowGlitchSpeed){motion[motionNext]={in.time,v};motionNext=(motionNext+1)%motion.size();}
+            }
+            bottleWas=handNow;bottleTracked=true;
+            if(!grips[bottleHand]&&Throw(in,fresh,out.belt[bottle].p)) {Drop();rearm=true;out.feedback=1;out.feedbackHand=flight.hand;}
+            else if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
             else {
                 out.bottle=bottle;out.bottleHand=bottleHand;out.bottleItem=held.item;out.bottleEmpty=consumed;owner[bottleHand]=Owner::Bottle;
-                if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q)) {
+                if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q,drinkStart!=0)) {
                     if(!drinkStart)drinkStart=in.time;
-                    if(in.time-drinkStart>=.25&&request(Action::Potion,bottle,held.item,held.revision))spent=true;
+                    if(in.time-drinkStart>=.25&&request(Action::Potion,bottle,held.item,held.revision)){spent=true;pendingHand=bottleHand;}
                 } else drinkStart=0;
+            }
+        }
+        if(flight.active) {
+            if(in.stage.known)flight.stage=in.stage; // follow walking/turning for drawing only
+            if(in.time>=flight.land) {
+                // Landed: one exact-item request. A miss or a dead/absent
+                // hireling is refused natively-side and the bottle stays belted.
+                const float t=float(flight.land-flight.start);
+                const Request landed{Action::FeedMerc,0,session,now,flight.column,flight.item,flight.revision};
+                if(fresh&&SameBelt(in.snapshot,landed)&&request(Action::FeedMerc,flight.column,flight.item,flight.revision)) {
+                    pending.world=Ballistic(flight.p,flight.v,t);pending.point=flight.stage.Room(pending.world);
+                    out.request=pending;pendingHand=flight.hand;
+                } else out.feedback=3;
+                out.feedbackHand=flight.hand;flight={};
+            } else {
+                const float t=float(in.time-flight.start),spin=t*9.f; // tumble end over end
+                out.flying=true;out.flightColumn=flight.column;out.flightItem=flight.item;
+                const Quat world=math::Multiply(flight.q,{std::sin(spin*.5f),0,0,std::cos(spin*.5f)});
+                out.flight={flight.stage.Room(Ballistic(flight.p,flight.v,t)),math::Multiply(math::Conjugate(flight.stage.base),world)};
             }
         }
         out.stowed=stowed;out.result=result;

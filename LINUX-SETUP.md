@@ -1,9 +1,13 @@
-# D2R PCVR Plus — Linux Qt Setup (0.2.3 preview)
+# D2R PCVR Plus — Linux Qt Setup (0.4.0 preview)
 
 An English-language setup wizard for the Steam edition of Diablo II: Resurrected.
 The portable archive includes Python, Qt and the Windows mod DLL. You do not need
 to install Python, Qt development tools or a compiler. No Blizzard game binaries or archives are
 included. Promotional library artwork is credited in `artwork/README.md`. Native Steam and a working Proton installation are required.
+
+This integration uses upstream `772d337` and requires fresh headset acceptance.
+See [the integration report](docs/upstream-refresh-plus.md) for the new per-mod
+layout and deferred features.
 
 ## Supported scope
 
@@ -21,7 +25,7 @@ included. Promotional library artwork is credited in `artwork/README.md`. Native
 
 1. Install D2R through Steam, choose a working Proton version, launch it once,
    then exit. Keep the existing Proton prefix and Saved Games folder.
-2. Download the **D2R-PCVR-PLUS-Setup-0.2.3-Linux-x86_64** Actions artifact.
+2. Download the **D2R-PCVR-Plus-Upstream-Preview-Linux** Actions artifact.
    Extract the GitHub ZIP, then extract the `.tar.gz` inside it. Keep all files
    in the extracted folder together.
 3. Run `D2R-PCVR-Plus-Setup` from that folder (double-click it, or run
@@ -70,7 +74,7 @@ automatically: save them if you need to integrate them later.
 
 ## Preferences and updates
 
-- `d2rloader/plugins/d2r_pcvr_plus_flat.ini`: `[input] flat_layout=WASD` or `ZQSD`.
+- `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini`: `[input] flat_layout=WASD` or `ZQSD`.
 - `d2rloader/config/d2rloader.toml`: `text_locale` and `audio_locale`.
 - Languages: Default, English, German, Spanish (Spain), French, Italian, Korean,
   Polish, Russian, Chinese (Simplified), Chinese (Traditional), Spanish (Latin
@@ -216,7 +220,7 @@ backed up or relocated.
 - Confirm Flat mouse look on Wayland and the previously validated VR controls,
   panel placement and NPC dialogue menus. These still require the real machine.
 
-## Version 0.2.3: installation inside the game folder
+## Version 0.4.0: installation inside the game folder
 
 The complete launcher, bundled Python/Qt runtime, dependencies and setup files
 now live in `<game folder>/D2R-PCVR-Plus`. The review page shows this automatic

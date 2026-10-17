@@ -54,14 +54,16 @@ An equipped weapon remains held without continuously squeezing grip.
 |---|---|---|
 | Weapons | Reach to a holster, squeeze grip, pull the set into use | Holster highlight, item silhouette/name, then confirmed equipped set |
 | Skills/spells | Hold Left Y for an eight-slot wheel over the left palm; point right hand and click trigger to select | Actual skill name/icon, selected mode and availability |
-| Minimap | Hold Left Y and select **MAP** in the bottom tabs; **SPELLS** returns to skills | Larger native explored minimap; selected skill stays active; wrist retains vitals/XP |
+| Minimap + compass | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD > Minimap / compass location** | Current act and localized area name sit above the bronze bearing strip and map, independently of health/mana. Wrist is the default; Palm uses the same deliberate hold and casting guards as vitals. The center marker shows facing, N is map-up. The wheel's **MAP** tab remains available even when this display is Off |
 | Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
+| Show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first, outside menus/wheels | Holds native Show Items while both buttons are held, using the game's Alt range independently of aim. Release either to restore normal drop/hover labels; no cast or shot accompanies the combo. Names use **VR Settings > HUD > Loot label size** (default 45%, 20-150%); existing `[hud] labels_size` is preserved. They use stronger dark backing; item-quality colors remain. **VR Settings > Controls** lists the shortcut; stick clicks and native panel controls keep working |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
-| Health/mana | Look at the back of the left wrist, like checking a watch | Live life/mana orbs; brief low-health/low-mana cues otherwise |
+| Health/mana | Choose Wrist, Palm, Either, or Off and adjust **Health / mana tilt** in **VR Settings > HUD** | Tilt the hand-mounted vitals/XP panel from -60 to +60 degrees in 5-degree steps; Apply saves, 0 restores the original angle. Palm requires left palm upward in front of the eyes for 0.25 seconds, with left trigger/grip released and no left-hand cast. Vitals follow the hand; automatic low-resource popups/vibration are a separate opt-in, off by default |
 | Journal/map | Open Journal through the native tabbed game menu (Left X / Frame Left A) | Native quest status/text and tabs, readable at a comfortable size |
 
-Preserve Left X inventory, Left Grip + Left Stick Click height reset, ordinary
-Left Stick Click map, Right Stick Click weapon swap, and Right A interaction.
+With current dual-hand controls, Left Grip + Left Stick Click opens the
+native inventory menu; plain stick clicks toggle the corresponding wheel.
+Height reset remains available in VR Settings. Right A defaults to interaction.
 Right B cancels the active grab/preview. Keep button and wheel alternatives for
 seated play or limited reach. All features must work without eye tracking and
 without a particular character class.

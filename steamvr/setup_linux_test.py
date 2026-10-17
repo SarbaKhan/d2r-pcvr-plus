@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import shutil
@@ -10,6 +11,7 @@ import setup_linux as setup
 import steam_config as vdf
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux/Proton integration fixtures run in the Linux CI job")
 class SetupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='Plus setup é spaces ')
@@ -38,10 +40,10 @@ class SetupTests(unittest.TestCase):
                       modes=['flat'], layout='ZQSD', text_locale='frFR', audio_locale='', reviewed_options='')
 
     def profiles(self):
-        plugin = self.game / 'd2rloader/plugins'
+        plugin = self.game / 'mods/D2R-PCVR/d2rloader/plugins'
         plugin.mkdir(parents=True, exist_ok=True)
         (plugin / 'd2r_pcvr_plus_flat.ini').write_text('[input]\nflat_layout=WASD\ncustom=keep\n')
-        (plugin / 'd2r_vr.ini').write_text('[hud]\ndistance=1.25\n')
+        (plugin / 'd2r_pcvr.ini').write_text('[hud]\ndistance=1.25\n')
         config = self.game / 'd2rloader/config'
         config.mkdir(parents=True, exist_ok=True)
         (config / 'd2rloader.toml').write_text('text_locale = "enUS"\naudio_locale = "deDE"\ncustom = true\n')
@@ -83,14 +85,14 @@ class SetupTests(unittest.TestCase):
 
     def test_preferences_preserve_other_settings_and_empty_default(self):
         self.profiles()
-        before = (self.game / 'd2rloader/plugins/d2r_vr.ini').read_bytes()
+        before = (self.game / 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini').read_bytes()
         updates = setup.preference_updates(self.game, self.c)
         for path, data in updates.items():
             path.write_bytes(data)
         prefs = setup.preferences(self.game)
         self.assertEqual(prefs, dict(layout='ZQSD', text_locale='frFR', audio_locale=''))
         self.assertIn(b'custom = true', updates[self.game / 'd2rloader/config/d2rloader.toml'])
-        self.assertEqual(before, (self.game / 'd2rloader/plugins/d2r_vr.ini').read_bytes())
+        self.assertEqual(before, (self.game / 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini').read_bytes())
         self.assertIn('flat_layout=ZQSD', setup.replace_value('[input]\nother=1\n', 'flat_layout', 'ZQSD', 'input'))
         with self.assertRaises(ValueError):
             setup.replace_value('audio_locale=""\naudio_locale=""\n', 'audio_locale', '"frFR"')

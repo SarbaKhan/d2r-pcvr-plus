@@ -10,6 +10,8 @@ import sys
 import tempfile
 import time
 
+from mod_identity import MOD_NAME
+
 RUNTIME_OPTION = '--frame-openxr-runtime='
 VDXR_OPTION = '--frame-vdxr'
 BATTLENET_OPTION = '--battlenet-game='
@@ -41,8 +43,8 @@ def prepare(arguments):
         loader = game / 'D2RLoader.exe'
         if not loader.is_file():
             raise SystemExit('D2RLoader is not installed beside the Battle.net D2R.exe')
-        # Wrapper-only flags are never passed to Blizzard's executable or loader.
-        return [str(loader)], str(game)
+        # Wrapper-only flags are never passed to Blizzard's executable or loader. D2RLoader runs this mod.
+        return [str(loader), '-mod', MOD_NAME], str(game)
     command = [arg for arg in arguments
                if arg not in ('--frame-vr', VDXR_OPTION) and not arg.startswith(RUNTIME_OPTION)]
     cwd = None
@@ -57,8 +59,12 @@ def prepare(arguments):
                 if not Path(loader).is_file():
                     raise SystemExit('D2RLoader is not installed beside D2R.exe')
                 command[index] = loader
+                # D2RLoader runs this mod (mods\D2R-PCVR), unless the launch options already name one.
+                if not any(item.lower() == '-mod' for item in command):
+                    command[index + 1:index + 1] = ['-mod', MOD_NAME]
                 cwd = folder
                 found = True
+                break
         if not found:
             raise SystemExit('Expected the Steam launch command containing D2R.exe')
     return command, cwd

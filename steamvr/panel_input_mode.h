@@ -5,6 +5,21 @@
 #include <string_view>
 
 namespace framevr::panels {
+// Audited native UI root, layout-global and cursor-scale consumers. The same
+// engine size query serves movies and other render paths; leave those alone.
+inline constexpr uintptr_t UiCanvasReturns[]={0x843ed5,0x844195,0x8453a9,0x846239,
+    0x14d7e4,0x14f31d,0x14f943};
+inline bool UiCanvasCaller(uintptr_t rva) {
+    for(auto address:UiCanvasReturns)if(rva==address)return true;
+    return false;
+}
+// SetCursorPosition (0x14fae0) clamps both axes after native pointer dispatch.
+// Height returns here from GetHeight; width tail-calls the size query from
+// GetWidth, so its return address is in SetCursorPosition itself.
+inline constexpr uintptr_t CursorHeightReturn=0x7f4b2,CursorWidthReturn=0x14fb2a;
+inline bool CursorBoundsCaller(uintptr_t rva) {
+    return rva==CursorHeightReturn||rva==CursorWidthReturn;
+}
 // SendInput is queued: protection must already exist before moving/clicking
 // the pointer, and must survive the last button-up when a panel closes. The
 // short lease expires even if XR stops producing frames.
@@ -21,6 +36,37 @@ public:
         return controller&&Active(now);
     }
 };
+
+// Item hover ends immediately on a ray miss, drag, or ownership change. It
+// must not inherit the longer protection kept for queued mouse releases.
+class ItemTooltipHover {
+    InputModeLease lease;
+public:
+    void Update(uint64_t now,bool active,bool hit,bool dragging) {
+        if(active&&hit&&!dragging)lease.Refresh(now);else lease.Clear();
+    }
+    bool Active(uint64_t now) const { return lease.Active(now); }
+};
+// UI-thread dwell keyed by native widget AND item, not pointer pixels. Small
+// hand tremors and crossing cells of the same item must not restart the timer.
+class TooltipDwell {
+    uintptr_t widget=0,item=0;
+    uint64_t since=0,last=0,generation=0;
+    int mode=-1;
+public:
+    bool Ready(uintptr_t w,uintptr_t i,uint64_t now,int timing,uint64_t epoch) {
+        if(!w||!i)return false; // Other grids report no item during the same frame.
+        if(w!=widget||i!=item||timing!=mode||epoch!=generation||now<last||now-last>150)since=now;
+        widget=w;item=i;last=now;mode=timing;generation=epoch;
+        return timing!=1||now-since>=300;
+    }
+};
+constexpr bool ItemCursorSnap(bool hover,bool itemQuery,bool native){return hover&&itemQuery?false:native;}
+template<class Callback> int ItemCompareKey(bool hover,bool compareCaller,int key,Callback native) {
+    // VK_SHIFT, only at the native equipped-item comparison query. Never
+    // synthesize a keyboard event: Shift also buys stacks and moves items.
+    return hover&&compareCaller&&key==0x10?1:native(key);
+}
 
 // Physical bows/javelins and direct walking do not send native pad buttons.
 // Starting through the laser can therefore leave the game in KB/M mode, where

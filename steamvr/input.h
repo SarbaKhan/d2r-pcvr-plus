@@ -21,17 +21,18 @@ struct PressEdge {
     }
 };
 
-// Consume the entire click when used for calibration, including when the grip
-// is released first. This prevents the same press from opening the map later.
-struct HeightResetButton {
+// Consume the entire click when used for the menu, including when the grip
+// is released first. This prevents the same press from opening the wheel/map later.
+struct GripStickButton {
     bool wasClicked=false, consumed=false;
     bool Update(bool clicked, float grip) {
-        const bool reset=clicked&&!wasClicked&&grip>.5f;
+        const bool menu=clicked&&!wasClicked&&grip>.5f;
         if(!clicked)consumed=false;
-        if(reset)consumed=true;
+        if(menu)consumed=true;
         wasClicked=clicked;
-        return reset;
+        return menu;
     }
-    bool MapPressed() const {return wasClicked&&!consumed;}
+    bool Consumed() const {return consumed;}
+    bool PlainPressed() const {return wasClicked&&!consumed;}
 };
 }

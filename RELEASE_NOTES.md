@@ -1,197 +1,112 @@
-# D2R PCVR v0.3.12 — Windows preview
+# D2R PCVR v0.3.16 - Windows preview
 
-Play **Diablo II: Resurrected in VR on Windows** with
-**SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
-single-player** and accepts your **Steam copy of D2R 3.3.93787** or
-**Battle.net copy of D2R 3.3.93847** (experimental).
+This update focuses on physical combat, bows and crossbows, shield movement,
+and clearer visuals. Choose between Unleashed and Classic melee rules, stab
+with your weapon, and wipe blood from your visor.
 
-**This download is a mod, not the original game. You must purchase and install
-your own legitimate copy of Diablo II: Resurrected.** D2R PCVR adds VR
-support and motion interactions to that existing game installation.
+Download **D2R-PCVR-Setup-0.3.16.exe** for graphical installation, or
+**d2r-pcvr-windows.zip** for portable setup. Existing users should choose
+**Update / repair and keep calibration and video settings**, keeping their
+existing helper folders and setup backups.
 
-**No Blizzard game assets are included in the installer or ZIP.** They contain mod files
-and licensed third-party components. Required item/skill icons and potion
-models are read from your own installed game into local caches during setup;
-do not redistribute those caches or your game files.
+You need your own purchased Diablo II: Resurrected: Steam 3.3.93787 or
+Battle.net 3.3.93847 (experimental). Use local offline characters only.
+No Blizzard game assets are included; icons and potion models are read locally
+from your installed game. SteamVR and Virtual Desktop/VDXR remain supported.
+The installer is unsigned; SHA-256 checksums accompany both downloads.
 
-## Headset connections
+## Melee and shields
 
-- **Steam Frame:** SteamVR streaming.
-- **Quest 3:** Steam Link with SteamVR, or Virtual Desktop with VDXR.
-- **Quest 2:** the same Quest connection options; compatibility is not yet confirmed.
+- **Choose your melee rules - contributed by ChuckRibbits:**
+  **VR Settings > Combat > Melee rules** switches live between **Unleashed**
+  and **Classic**. Unleashed is the default: a physical stroke can strike each
+  creature it reaches once, without attack-rating rolls or an attack-speed
+  cooldown. Classic uses native attack-rating, defense, block and dodge checks,
+  plus the class/weapon/IAS attack cycle and one target per physical stroke.
+  Both modes still require deliberate weapon movement; arrows and spells keep
+  their existing rules.
+- **Thrust attacks:** forward stabs now register independently of swing speed.
+  **VR Settings > Combat > Melee thrust speed** defaults to **2 m/s**, adjustable
+  from **0.75 to 10 m/s** in **0.25 m/s** steps. Pull back between thrusts; resting
+  a weapon against an enemy does not repeatedly hit it.
+- **Freer shield movement:** the shield arm can extend farther from the body
+  to follow your tracked hand. The shield keeps its size and the contact used
+  for shield attacks follows the displayed pose.
 
-The game runs on your Windows PC and streams to your headset.
+## Bows and crossbows
 
-Battle.net has been confirmed with SteamVR. Battle.net with Virtual Desktop /
-VDXR is available but has not yet been confirmed. The Steam desktop client
-is required for library shortcuts, including with the Battle.net edition.
-**Battle.net owners do not need to purchase a second copy through Steam.**
+- **More reliable nocked arrows:** recover the native bow preview when its
+  updates stall, and keep the nocked arrow aligned while walking and turning.
+  This fixes the arrow lagging behind and snapping back into place. Unsupported
+  bow rigs can still use the fallback preview.
+- **Crossbow aim and bolt origin:** basic bolts launch from the rendered
+  crossbow's muzzle and use the bow's physical free-aim flight path.
+- **Move while firing:** basic Right Trigger crossbow attacks no longer lock
+  movement behind the native firing animation. Equip bolts and assign **Attack**
+  to Right Trigger. Native ammo and damage still apply, along with the existing
+  class/weapon/IAS firing cadence.
+- **Better support-hand placement:** the supporting hand sits lower under the
+  stock and retains its tracked wrist orientation.
+- **Release the support hand after swapping:** switching from sword/shield to
+  crossbow over the shoulder no longer traps both hands on the crossbow. Release
+  **Left Grip** after the swap, then grip near the stock to support it again.
 
-## What's new: easier installation backup recovery
+## Visor, loot and indoor visuals
 
-- **Find older backups automatically:** setup checks known backup locations and
-  the old helper folder referenced by your VR launch settings. A single verified
-  match for the selected game is filled in on the backup page.
-- **Remember verified backups:** successful upgrades copy and verify backups in
-  the permanent helper folder and record their locations for future setup runs.
-  Valid existing records continue without showing the backup-selection page.
-- **Check before proceeding:** clicking Next validates the selected backup.
-  Switching game copies clears the previous suggestion, while your selected
-  Steam account stays selected during validation.
-- **Clearer folder guidance:** EXE backups normally live in
-  `%LOCALAPPDATA%\Programs\D2R PCVR\setup-backups\game`. ZIP users should look
-  inside the original extracted folder under `setup-backups\game`; manual
-  installs normally use `build-frame\backups`. A development checkout under
-  your Windows user folder is not required.
+- **Blood on the visor - contributed by ChuckRibbits:** life dropping below
+  **60%, 40% and 20%** adds splatters around the edges of your view. Healing back
+  above a band fades its blood away. Changes to maximum life alone do not cause
+  a splash or fade, and the centre of the view stays clear.
+- **Wipe it away:** scrub either hand side to side in front of your face with
+  the trigger released. Each stroke removes some blood and gives a small haptic
+  tick. **VR Settings > HUD > Blood on visor** and **Face wipe gesture** control
+  the effect and gesture separately; both default On.
+- **Steam Frame visibility:** splatters stay within a visible part of wider
+  headset views. The adjustment was checked on Steam Frame and Quest 3.
+- **Original loot-label size restored, with an adjustment:** the forced 150%
+  enlargement is removed. **VR Settings > HUD > Loot label size** defaults to
+  the original **45%**, with a **20-150%** range in five-point steps. Existing
+  saved sizes are respected. The darker backing and hold-to-show loot shortcut
+  remain available.
+- **Clearer indoor effects:** added indoor fog defaults Off, avoiding dark
+  scenery silhouettes through Tyrael's wings and preserving indoor lighting.
+  The indoor-fog control is hidden for now. Outdoor fog remains available;
+  an explicitly saved indoor-fog value is preserved on update.
 
-Only locate a backup if setup asks. If the original backup was deleted or was
-never created by a compatible installer, automatic discovery cannot recreate
-it; keep the existing installation and report the previous installation method.
+Existing saved settings and calibration are preserved. Melee rules is a new
+choice that defaults to Unleashed when unset; an old `attack_speed` setting does
+not select Classic. Choose Classic in Combat settings if that is your preference.
 
-## Included: installer checksum fix
+A huge thank-you to **ChuckRibbits** for the blood visor and melee rules work,
+and to everyone who reported issues and tested the fixes across headsets!
 
-- **Fix fresh installation failures:** D2RLoader repackaged its 1.3.1 ZIP under
-  the same filename. Its contents are unchanged, but older PCVR installers reject
-  the new archive checksum. Setup now accepts both reviewed official archives.
-- **Keep verification enabled:** unknown downloads still stop before game files
-  change. Errors include expected and received SHA-256 values for troubleshooting.
-  Existing verified dependency caches remain usable.
-- **Retry with this installer:** if v0.3.10 stopped with a D2RLoader checksum
-  mismatch, download **D2R-PCVR-Setup-0.3.12.exe** and run setup again. Keep
-  existing helper folders and backups. Disabling antivirus does not resolve
-  the changed upstream checksum; keep protection enabled.
+## Validation and remaining limits
 
-This update retains the released phase 1 renderer and 100% fresh-install
-resolution default. The experimental phase 2 renderer is not included.
+The plain-main gameplay build passed **68/68 native checks**. This release
+packages the exact DLL built and installed from `1d7ae63`; the release follow-up
+changes documentation and installer version only. The DEV menu, equipment
+grants, teleport shortcuts and unmerged elemental-hands prototype are excluded.
 
-## Included: performance update phase 1
+The owner verified the bow movement fix, melee rules, thrusts, shield reach,
+loot sizing, indoor wing rendering and crossbow fixes during development.
+Blood visibility was checked on Steam Frame through SteamVR and Quest 3;
+the original Quest baseline was tested through both SteamVR and VDXR. The blood
+was also reported to fade after respawning. Later confirmations did not specify
+every headset/runtime or individual scenario. The final plain-main artifact
+has not received a separate complete headset pass.
 
-- **Remove a periodic VR stall:** CPU diagnostics now run on a background
-  worker. The system thread scan previously blocked rendering for about 53 ms
-  every ten seconds on the test PC.
-- **Reduce render callback contention:** world draws avoid unnecessary HUD
-  locking, and immutable resource descriptions are cached with lifetime guards.
-- **100% resolution by default:** fresh and full installations now set the game's
-  Resolution Scale to 100%, keeping FXAA, DLSS off and medium shadows/AO/atmospherics.
-  Update / repair preserves your existing video settings. If an older installation
-  uses 80%, change **Options > Video > Resolution Scale** to **100%** in the game.
-- **Consistent draw-distance defaults:** missing INI values use the shipped
-  two terrain rings and object radius 300. Explicit choices are retained;
-  the object-distance control now changes in steps of 50.
-- **Clearer performance diagnostics:** logs separate XR waiting/submission from
-  eye draws, and profiling reports use the full stereo-pair refresh deadline.
-- **Installer file-access errors:** setup identifies the dependency it could not
-  read and points to Windows Security Protection History when relevant.
+All **114 Python checks** passed for setup, repair/removal, launchers, local
+asset preparation, diagnostics and package staging. The compiled installer
+lifecycle fixture passed installation, registration, failed-removal helper
+retention and successful removal using an isolated stub backend. These checks
+do not replace a fresh end-to-end installer run against a real game installation.
 
-Run **D2R-PCVR-Setup-0.3.12.exe** for graphical setup, or use the portable ZIP.
-The EXE includes a private Python runtime and creates the matching shortcuts.
-Choose **Update / repair and keep calibration and video settings** when upgrading;
-keep existing setup backups. Normal desktop Play and Windows removal are retained.
+Installer behavior is unchanged in this update; the installer carries the new
+version and payload. Battle.net remains experimental. Special crossbow skills keep
+their existing casting route. Airborne enemy targeting and the reported Act III
+resource-exhaustion crash are not fixed by this release. Skill-based attack-speed
+modifiers remain outside the modeled physical attack cadence.
 
-Use the game's **left or right corner minimap** layout for the Map tab.
-Full-screen automap is available through the game's normal map controls.
+See [installation instructions](INSTALL-WINDOWS.md) and [controls](CONTROLS.md).
 
-## Validation and remaining checks
-
-The installer suites pass **76 Python checks**, covering automatic discovery,
-complete upgrade chains, corrupt/missing backups, separate game copies, saved
-backup records, both approved dependency archives and unknown-download rejection.
-The compiled wizard also passed eight isolated UI checks with a stub backend,
-including prefill, invalid-folder rejection, game switching and Steam-account
-preservation. A read-only probe found an existing installation's recorded backups
-without prompting. No new real-game installation or headset session was performed
-for this installer update.
-
-The previous checksum release verified a fresh official loader download and
-reuse of both approved caches. All four loader payload files matched the
-previous archive byte for byte; this release retains that correction.
-
-The unchanged phase 1 renderer previously passed **43 CTest checks**. Its
-v0.3.10 release also passed **84 Python checks** covering setup, repair/removal,
-rollback, Battle.net, launcher lifecycle, payload staging and profiling reports.
-Installer fixtures verify that a full install changes 80% to 100%, repair
-preserves custom settings, and rollback retains character progress for both
-Steam and Battle.net.
-
-Phase 1 was tested with an offline Paladin on Steam D2R 3.3.93787, Ryzen 9 5950X /
-RTX 5090, SteamVR OpenXR and Steam Link to Steam Frame at 90 Hz. Background
-scans of 58-63 ms no longer produced the recurring long eye-draw stall in three
-360-pair captures. A separate one-minute walking/turning trial with the existing
-optional GPU-overlap setting had normal stereo, tracking and controls according
-to the owner. That option remains off in the shipped defaults.
-
-This phase improves stalls and callback overhead. It still runs two engine draw
-passes per stereo pair; a larger rendering change remains future work. These
-captures do not establish a universal FPS gain or resolve the RTX 5080 report in
-[issue #20](https://github.com/bearstonem/d2r-pcvr/issues/20).
-
-The compiled Inno Setup lifecycle fixture passes installation, Windows Apps
-registration, helper retention after a blocked removal, and successful removal.
-It uses a stub backend and does not modify a real game installation.
-
-Longer sessions, area transitions, both-eye Map/label/spatial-menu regressions,
-Amazon arrow skills and a fresh owner-triggered Frame shortcut launch still need
-headset checks. This phase has no Battle.net gameplay or RTX 5080 validation.
-Quest 2 and Battle.net VDXR remain unconfirmed. Issue #11 still needs the
-reporter's detailed installation log.
-
-## Features
-
-- First-person VR with motion controls, free-swing melee, aimed spells, bows
-  and physical javelin throws.
-- Guided Windows installation, headset/connection selection and automatic
-  Steam library shortcuts. Update / repair keeps calibration and video settings.
-- Body calibration for your height and arm span on first load, or through
-  **Left Grip + Frame Left B / Quest Left Y → Calibrate body**.
-- Weapon-set swapping by reaching your right hand over either shoulder and
-  pressing its grip; the swap hand is adjustable in VR settings.
-- Physical belt potions and wrist health, mana, level and experience indicators,
-  plus a spell-menu Map tab showing explored areas and native markers.
-- Item pickup, chests, shrines and cave-entrance interactions through the
-  right A button.
-- Inventory, skills, conversations and Journal through the tabbed game menu:
-  **Frame Left A / Quest Left X**.
-- Native menu buttons and sticks alongside laser selection and inventory dragging.
-  Native **X** drops an item; **press and hold right-stick click** sorts inventory.
-- A complete **[controller reference](CONTROLS.md)** in the README and ZIP.
-
-## Download, install and play
-
-First launch your purchased game normally through its store, finish the account
-prompts, load an offline character, then use **Save & Exit** and fully close D2R.
-
-For graphical setup, download **D2R-PCVR-Setup-0.3.12.exe**, run it and follow the
-wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
-the matching VR shortcut with an offline character.
-
-For portable setup:
-
-1. Download **d2r-pcvr-windows.zip** under **Assets** below.
-2. Extract `d2r-pcvr-preview` to a permanent folder.
-3. Double-click **Install-Windows.cmd** and follow the setup wizard. It creates
-   the Steam shortcuts for your chosen game edition, headset and connection.
-   See **INSTALL-WINDOWS.md** for help or manual setup.
-4. Open Steam, connect your headset and use the matching **SteamVR** or
-   **Virtual Desktop** library entry. Battle.net entries include **(Battle.net)**.
-   Keep SteamVR closed for Virtual Desktop / VDXR.
-5. Accept Steam's launch prompt if shown and select an **offline character**.
-
-To launch from Steam or the headset, use the shortcuts created by setup.
-The included **Launch-VR-*.cmd** files are for the **Steam edition**;
-Battle.net players should use the **(Battle.net)** library entries. These
-launch the mod directly, so the Battle.net app may not show it as in progress.
-Manual directions are under **Add Steam library shortcuts** in **INSTALL-WINDOWS.md**.
-Use the matching entry for SteamVR or Virtual
-Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
-
-**Upgrading from an earlier preview?** Follow **Upgrade while keeping your settings** in
-**INSTALL-WINDOWS.md** to retain body calibration and video settings.
-
-Keep the installed helper folder or extracted ZIP folder after installation. For ordinary desktop play,
-fully exit VR and use the original Steam or Battle.net **Play** button.
-Use the unmodded game for multiplayer. Keep **setup-backups**, including
-backups in older extracted release folders, until removal is complete.
-
-Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.12-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.12-windows-preview/CONTROLS.md).
+[Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.15-windows-preview...v0.3.16-windows-preview)

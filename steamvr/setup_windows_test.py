@@ -22,8 +22,8 @@ LOCAL = '"UserLocalConfigStore"\r\n{\r\n// untouched comment\r\n"friends" { "Per
 class SteamSetupTests(unittest.TestCase):
     def test_release_integrity_rejects_changed_file_and_escaping_path(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp).resolve()
-            names = ('bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
+            root = Path(temp)
+            names = ('bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'steamvr/install.py', 'steamvr/mod_identity.py',
                      'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
                      'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
                      'Uninstall-Windows.cmd', 'steamvr/uninstall_windows.py')
@@ -172,7 +172,8 @@ class SteamSetupTests(unittest.TestCase):
                 (game / 'D2R.exe').write_bytes('3.3.93787'.encode('utf-16-le'))
                 (game / 'Data').mkdir()
                 (game / 'Data/.build.config').write_text('fixture')
-                for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2rl-vrcam.dll', 'd2rloader/plugins/d2r_vr.ini'):
+                for name in ('D2RLoader.exe', 'mods/D2R-PCVR/reshade/ReShade64.dll', 'mods/D2R-PCVR/d2rloader/plugins/openxr_loader.dll',
+                             'mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll', 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini'):
                     file = game / name
                     file.parent.mkdir(parents=True, exist_ok=True)
                     file.write_bytes(b'fixture')
@@ -183,12 +184,12 @@ class SteamSetupTests(unittest.TestCase):
                     answers.insert(0, '1')  # Select Steam in a package that offers both editions.
                 manifest = {'release_tag': 'fixture', 'sha256': {'bin/CascLib.dll': 'fixture'} if battlenet_in_package else {}}
                 folders = [steam, game, saves] if quest else [steam, game, root, saves]
-                with patch.object(setup, 'ROOT', root), patch.object(setup, 'verify_release', return_value=manifest), \
+                with patch.object(setup.sys, 'platform', 'win32'), patch.object(setup, 'ROOT', root), patch.object(setup, 'verify_release', return_value=manifest), \
                         patch.object(setup, 'folder', side_effect=folders), patch.object(setup, 'steam_location', return_value=steam), \
                         patch.object(setup, 'saved_games', return_value=saves), patch.object(setup, 'wait_for_closed'), \
                         patch.object(setup, 'require_closed'), patch.object(setup.subprocess, 'run') as run, \
                         patch.object(setup.subprocess, 'Popen') as popen, patch('builtins.input', side_effect=answers), \
-                        patch('launch_windows.vdxr_manifest', return_value=game / 'openxr_loader.dll'), \
+                        patch('launch_windows.vdxr_manifest', return_value=game / 'mods/D2R-PCVR/d2rloader/plugins/openxr_loader.dll'), \
                         patch.object(setup.sys, 'argv', ['setup_windows.py']), contextlib.redirect_stdout(io.StringIO()) as output:
                     setup.main()
                 result = json.loads((root / 'setup-result.json').read_text())
@@ -212,6 +213,21 @@ class SteamSetupTests(unittest.TestCase):
 
 
 class InstallerOutputTests(unittest.TestCase):
+    def test_security_recovery_message_reaches_wizard_without_losing_start_or_reminder(self):
+        import install
+        error = OSError(22, 'Invalid argument')
+        error.winerror = 225
+        long_path = Path('C:/fixture') / ('nested-folder/' * 50) / 'D2RLoader.zip'
+        message = str(install.dependency_io_error(long_path, 'read', error))
+        self.assertGreater(len(message), 800)
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            child = 'import sys; raise SystemExit(sys.argv[1])'
+            with self.assertRaises(ValueError) as caught:
+                setup.run_installer([sys.executable, '-c', child, message], root, hide_console=True)
+            self.assertIn(message, str(caught.exception))
+            self.assertIn(message, (root / 'setup-install.log').read_text(encoding='utf-8'))
+
     @unittest.skipUnless(os.name == 'nt', 'Windows hidden-process pipe inheritance')
     def test_hidden_child_failure_reaches_wizard_output_and_persistent_log(self):
         with tempfile.TemporaryDirectory(prefix='setup with spaces ') as directory:

@@ -10,17 +10,18 @@ from unittest.mock import patch
 import launch_linux as launch
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux/Proton integration fixtures run in the Linux CI job")
 class LinuxLaunchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='plus paths é ')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.game = self.root / 'other disk/steamapps/common/Diablo II Resurrected'
-        self.plugin = self.game / 'd2rloader/plugins'
+        self.plugin = self.game / 'mods/D2R-PCVR/d2rloader/plugins'
         self.plugin.mkdir(parents=True)
-        for path in ('D2R.exe', 'D2RLoader.exe', 'd2rloader/plugins/d2rl-vrcam.dll'):
+        for path in ('D2R.exe', 'D2RLoader.exe', 'mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll'):
             (self.game / path).write_bytes(b'fixture')
-        for profile, value in [('d2r_vr.ini', 1), ('d2r_pcvr_plus_flat.ini', 0)]:
+        for profile, value in [('d2r_pcvr.ini', 1), ('d2r_pcvr_plus_flat.ini', 0)]:
             (self.plugin / profile).write_text(f'[mode]\nplatform={value}\n')
         self.config = {'game': str(self.game)}
         self.env = {'STEAM_COMPAT_DATA_PATH': str(self.root / 'custom prefix'),
@@ -43,7 +44,7 @@ class LinuxLaunchTests(unittest.TestCase):
         command, result, info = launch.route(self.command + ['--plus-flat'], self.config, env)
         self.assertEqual(command[:3], self.command[:3])
         self.assertEqual(command[3], str(self.game / 'D2RLoader.exe'))
-        self.assertEqual(command[4:], self.command[4:])
+        self.assertEqual(command[4:], self.command[4:] + ['-mod', 'D2R-PCVR'])
         self.assertEqual(result['STEAM_COMPAT_DATA_PATH'], env['STEAM_COMPAT_DATA_PATH'])
         self.assertEqual(result['SteamAppId'], '2536520')
         self.assertEqual(result['D2R_PCVR_PLUS_MODE'], 'flat')

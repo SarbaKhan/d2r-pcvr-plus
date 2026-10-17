@@ -14,10 +14,53 @@ struct Sim {
         in.hand[0].p={.25f,1.3f,-.4f};in.hand[1].p={-.25f,1.3f,-.4f};
         in.snapshot.session=10;in.snapshot.equipmentKnown=in.snapshot.beltKnown=true;in.snapshot.activeSet=1;
         auto& b=in.snapshot.belt[0];b.known=true;b.count=2;b.revision=4;b.items[0]={42,1,Code('h','p','1')};b.items[1]={43,2,Code('m','p','1')};
+        in.stage.known=true; // identity room-to-world frame
         Step(3);}
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    for(int hand:{0,1})for(float yaw:{0.f,1.2f}) {
+        Sim s;s.in.head.q=math::Yaw(yaw);s.Step();
+        s.in.hand[hand].p=s.out.belt[0].p;s.in.grip[hand]=1;
+        Check(s.Step().bottleHand==hand,"grab before natural sip");
+        const auto mouth=s.in.head.p+math::Rotate(s.in.head.q,{0,-.10f,-.08f});
+        const float pitch=1.f+Pi/2;
+        s.in.hand[hand].q=math::Multiply(math::Yaw(yaw),{std::sin(pitch/2),0,0,std::cos(pitch/2)});
+        const auto offset=framevr::potions::Opening({},s.in.hand[hand].q);
+        // A 57-degree tilt with the opening in front of the headset should
+        // drink without forcing the controller into the physical headset.
+        s.in.hand[hand].p=mouth-offset+math::Rotate(s.in.head.q,{0,0,-.14f});
+        s.Step();int count=0;Request request;
+        for(int i=0;i<20;++i) {
+            const float gap=i%2?.14f:.18f;
+            s.in.hand[hand].p=mouth-offset+math::Rotate(s.in.head.q,{0,0,-gap});
+            s.Step();if(s.out.request.action==Action::Potion){++count;request=s.out.request;}
+        }
+        Check(count==1&&request.item.handle==42,"natural sip tolerates boundary wobble and requests exact bottle once");
+        s.in.reply={request.sequence,s.in.session,Result::Applied};s.Step();
+        Check(s.out.bottleEmpty&&s.out.feedbackHand==hand,"drink confirmation belongs to the holding hand");
+    }
+    {
+        Sim s;s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+        const auto mouth=s.in.head.p+Vec{0,-.10f,-.08f};
+        s.in.hand[0].q={};s.in.hand[0].p=mouth-framevr::potions::Opening({},{} )+Vec{0,0,-.18f};
+        for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None,"exit tolerance alone cannot begin drinking");
+    }
+    for(int hand=0;hand<2;++hand)for(int key=0;key<5;++key){
+        Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillCount=1;
+        auto& choice=s.in.snapshot.catalog[0];choice.id=47;choice.known=choice.available=true;
+        s.in.wheelHand=hand;s.in.wheel=true;s.Step(3);
+        s.in.hover=key;s.in.trigger=1;s.Step();
+        const int slot=framevr::skills::HandSlot(hand,key);
+        Check(s.out.editor==2&&s.out.editSlot==slot&&s.out.select==-2,"hand wedge edits its own binding without casting");
+        s.in.trigger=0;s.Step();s.in.hover=0;s.in.trigger=1;s.Step();
+        const auto r=s.out.request;
+        Check(r.action==Action::BindSkill&&r.index==slot&&CanBind(s.in.snapshot,r,s.in.at),"all ten bindings use validated native requests");
+        s.in.trigger=0;s.in.reply={r.sequence,s.in.session,Result::Applied};s.Step();
+        Check(s.out.wheel&&s.out.editor==0&&s.out.select==-2,"assignment returns to same wheel, no cast or trigger reselection");
+        s.in.wheelHand=1-hand;s.in.trigger=1;s.Step();
+        Check(s.out.editor==0&&s.out.request.action==Action::None,"switching wheels with held selection trigger cannot edit another slot");
+    }
     for(int dominant=0;dominant<2;++dominant)for(float side:{-.23f,.23f}){
         Sim s;Config c;c.dominant=dominant;s.e.Configure(c);s.Step(4);
         s.in.hand[dominant].p=s.in.head.p+Vec{side,-.2f,.14f};s.Step(10);
@@ -64,7 +107,9 @@ int main(){
         s.in.head.q=math::Yaw(-Pi/2);s.Step();
         Check(std::fabs(s.out.belt[0].p.x-1.46f)<1e-5f,"belt resumes following when horizontal heading returns");
         s.in.snapshot.belt[1]=s.in.snapshot.belt[0];s.in.snapshot.belt[1].items[0].handle=99;
-        s.in.hand[0]=s.out.belt[0];s.in.grip[0]=1;s.Step();
+        s.in.hand[0]=s.out.belt[0];
+        s.in.hand[0].q=math::Multiply(s.in.hand[0].q,{.70710678f,0,0,.70710678f});
+        s.in.grip[0]=1;s.Step();
         Check(s.out.bottle==0,"grab uses the moved belt position");
         s.in.head.p={2,1.4f,1};s.in.head.q=math::Yaw(0);s.in.hand[0].p={2.3f,1.2f,.8f};s.Step();
         auto scene=framevr::potions::MakeScene(s.in,s.out);
@@ -179,6 +224,56 @@ int main(){
         Check(!s.Step().wrist,"lost wrist tracking hides panel");
     }
     {
+        using framevr::vitals::Location;
+        Sim s;s.in.vitalsLocation=Location::Palm;
+        s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,.70710678f,.70710678f};
+        Check(!s.Step(10).palm&&!s.out.vitals,"brief palm-up motion cannot flash the HUD");
+        Check(s.Step(5).palm&&s.out.vitals&&!s.out.wrist&&!s.out.block,"deliberate palm-up reveals passive vitals");
+        const auto panel=PalmPanel(s.in.hand[1],s.in.head);
+        Check(Valid(panel)&&math::Dot(math::Rotate(panel.q,{0,0,1}),PalmNormal(s.in.hand[1]))>.9999f&&
+            math::Dot(panel.p-s.in.hand[1].p,PalmNormal(s.in.hand[1]))>.05f,"panel follows the palm face with a hover gap");
+        const auto yaw=math::Yaw(1.2f);
+        for(auto* pose:{&s.in.hand[1],&s.in.head}){pose->p=math::Rotate(yaw,pose->p);pose->q=math::Multiply(yaw,pose->q);}
+        Check(s.Step().palm,"palm reveal follows world heading");
+        s.in.tracked[0]=false;Check(s.Step(20).palm&&s.out.block,"occluded right hand does not hide passive left-palm vitals");
+        s.in.tracked[1]=false;Check(!s.Step().palm,"left tracking loss immediately hides palm");
+        s.in.tracked[1]=true;Check(!s.Step(10).palm&&s.Step(5).palm,"tracking recovery requires a fresh dwell");
+        s.in.leftTrigger=1;Check(!s.Step(20).palm,"left trigger casting cannot summon palm HUD");
+        s.in.leftTrigger=0;s.in.leftCasting=true;Check(!s.Step(20).palm,"left face-button casting also hides palm HUD");
+        s.in.leftCasting=false;s.in.grip[1]=1;Check(!s.Step(20).palm,"left grip actions hide palm HUD");
+        s.in.grip[1]=0;s.in.quickCast=true;Check(s.Step(15).palm,"right-hand casting permits checking idle left palm");
+        s.in.wheel=true;Check(!s.Step().palm,"wheel hides palm");s.in.wheel=false;
+        Check(s.Step(15).palm,"closing wheel re-enables deliberate gesture");
+        s.in.active=false;Check(!s.Step().palm,"native menus hide palm");s.in.active=true;
+        Check(!s.Step(10).palm&&s.Step(5).palm,"returning from menus rearms palm dwell");
+        ++s.in.epoch;Check(!s.Step().palm&&s.Step(15).palm,"recenter resets palm dwell");
+        ++s.in.session;Check(!s.Step(20).palm,"stale character snapshot hides palm");
+        s.in.snapshot.session=s.in.session;Check(s.Step(15).palm,"new character gets fresh dwell");
+        s.in.time+=.3;Check(!s.Step().palm&&s.Step(15).palm,"frame gap resets palm dwell");
+        s.in.hand[1].p=s.in.head.p+Vec{0,-.9f,0};Check(!s.Step().palm,"lowered palm stays hidden");
+        s.in.hand[1].p=s.in.head.p+math::Rotate(s.in.head.q,{0,-.3f,.3f});Check(!s.Step(20).palm,"palm behind head cannot reveal HUD");
+        s.in.hand[1].p.x=NAN;Check(!s.Step(20).palm,"invalid palm pose cannot reveal HUD");
+    }
+    {
+        using framevr::vitals::Location;
+        for(auto location:{Location::Wrist,Location::Palm,Location::Either,Location::Off}){
+            Sim s;s.in.vitalsLocation=location;s.in.hand[1].p={-.18f,1.35f,-.24f};
+            s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step(20);
+            Check(s.out.wrist&&s.out.vitals==(location==Location::Wrist||location==Location::Either),"wrist vitals obey placement selection");
+            Check(NavigationWanted(s.in,s.out,s.in.at),"navigation survives Palm and Off vitals choices");
+            s.in.hand[1].q={0,0,.70710678f,.70710678f};s.Step(20);
+            Check(s.out.vitals==(location==Location::Palm||location==Location::Either),"palm vitals obey placement selection");
+        }
+        Sim s;s.in.snapshot.vitalsKnown=true;s.in.snapshot.health=12;s.in.snapshot.maxHealth=100;
+        Check(!s.Step().critical&&s.out.feedback!=4,"default low health cannot cause unsolicited popup or haptics");
+        s.in.criticalAlerts=true;Check(s.Step().critical,"low health alert requires explicit opt-in");
+        s.in.criticalAlerts=false;Check(!s.Step().critical,"opt-out immediately dismisses an active alert");
+        s.in.criticalAlerts=true;s.in.vitalsLocation=Location::Off;Check(!s.Step().critical,"Off location suppresses alerts too");
+        s.in.vitalsLocation=Location::Palm;s.in.snapshot.health=100;s.in.spell=true;s.in.snapshot.mana=1;s.in.snapshot.maxMana=100;
+        Check(s.Step().critical,"explicit alert opt-in also covers low spell mana");
+        s.in.criticalAlerts=false;Check(!s.Step().critical,"palm-only choice has no automatic low-mana popup");
+    }
+    {
         // Sweep rotations including head-up parallel to the watch normal.
         // Every rendered face must stay on -X with a unit, finite quaternion.
         Pose hand{{-.18f,1.35f,-.24f}},head{{0,1.7f,0}};
@@ -190,6 +285,63 @@ int main(){
                 "watch panel stays valid through head/wrist rotations");
             Check(math::Dot(math::Rotate(q,{0,0,1}),WristNormal(hand))>.99999f,
                 "readability adjustment preserves back-of-wrist face");
+            const auto palm=PalmPanel(hand,head);
+            Check(Valid(palm)&&std::fabs(math::Dot(math::Rotate(palm.q,{0,0,1}),PalmNormal(hand))-1)<1e-5f,
+                "palm surface remains valid through head/wrist rotations");
+            for(bool palmFace:{false,true})for(float tilt:{-60.f,-30.f,0.f,30.f,60.f}) {
+                const auto base=palmFace?palm:p;
+                const auto panel=VitalsPanel(hand,head,palmFace,tilt);
+                const auto offset=panel.p-base.p;
+                const auto right=math::Rotate(panel.q,{1,0,0});
+                const auto top=math::Rotate(math::Conjugate(base.q),math::Rotate(panel.q,{0,1,0}));
+                Check(Valid(panel)&&math::Dot(offset,offset)<1e-10f&&
+                    math::Dot(right,math::Rotate(base.q,{1,0,0}))>.99999f,"vitals tilt pivots around the panel center and horizontal axis");
+                Check(std::fabs(top.x)<1e-5f&&std::fabs(top.y-std::cos(tilt*Pi/180))<1e-5f&&
+                    std::fabs(top.z-std::sin(tilt*Pi/180))<1e-5f,"positive tilt brings the top toward the viewer on both wrist and palm");
+            }
+            for(float invalid:{NAN,INFINITY}) {
+                const auto safe=VitalsPanel(hand,head,false,invalid);
+                Check(Valid(safe)&&math::Dot(math::Rotate(safe.q,{0,0,1}),WristNormal(hand))>.99999f,
+                    "invalid tilt retains the original hand face");
+            }
+            for(bool palmFace:{false,true})for(bool withVitals:{false,true}) {
+                const auto base=palmFace?palm:p;
+                const auto map=NavigationMapPanel(hand,head,palmFace,withVitals);
+                const auto offset=math::Rotate(math::Conjugate(base.q),map.p-base.p);
+                const float wanted=withVitals?((palmFace?PalmHeight:WristHeight)+WristMapSize)*.5f+.01f:0;
+                Check(Valid(map)&&std::fabs(offset.x)<1e-5f&&std::fabs(offset.z)<1e-5f&&std::fabs(offset.y-wanted)<1e-5f,
+                    "navigation uses chosen hand face and leaves space only for vitals on that face");
+                const auto compass=NavigationCompassPanel(hand,head,palmFace,withVitals);
+                const auto delta=math::Rotate(math::Conjugate(map.q),compass.p-map.p);
+                Check(Valid(compass)&&std::fabs(delta.x)<1e-5f&&std::fabs(delta.z)<1e-5f&&
+                    std::fabs(delta.y-(WristMapSize+WristCompassHeight)*.5f-.01f)<1e-5f,
+                    "compass and map remain a single coplanar unit with a one-centimeter gap");
+                const auto info=NavigationInfoPanel(hand,head,palmFace,withVitals);
+                const auto infoDelta=math::Rotate(math::Conjugate(compass.q),info.p-compass.p);
+                Check(Valid(info)&&std::fabs(infoDelta.x)<1e-5f&&std::fabs(infoDelta.z)<1e-5f&&
+                    std::fabs(infoDelta.y-(WristCompassHeight+NavigationInfoHeight)*.5f-.006f)<1e-5f,
+                    "area and act sit above the compass on the same wrist or palm face, clear of map and vitals");
+            }
+        }
+    }
+    {
+        using framevr::vitals::Location;
+        for(auto vitals:{Location::Wrist,Location::Palm,Location::Either,Location::Off})
+        for(auto navigation:{Location::Wrist,Location::Palm,Location::Either,Location::Off}) {
+            Sim s;s.in.vitalsLocation=vitals;s.in.navigationLocation=navigation;
+            s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step(20);
+            Check(s.out.vitals==framevr::vitals::Wrist(vitals)&&NavigationWanted(s.in,s.out,s.in.at)==framevr::vitals::Wrist(navigation),
+                "wrist vitals and navigation follow independent location choices");
+            s.in.hand[1].q={0,0,.70710678f,.70710678f};
+            Check(!s.Step(10).navigation,"brief palm turn cannot flash navigation");s.Step(5);
+            Check(s.out.vitals==framevr::vitals::Palm(vitals)&&NavigationWanted(s.in,s.out,s.in.at)==framevr::vitals::Palm(navigation),
+                "palm vitals and combined navigation follow independent choices");
+            s.in.tracked[0]=false;s.Step(20);
+            Check(NavigationWanted(s.in,s.out,s.in.at)==framevr::vitals::Palm(navigation),"resting right hand does not hide palm navigation");
+            s.in.leftTrigger=1;s.Step();Check(!NavigationWanted(s.in,s.out,s.in.at),"casting hand cannot reveal palm navigation");
+            s.in.leftTrigger=0;s.in.leftCasting=true;s.Step(20);Check(!NavigationWanted(s.in,s.out,s.in.at),"face-button spell casting hides palm navigation");
+            s.in.leftCasting=false;s.in.grip[1]=1;s.Step(20);Check(!NavigationWanted(s.in,s.out,s.in.at),"grip actions hide palm navigation");
+            s.in.grip[1]=0;s.Step(20);s.in.tracked[1]=false;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"lost left tracking hides navigation");
         }
     }
     for(int i=0;i<8;++i){float a=i*Pi/4+WheelPhase;Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f)==i,"wedge centers agree");}
@@ -210,8 +362,19 @@ int main(){
     {
         Sim s;auto click=[&](int hit){s.in.trigger=0;s.Step();s.in.hover=hit;s.in.trigger=1;return s.Step();};
         s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};
-        s.Step();Check(s.out.wrist&&!MapWanted(s.in,s.out,s.in.at),"watch vitals no longer request minimap");
+        s.Step();Check(s.out.wrist&&NavigationWanted(s.in,s.out,s.in.at)&&MapWanted(s.in,s.out,s.in.at),"wrist minimap is on by default");
+        Check(NavigationWanted(s.in,s.out,s.in.at),"compass shares wrist reveal");
+        Check(!NavigationWanted(s.in,s.out,s.in.at+651),"stale character cannot show compass");
+        auto gated=s.in;gated.tracked[1]=false;Check(!NavigationWanted(gated,s.out,s.in.at),"left tracking loss hides compass");
+        gated=s.in;gated.active=false;Check(!NavigationWanted(gated,s.out,s.in.at),"inactive gameplay hides compass");
+        gated=s.in;++gated.session;Check(!NavigationWanted(gated,s.out,s.in.at),"another character cannot reuse compass");
+        auto hidden=s.out;hidden.navigation=false;hidden.critical=true;Check(!NavigationWanted(s.in,hidden,s.in.at),"low-health alert alone cannot summon compass");
+        hidden=s.out;hidden.settings=true;Check(!NavigationWanted(s.in,hidden,s.in.at),"settings hides compass");
+        s.in.navigationLocation=framevr::vitals::Location::Off;s.Step();
+        Check(!NavigationWanted(s.in,s.out,s.in.at),"Off hides the combined map and compass");
+        Check(s.out.wrist&&!MapWanted(s.in,s.out,s.in.at),"disabling wrist map retains watch vitals");
         s.in.wheel=true;click(12);
+        Check(!NavigationWanted(s.in,s.out,s.in.at),"wheel hides wrist compass");
         Check(s.out.wheel&&s.out.map&&!s.out.utility&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None&&
             MapWanted(s.in,s.out,s.in.at)&&s.e.Page()==MenuPage::Map,"map tab opens without changing selected spell or requesting a native action");
         const auto mapContext=Context(s.in.snapshot,s.out,true);auto spells=s.out;spells.map=false;
@@ -225,6 +388,25 @@ int main(){
         click(9);Check(s.out.utility,"equipment page still opens");click(12);Check(s.out.map&&!s.out.utility,"map can open from equipment page");
         Check(click(11).editor==1&&!s.out.map&&s.out.wheel,"map can open original skill editor");
         click(11);click(12);Check(click(10).settings&&!s.out.wheel&&!MapWanted(s.in,s.out,s.in.at),"settings closes map demand");
+    }
+    {
+        Sim s;s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step();
+        Check(MapWanted(s.in,s.out,s.in.at)&&!MenuMapWanted(s.in,s.out,s.in.at),"watch alone requests the native map capture");
+        Check(!MapWanted(s.in,s.out,s.in.at+651),"wrist map rejects stale area snapshots");
+        auto snapshot=s.in.snapshot;++s.in.snapshot.session;
+        Check(!MapWanted(s.in,s.out,s.in.at),"wrist map rejects another character session");s.in.snapshot=snapshot;
+        s.in.tracked[0]=false;s.Step();Check(MapWanted(s.in,s.out,s.in.at),"occluded right hand does not hide wrist minimap");
+        s.in.tracked[1]=false;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"lost left wrist tracking hides minimap");
+        s.in.tracked[0]=s.in.tracked[1]=true;s.Step(3);s.in.wheel=true;s.Step();
+        Check(s.out.wheel&&!MapWanted(s.in,s.out,s.in.at),"spell wheel hides wrist map without requesting capture");
+        s.in.hover=12;s.in.trigger=1;s.Step();
+        Check(MenuMapWanted(s.in,s.out,s.in.at)&&!NavigationWanted(s.in,s.out,s.in.at),"wheel MAP tab owns the map while open");
+        s.in.wheel=false;s.in.trigger=0;s.Step();Check(NavigationWanted(s.in,s.out,s.in.at),"closing wheel restores presented wrist map");
+        s.in.navigationLocation=framevr::vitals::Location::Off;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"saved Off removes wrist capture demand");
+        s.in.navigationLocation=framevr::vitals::Location::Wrist;s.Step();Check(MapWanted(s.in,s.out,s.in.at),"saved On restores wrist capture demand");
+        s.in.active=false;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"native menus and settings suppress wrist map");
+        s.in.active=true;s.in.hand[1].q={0,0,0,1};s.Step();s.out.critical=true;
+        Check(!MapWanted(s.in,s.out,s.in.at),"critical vitals cue alone does not display a floating minimap");
     }
     for(int interruption=0;interruption<6;++interruption) {
         Sim s;s.in.wheel=true;s.in.hover=12;s.in.trigger=1;Check(s.Step().map,"map opened before interruption");
@@ -273,7 +455,7 @@ int main(){
     {
         Sim s;s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;
         Check(s.Step().bottle==0&&s.out.request.action==Action::None,"physical bottle grab is non-consuming");
-        s.in.hand[0].q={0,0,-.70710678f,.70710678f};
+        s.in.hand[0].q=math::Multiply({0,0,-.70710678f,.70710678f},{.70710678f,0,0,.70710678f});
         // Neck touches the mouth with the right hand outside the face.
         s.in.hand[0].p={-.115f,1.6f,-.08f};
         int requests=0;Request request;
@@ -289,15 +471,16 @@ int main(){
     {
         Sim s;auto scene=framevr::potions::MakeScene(s.in,s.out);
         Check(scene.count==1&&scene.items[0].code==Code('h','p','1'),"3D belt shows the next exact native potion, no bottles in empty columns");
-        s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+        s.in.hand[0].p=s.out.belt[0].p;s.in.hand[0].q={.70710678f,0,0,.70710678f};s.in.grip[0]=1;s.Step();
         scene=framevr::potions::MakeScene(s.in,s.out);
         Check(scene.count==1&&scene.items[0].pose.p.y>s.in.hand[0].p.y,"grab moves one bottle into the right grip, without a duplicate on the belt");
         Check(!scene.items[0].empty&&s.out.request.action==Action::None,"grabbing does not consume");
         // Hand at mouth is insufficient if the actual bottle opening misses.
-        s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,.70710678f,.70710678f};
+        s.in.hand[0].p={-.10f,1.6f,-.08f};
+        s.in.hand[0].q=math::Multiply({0,0,.70710678f,.70710678f},{.70710678f,0,0,.70710678f});
         for(int i=0;i<20;++i)Check(s.Step().request.action==Action::None,"neck, not controller center, must reach the mouth");
         s.in.hand[0].p={.115f,1.6f,-.08f};s.Step(6);
-        s.in.hand[0].p.z-=.2f;s.Step();s.in.hand[0].p.z+=.2f;
+        s.in.hand[0].p.z-=.24f;s.Step();s.in.hand[0].p.z+=.24f;
         for(int i=0;i<10;++i)Check(s.Step().request.action==Action::None,"leaving mouth resets sip dwell");
         const auto before=s.in.snapshot;
         Request request;for(int i=0;i<5;++i){s.Step();if(s.out.request.action!=Action::None)request=s.out.request;}
@@ -308,6 +491,30 @@ int main(){
         s.in.grip[0]=0;s.Step();scene=framevr::potions::MakeScene(s.in,s.out);
         Check(s.out.bottle<0&&scene.count==1&&s.in.snapshot.belt==before.belt,"release returns unconsumed bottle");
         s.in.active=false;s.Step();Check(framevr::potions::MakeScene(s.in,s.out).count==0,"menus hide physical bottles");
+    }
+    for(int hand=0;hand<2;++hand)for(float yaw:{0.f,1.2f}) {
+        Sim s;s.in.head.q=math::Yaw(yaw);s.Step();
+        const auto mouth=s.in.head.p+math::Rotate(s.in.head.q,{0,-.10f,-.08f});
+        s.in.hand[hand].p=s.out.belt[0].p;
+        s.in.hand[hand].q=math::Multiply(math::Yaw(yaw),{.70710678f,0,0,.70710678f});
+        s.in.grip[hand]=1;s.Step();
+        auto scene=framevr::potions::MakeScene(s.in,s.out);
+        const auto up=math::Rotate(scene.items[0].pose.q,{0,1,0});
+        Check(s.out.bottleHand==hand&&scene.count==1&&up.y>.99999f&&
+            std::fabs(scene.items[0].pose.p.y-s.in.hand[hand].p.y-.025f)<1e-5f,
+            "either grip holds the bottle upright after the local pitch correction, including when turned");
+        s.in.hand[hand].p=mouth-Vec{0,.115f,0};
+        for(int i=0;i<20;++i)Check(s.Step().request.action==Action::None,
+            "upright corrected bottle cannot drink even with its opening at the mouth");
+        s.in.hand[hand].q=math::Yaw(yaw);
+        s.in.hand[hand].p=mouth+math::Rotate(math::Yaw(yaw),{0,0,.115f});
+        scene=framevr::potions::MakeScene(s.in,s.out);
+        const auto opening=scene.items[0].pose.p+math::Rotate(scene.items[0].pose.q,{0,.09f,0});
+        const auto delta=opening-mouth;
+        Check(math::Dot(delta,delta)<1e-10f,"tipped rendered opening reaches the mouth in either hand");
+        int requests=0;
+        for(int i=0;i<30;++i)requests+=s.Step().request.action==Action::Potion;
+        Check(requests==1,"corrected rendered opening and drink detection agree for either hand");
     }
     {
         Sim s;s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;s.Step();
@@ -334,6 +541,7 @@ int main(){
     }
     {
         Sim s;s.in.snapshot.vitalsKnown=true;s.in.snapshot.health=12;s.in.snapshot.maxHealth=100;
+        s.in.criticalAlerts=true;
         Check(s.Step().critical&&s.out.feedbackHand==1,"critical health cue requests left-hand feedback");
         Check(!s.Step(90).critical,"critical cue is brief, not permanent HUD");
         s.in.snapshot.health=90;Check(!s.Step().critical,"healthy state removes cue");
@@ -344,6 +552,173 @@ int main(){
         Check(s.Step().cancelPending&&s.out.bottle<0,"non-finite pose discards a held bottle and pending native work");
         s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,1,0};
         for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None,"tracking recovery with grip held cannot drink");
+    }
+    {
+        // Thrown bottle: grab, swing away from the belt, release mid-swing.
+        auto toss=[](Sim& s,Vec velocity,int frames=5) {
+            s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<frames;++i){s.in.hand[0].p=s.in.hand[0].p+velocity*.02f;s.Step();}
+            s.in.grip[0]=0;return s.Step();
+        };
+        auto land=[](Sim& s,int& requests,Request& request) {
+            // Up to the 2 s flight cap, then a few frames to prove there is no
+            // repeat, well inside the engine's 1.5 s reply window.
+            for(int i=0,after=-1;i<110&&after<10;++i){auto o=s.Step();if(o.request.action==Action::FeedMerc){++requests;request=o.request;}if(requests)++after;}
+        };
+        {
+            Sim s;const auto belt=s.out.belt[0].p;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.flying&&o.bottle<0&&o.flightItem.handle==42&&o.flightColumn==0&&o.request.action==Action::None,
+                "a fast release launches the exact bottle without a native request");
+            const auto scene=framevr::potions::MakeScene(s.in,o);
+            Check(scene.count==1&&scene.items[0].code==Code('h','p','1')&&scene.items[0].pose.p.y>1.f,
+                "the flying bottle replaces its belt column instead of duplicating it");
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==1&&request.item.handle==42&&request.index==0&&request.revision==4,
+                "landing requests the hireling feed once for the exact thrown item");
+            Check(std::fabs(request.point.y)<1e-3f&&request.point.z<belt.z-1.f,"landing point lies on the floor ahead");
+            Check(!s.out.flying&&s.in.snapshot.belt[0].count==2,"landing never edits the belt locally");
+            s.in.reply={request.sequence,s.in.session,Result::Refused};
+            Check(s.Step().feedback==3&&s.out.feedbackHand==0,"a miss or refusal is felt by the throwing hand");
+            Check(framevr::potions::MakeScene(s.in,s.out).count==1,"refused bottle reappears on the belt");
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;
+            Check(s.Step().bottle==0,"the belt can be used again after a miss");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            s.in.reply={request.sequence,s.in.session,Result::Applied};
+            Check(s.Step().feedback==2,"confirmed hireling feed is a success pulse");
+        }
+        {
+            Sim s;const auto o=toss(s,{0,.2f,-.6f},20);int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"a slow release still returns the bottle to the belt");
+        }
+        for(const auto code:{Code('m','p','1'),Code('v','p','s')}) {
+            Sim s;s.in.snapshot.belt[0].items[0].code=code;
+            const auto o=toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"mana and stamina bottles are not thrown");
+        }
+        for(const auto code:{Code('r','v','l'),Code('y','p','s'),Code('w','m','s')}) {
+            Sim s;s.in.snapshot.belt[0].items[0].code=code;
+            const auto o=toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            Check(o.flying&&requests==1&&request.item.code==code,"rejuvenation, antidote and thawing bottles can be thrown");
+        }
+        {
+            Sim s;s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,1.f,-3.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(!s.Step().flying,"no throw without a known world floor");
+        }
+        {
+            // A fast flick that ends back at the belt is a re-holster, not a throw.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-.1f};s.Step();
+            s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,.06f};s.Step();
+            s.in.grip[0]=0;Check(!s.Step().flying,"a release beside its belt slot is never a throw");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.Step(5);
+            auto& b=s.in.snapshot.belt[0];b.items[0]=b.items[1];b.items[1]={};b.count=1;++b.revision;
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==0,"a bottle used elsewhere mid-flight cannot be fed on landing");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.Step(5);s.in.cancel=true;
+            const auto o=s.Step();s.in.cancel=false;
+            int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"cancel discards a bottle in flight");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.in.hand[1].p=s.out.belt[0].p;s.in.grip[1]=1;
+            Check(s.Step().bottle<0,"the belt cannot be grabbed while a bottle is in the air");
+        }
+        // Launch speed follows the real hand: horizontal flight speed measured
+        // from two flying frames (gravity only changes the vertical part).
+        auto launched=[](Sim& s){
+            const auto a=s.out.flight.p;s.Step();const auto b=s.out.flight.p;
+            return std::hypot(b.x-a.x,b.z-a.z)/.02f;
+        };
+        {
+            // A hard throw that slows before the grip opens keeps its peak.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<4;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-6.f}*.02f;s.Step();}
+            for(int i=0;i<2;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-1.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(s.Step().flying,"decelerating release still throws");
+            Check(std::fabs(launched(s)-6.f)<.05f,"launch uses the peak hand speed, not the slowing last frame");
+        }
+        {
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<3;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,.4f,-16.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(s.Step().flying,"a very hard throw is not discarded");
+            Check(std::fabs(launched(s)-16.f)<.1f,"hand speeds above the old 12 m/s limit are kept 1:1");
+        }
+        {
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<3;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-24.f}*.02f;s.Step();}
+            s.in.grip[0]=0;s.Step();
+            Check(std::fabs(launched(s)-ThrowMaxSpeed)<.1f,"implausible hand speed is capped, keeping its direction");
+        }
+        {
+            // Once released, the bottle is in the world: walking or turning
+            // moves the room under it, never the bottle's world path.
+            auto landing=[&](bool walk,bool turn){
+                Sim s;toss(s,{0,1.f,-3.f});
+                const auto before=s.out.flight.p;
+                if(walk)s.in.stage.anchor=s.in.stage.anchor+Vec{1.5f,0,-2.f};
+                if(turn)s.in.stage.base=math::Yaw(.8f);
+                s.Step();
+                int requests=0;Request request;land(s,requests,request);
+                Check(requests==1,"moving player still lands one request");
+                return std::pair{before,request};
+            };
+            const auto still=landing(false,false),walked=landing(true,false),turned=landing(true,true);
+            for(const auto* moved:{&walked,&turned})
+                Check(std::hypot(moved->second.world.x-still.second.world.x,moved->second.world.z-still.second.world.z)<1e-4f&&
+                      std::fabs(moved->second.world.y-still.second.world.y)<1e-4f,"walking or turning after release never moves the world landing point");
+            Check(std::fabs(walked.second.point.x-(still.second.point.x-1.5f))<1e-3f&&std::fabs(walked.second.point.z-(still.second.point.z+2.f))<1e-3f,
+                "the drawn bottle stays put in the world while the player walks away from it");
+            // Releasing while already turned: room velocity is turned into the world.
+            Sim s;s.in.stage.base=math::Yaw(1.5707963f);toss(s,{0,1.f,-3.f});
+            int requests=0;Request request;land(s,requests,request);
+            const auto expected=math::Rotate(math::Yaw(1.5707963f),still.second.world);
+            Check(requests==1&&std::hypot(request.world.x-expected.x,request.world.z-expected.z)<1e-3f,
+                "room throw direction is mapped by the frame at release");
+        }
+        {
+            Sim s;s.in.stage.known=false;s.in.floorKnown=true;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,1.f,-3.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(!s.Step().flying,"no throw without the room-to-world frame");
+        }
+        {
+            // The runtime's reported controller velocity wins over pose noise.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            s.in.velocityKnown[0]=true;s.in.handVelocity[0]={0,1.f,-8.f};
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-3.f}*.02f;s.Step();} // clear of the belt
+            s.in.grip[0]=0;Check(s.Step().flying,"runtime-velocity throw launches");
+            Check(std::fabs(launched(s)-8.f)<.05f,"runtime controller velocity drives the launch");
+            Sim t;t.in.floorKnown=true;t.in.floor=0;
+            t.in.hand[0].p=t.out.belt[0].p;t.in.grip[0]=1;t.Step();
+            t.in.velocityKnown[0]=true;t.in.handVelocity[0]={0,0,-40.f};
+            for(int i=0;i<5;++i){t.in.hand[0].p=t.in.hand[0].p+Vec{0,0,-.06f};t.Step();} // clear of the belt
+            t.in.grip[0]=0;Check(!t.Step().flying,"a tracking glitch alone never launches a bottle");
+        }
+    }
+    {
+        // Merc low-life cue: only a known, living merc below 50% life.
+        Mercenary m;m.known=true;m.maxHealth=400;
+        m.health=199;Check(MercLow(m),"49.75% life is low");
+        m.health=200;Check(!MercLow(m),"50% life is not low");
+        m.health=0;Check(!MercLow(m),"a dead merc is not low");
+        m.health=50;m.known=false;Check(!MercLow(m),"no cue without a sampled merc");
+        // World points round-trip through the stage frame.
+        Stage st{true,{.3f,1.6f,-.2f},{12.f,1.7f,-40.f},math::Yaw(2.1f)};
+        const Vec world{15.f,.4f,-37.f};const auto back=st.World(st.Room(world));
+        Check(std::fabs(back.x-world.x)<1e-4f&&std::fabs(back.y-world.y)<1e-4f&&std::fabs(back.z-world.z)<1e-4f,"stage room/world mapping is invertible");
     }
     std::puts("Interaction ownership, wheel, holster, item identity and confirmation tests passed");
 }

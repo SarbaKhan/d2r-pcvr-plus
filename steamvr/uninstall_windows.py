@@ -8,12 +8,15 @@ from pathlib import Path
 import tempfile
 
 import install
+import mod_identity
 import setup_windows as setup
 import steam_config
 from game_install import storage_config
 
 ROOT = Path(__file__).resolve().parent.parent
-PLUGIN = Path('d2rloader/plugins/d2rl-vrcam.dll')
+PLUGIN = mod_identity.PLUGIN
+# This mod's plugin under its current and its old (0.3.16 and earlier) name.
+PLUGINS = mod_identity.PLUGINS
 FILE_NAMES = {'d2rloader.exe', 'd2rcore.dll', 'd2rloader.mpq', 'reshade64.dll',
               'openxr_loader.dll', 'reshade.ini', 'd2r_frame_reshade.ini'}
 DIRECTORIES = {'d2rloader', 'mods', 'reshade-shaders', 'd2r_sky_ours'}
@@ -49,8 +52,9 @@ def snapshots(game, record, roots):
     def original(path):
         manifest = matching[path]
         installed = {str(install.safe_relative(name)).lower() for name in manifest['installed']}
+        plugins = [plugin for plugin in PLUGINS if str(plugin).lower() in installed]
         return manifest.get('previous_mod') is False or (
-            str(PLUGIN).lower() in installed and not (path / 'previous' / PLUGIN).exists())
+            bool(plugins) and not any((path / 'previous' / plugin).exists() for plugin in plugins))
 
     if chain:
         first = chain[0]
@@ -71,8 +75,18 @@ def snapshots(game, record, roots):
 
 
 def restore_plan(game, chain, restore_video=False):
-    """The first backup of each file is its pre-install state, including later additions."""
+    """The first backup of each file is its pre-install state, including later additions.
+
+    D2R VR uses the names this mod had up to 0.3.16 (d2rl-vrcam.dll, d2r_vr.ini).
+    While D2R VR's plugin is in the folder those two files are its own and are
+    left exactly as they are."""
     updates = {}
+    keep = set()
+    if mod_identity.plugin_owner(game / mod_identity.LEGACY_PLUGIN) == mod_identity.OTHER_MOD:
+        keep = {str(name).lower() for name in mod_identity.LEGACY_FILES}
+    # D2RLoader is shared: while another mod starts through it (D2R VR as mods\D2R-VR, say), its files stay and only
+    # this mod's own files go.
+    shared = bool(mod_identity.other_loader_users(game))
     for snapshot, manifest in chain:
         for name in manifest['installed']:
             relative = install.safe_relative(name)
@@ -87,6 +101,8 @@ def restore_plan(game, chain, restore_video=False):
                 raise ValueError(f'Backup path escapes its folder: {name}')
             if target.exists() and not target.is_file() or source.exists() and not source.is_file():
                 raise ValueError(f'Backup path is not a file: {name}')
+            if str(relative).lower() in keep or shared and mod_identity.shared_dependency(relative):
+                continue
             if target not in updates:
                 updates[target] = source.read_bytes() if source.is_file() else None
     receipt = game / install.RECORD
@@ -183,8 +199,11 @@ def main():
     if detected != store:
         raise ValueError(f'This is a {detected} installation, but {store} was selected.')
     record = install.read_record(game)
-    installed = (game / PLUGIN).is_file() or (game / install.RECORD).is_file()
     roots = [ROOT / 'setup-backups/game', ROOT / 'build-frame/backups']
+    found = mod_identity.survey(game, roots)
+    installed = found.ours or (game / install.RECORD).is_file()
+    if found.other == mod_identity.OTHER_MOD:
+        print('D2R VR (another VR mod) is also installed here; its d2rl-vrcam.dll and d2r_vr.ini are kept.')
     updates = {}
     if installed:
         while True:

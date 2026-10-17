@@ -1,14 +1,6 @@
-> **D2R PCVR Plus — Linux preview:** an English Qt setup for Flat Screen,
-> SteamVR and WiVRn is documented in [LINUX-SETUP.md](LINUX-SETUP.md).
-> The original Windows installation remains available.
+# D2R PCVR Plus — upstream integration preview
 
-# D2R PCVR Plus
-
-Candidate expérimentale ajoutant les vues Flat à la base D2R PCVR. **Compilation vérifiée, essais en jeu et au casque encore nécessaires.**
-
-Voir [analyse, installation, compilation et protocole de tests](PCVR-PLUS.md). Branche de travail : `feature/flat-plus`. Documentation et crédits PCVR d’origine conservés ci-dessous.
-
----
+See [integration scope, deferred features and hardware checklist](docs/upstream-refresh-plus.md). This branch retains upstream controls and uses the new per-mod layout.
 
 # D2R PCVR
 
@@ -87,6 +79,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 - First-person VR with your character's body, hands and equipment.
 - Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin throws.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
+- A left-hand minimap/compass with current area and act, independent health/mana tilt,
+  and adjustable controller vibration under **VR Settings > Haptics**.
 - A **MAP** tab at the bottom of the spell menu, showing explored areas and native markers.
 - Selected Amazon arrow skills work with bow draw/release; selected Paladin Smite works with left-shield contact.
 - Body calibration for your height and arm span, available on first load
@@ -97,7 +91,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
   **Frame Left A / Quest Left X**.
 
 [Watch the earlier wrist HUD demo (v0.3.6, 12 seconds)](https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4).
-The current preview keeps vitals and XP on the wrist and moves the map into the spell menu.
+The current preview offers wrist or palm placement for vitals and navigation,
+alongside the larger map in the spell menu.
 
 ## Controller reference
 
@@ -129,10 +124,12 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
-| Inventory / character / skills / journal | Either wheel → INVENTORY; native tabs retain their controls |
+| Inventory / character / skills / journal | Left Grip + left stick click; or either wheel → INVENTORY |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Minimap | Either wheel → MAP; movement remains available |
-| Reset height | Left Grip + left stick click; does not open a wheel |
+| Reset height | VR Settings > Reset eye height |
+| Adjust controller vibration | **VR Settings > Haptics**; preview each action and **Apply** to save |
+| Hold to show nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first; release either to restore normal drop/hover labels |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
@@ -141,6 +138,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
 | Stow / draw weapons | Wheel → EQUIPMENT → Stow / Draw |
 | Grab / drink potion | Grip a belt bottle, bring its opening to the mouth and tip it; release to return unused |
+| Heal your mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle so it lands near its feet; a miss keeps the potion |
 | Quick potion | Wheel → EQUIPMENT → potion, using opposite laser + trigger |
 | Grab wheel potion | Wheel → EQUIPMENT → potion, using the pointing hand's grip |
 | Wrist health / mana / XP | Look at the back of the left wrist |
@@ -168,14 +166,21 @@ Bosses, champions, uniques and their minions keep their bars with either setting
 There is no left-trigger modifier layer. Each hand aims its own spells. Face
 shortcuts do not change either trigger assignment. On a Sorceress, Fire Bolt,
 Fireball, Ice Bolt, Ice Blast and Charged Bolt can fire from both hands simultaneously,
-each with horizontal aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
+each with independent aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
 mana costs apply to each cast, and walking remains available without entering
 the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
 for the experimental adapter's scope and offline testing checklist.
 
-**VR Settings > Controls > Planar spell aiming** is On by default. Turn it Off
-and Apply for up/down aiming of straight projectile spells; Charged Bolt keeps
-its native planar spread. The preference saves and applies to new casts live.
+**VR Settings > Controls > Planar spell aiming** defaults to Off for new or
+missing settings, allowing up/down aiming of straight projectile spells. Turn
+it On and Apply to keep those spells level; Charged Bolt keeps its native planar
+spread. Existing saved preferences are retained, and changes apply to new casts.
+
+**Projectile aim assist** on the same tab defaults to Strong for new or missing
+settings. Strong adds launch assistance and gentle homing for supported straight
+hand spells; Light assists only at launch, and Off disables assistance. Charged
+Bolt uses launch assistance only. Bows, thrown weapons and other native spells
+are unchanged. Existing saved choices are retained; Strong does not guarantee a hit.
 
 Other skills retain native repeat behavior, delays and animation restrictions.
 A native action has one owner: the first held input wins, with right-hand
@@ -326,7 +331,15 @@ own release, which runs through BodyWalk and FlatVR, visit the
 
 D2R PCVR adds native OpenXR support for SteamVR and Virtual Desktop (VDXR),
 motion combat, the physical bow and potions, VR menus, foveated rendering and
-the guided Windows installer. Licenses for all third-party components are in
+the guided Windows installer.
+
+D2R PCVR has its own plugin identity (`d2r-pcvr-vrcam`, shown as D2R PCVR by
+bearstonem in D2RLoader and in the DLL's file properties) and its own file
+names, `d2rl-pcvr.dll` and `d2r_pcvr.ini`, so its installer no longer replaces
+D2R VR's `d2rl-vrcam.dll` and `d2r_vr.ini`. Releases up to 0.3.15 used D2R VR's
+names; Update / repair carries their settings and calibration over. The two
+mods cannot run in the same game folder at the same time: setup stops and says
+so when D2R VR is installed there. Licenses for all third-party components are in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
 This project is not affiliated with or endorsed by Blizzard Entertainment.

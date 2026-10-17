@@ -13,7 +13,9 @@ int main(){
     // Reset only that fixture's output so repeated runs check a fresh session.
     wchar_t path[MAX_PATH];GetModuleFileNameW(nullptr,path,MAX_PATH);std::wstring p(path);
     p.resize(p.find_last_of(L"\\/"));p.resize(p.find_last_of(L"\\/")+1);p+=L"logs\\d2r-vr-frame.log";
-    if(!DeleteFileW(p.c_str())&&GetLastError()!=ERROR_FILE_NOT_FOUND)return 6;
+    if(!DeleteFileW(p.c_str())&&GetLastError()!=ERROR_FILE_NOT_FOUND&&GetLastError()!=ERROR_PATH_NOT_FOUND)return 6;
+    const auto folder=p.substr(0,p.find_last_of(L"\\/"));
+    if(!RemoveDirectoryW(folder.c_str())&&GetLastError()!=ERROR_PATH_NOT_FOUND&&GetLastError()!=ERROR_FILE_NOT_FOUND)return 7;
     if(!framevr::logging::Start(nullptr))return 1;
     HANDLE threads[]={CreateThread(nullptr,0,Produce,(void*)1,0,nullptr),CreateThread(nullptr,0,Produce,(void*)2,0,nullptr)};
     if(!threads[0]||!threads[1])return 2;

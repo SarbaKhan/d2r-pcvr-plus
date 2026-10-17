@@ -207,7 +207,7 @@ def install_choices(choices, source_bundle, payload, runner):
             for folder in ('installation-backups', 'configuration-backups', 'deps'):
                 if (destination / folder).is_dir():
                     shutil.copytree(destination / folder, stage / folder, dirs_exist_ok=True)
-        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.3', 'game': c['game']}))
+        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.4.0', 'game': c['game']}))
         if destination.exists():
             destination.rename(old)
         stage.rename(destination)
@@ -220,7 +220,7 @@ def install_choices(choices, source_bundle, payload, runner):
         previous_loader = loader_config.read_text(encoding='utf-8-sig') if loader_config.is_file() else None
         print('Installing verified mod dependencies and profiles...', flush=True)
         subprocess.run([str(executable), '--install-game', '--game', c['game'], '--plugin',
-                        str(installed_payload / 'bin/d2rl-vrcam.dll'), '--deps', str(destination / 'deps'),
+                        str(installed_payload / 'bin/d2rl-pcvr.dll'), '--deps', str(destination / 'deps'),
                         '--backup-dir', str(destination / 'installation-backups'), '--saves', c['saves'],
                         '--download-deps', '--preserve-settings', '--store', 'steam'], check=True)
         updates = preference_updates(c['game'], c, previous_loader)

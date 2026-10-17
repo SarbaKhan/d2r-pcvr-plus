@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import re
+import mod_identity
 
 LANGUAGES = {'': 'Default (game language)', 'enUS': 'English', 'deDE': 'German',
              'esES': 'Spanish (Spain)', 'frFR': 'French', 'itIT': 'Italian',
@@ -12,7 +13,12 @@ LANGUAGES = {'': 'Default (game language)', 'enUS': 'English', 'deDE': 'German',
 
 def preferences(game):
     result = {'layout': 'WASD', 'text_locale': '', 'audio_locale': ''}
-    for rel, keys in [('d2rloader/plugins/d2r_pcvr_plus_flat.ini', ['flat_layout']),
+    flat = mod_identity.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini'
+    if not (Path(game) / flat).is_file():
+        found = mod_identity.survey(game)
+        if found.legacy or found.moved:
+            flat = Path('d2rloader/plugins/d2r_pcvr_plus_flat.ini')
+    for rel, keys in [(flat, ['flat_layout']),
                       ('d2rloader/config/d2rloader.toml', ['text_locale', 'audio_locale'])]:
         path = Path(game) / rel
         if not path.is_file():
@@ -46,7 +52,7 @@ def replace_value(text, key, value, section=None):
 
 
 def preference_updates(game, choices, previous_loader=None):
-    flat = Path(game) / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini'
+    flat = Path(game) / 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini'
     toml = Path(game) / 'd2rloader/config/d2rloader.toml'
     content = previous_loader if previous_loader is not None else toml.read_text(encoding='utf-8-sig')
     for key in ('text_locale', 'audio_locale'):

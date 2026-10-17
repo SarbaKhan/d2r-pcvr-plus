@@ -1,4 +1,4 @@
-// D2R_VR_Settings.exe - sliders for d2r_vr.ini.
+// D2R_VR_Settings.exe - sliders for d2r_pcvr.ini (d2r_vr.ini until D2R PCVR 0.3.16).
 //
 // Lives next to the ini in <game>\d2rloader\plugins. Every slider or tick box
 // writes its key the moment it moves; vrcam re-reads the file within half a
@@ -8,11 +8,12 @@
 // columns as the window is wide, and what does not fit scrolls. Per-monitor
 // DPI aware; Ctrl + wheel (or Ctrl +, Ctrl -, Ctrl 0) zooms on top of that.
 // The window's own size, zoom and tab go to d2r_vr_settings.ini, never to
-// d2r_vr.ini (a write there makes vrcam re-read it).
+// d2r_pcvr.ini (a write there makes vrcam re-read it).
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "d2r_vr_build.h"
+#include "../../vr/pcvr_mod_layout.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
@@ -30,6 +31,7 @@
 #include <cstdio>
 #include <cwchar>
 #include <fstream>
+#include <filesystem>
 #include <initializer_list>
 #include <deque>
 #include <map>
@@ -1235,7 +1237,7 @@ std::wstring GameSettingsPath() {
 }
 
 bool ReadFileText(const std::wstring& path, std::string* out) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f{std::filesystem::path(path), std::ios::binary};
     if (!f) return false;
     std::stringstream ss; ss << f.rdbuf(); *out = ss.str();
     return true;
@@ -1267,7 +1269,7 @@ void WriteGameValue(const Item& it, float v) {
     if (!std::regex_search(text, m, std::regex(KeyPattern(it.key)))) return;
     const std::string out = m.prefix().str() + m[1].str() + std::to_string((int)std::lround(v)) + m.suffix().str();
     if (out == text) return;
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    std::ofstream f{std::filesystem::path(path), std::ios::binary | std::ios::trunc};
     f << out;
 }
 
@@ -1321,7 +1323,7 @@ void WriteBodyWalkValue(const Item& it, float v) {
     snprintf(n8, sizeof n8, "%.2f", v);
     const std::string out = m.prefix().str() + m[1].str() + n8 + m.suffix().str();
     if (out == text) return;
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    std::ofstream f{std::filesystem::path(path), std::ios::binary | std::ios::trunc};
     f << out;
 }
 
@@ -1331,11 +1333,12 @@ std::wstring ReadPath(const Item& it) {
     return buf;
 }
 
+std::wstring ReShadeFolder();
+std::wstring ModFolder();
+
 // reshade-shaders\Textures next to the game: the ini sits in <game>\d2rloader\plugins.
 std::wstring TexturesDir() {
-    std::wstring d = g_ini;
-    for (int up = 0; up < 3; ++up) { const size_t s = d.find_last_of(L'\\'); if (s == std::wstring::npos) return L""; d.resize(s); }
-    return d + L"\\reshade-shaders\\Textures";
+    return ReShadeFolder() + L"reshade-shaders\\Textures";
 }
 
 // A picture under the Textures folder is kept relative to it, anything else as a full path.
@@ -1446,7 +1449,7 @@ std::wstring GameFolder();
 constexpr const wchar_t* kGenericDepth = L"Generic Depth";
 std::vector<std::wstring> DisabledAddons() {
     wchar_t buf[2048] = {};
-    GetPrivateProfileStringW(L"ADDON", L"DisabledAddons", L"", buf, 2048, (GameFolder() + L"ReShade.ini").c_str());
+    GetPrivateProfileStringW(L"ADDON", L"DisabledAddons", L"", buf, 2048, (ReShadeFolder() + L"ReShade.ini").c_str());
     std::vector<std::wstring> out;
     std::wstring cur;
     for (const wchar_t* c = buf;; ++c) {
@@ -1466,7 +1469,7 @@ float ReadReShadeValue(const Item&) {
     return 1.0f;
 }
 void WriteReShadeValue(const Item&, float v) {
-    const std::wstring ini = GameFolder() + L"ReShade.ini";
+    const std::wstring ini = ReShadeFolder() + L"ReShade.ini";
     if (GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES) return;   // no ReShade: nothing to switch
     std::wstring list;
     for (const std::wstring& a : DisabledAddons()) {
@@ -2189,6 +2192,12 @@ std::wstring BodyWalkExe() {
 Item* FindItem(const wchar_t* section, const wchar_t* key);
 // The game under D2RLoader, from its own folder (this program sits beside D2R.exe).
 void LaunchGame() {
+    if (!ModFolder().empty()) {
+        MessageBoxW(g_main, L"Start D2R PCVR using its SteamVR or Virtual Desktop shortcut.\n"
+                            L"These shortcuts select your headset runtime and the D2R-PCVR mod.",
+                    L"Launch D2R PCVR", MB_OK);
+        return;
+    }
     const std::wstring game = GameFolder();
     const std::wstring exe = game + L"D2RLoader.exe";
     ShellExecuteW(g_main, L"open", exe.c_str(), nullptr, game.c_str(), SW_SHOWNORMAL);
@@ -2248,22 +2257,20 @@ void RefreshStatus() {
     // by the plain D2R.exe and makes vrcam step aside - plus the mod's effect.
     // And FlatVR's depth add-on, which ReShade loads from the same folder.
     {
-        wchar_t exe[MAX_PATH];
-        DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
-        while (n && exe[n - 1] != L'\\') --n;
-        const std::wstring game(exe, n);
+        const std::wstring game = GameFolder();
+        const std::wstring effects = ReShadeFolder();
         if (Exists(game + L"dxgi.dll"))
             SetStatus(L"reshade", kBad, L"dxgi.dll is beside the game: D2R refuses it - rename it to ReShade64.dll");
-        else if (!Exists(game + L"ReShade64.dll")) {
+        else if (!Exists(effects + L"ReShade64.dll")) {
             if (!g_rsBusy.load())
                 SetStatus(L"reshade", kBad, g_rsError.empty() ? L"ReShade not installed - press Install ReShade" : g_rsError.c_str());
         }
-        else if (!Exists(game + L"reshade-shaders\\Shaders\\D2R_DepthFog.fx"))
+        else if (!Exists(effects + L"reshade-shaders\\Shaders\\D2R_DepthFog.fx"))
             SetStatus(L"reshade", kBad, L"ReShade is there, the mod's effect D2R_DepthFog.fx is not - run D2R VR Setup again");
         else
             SetStatus(L"reshade", kOk, L"ReShade and the mod's effect installed");
         if (Item* b = FindItem(L"@run", L"reshade_get")) {
-            const bool hide = Exists(game + L"ReShade64.dll") || Exists(game + L"dxgi.dll");
+            const bool hide = Exists(effects + L"ReShade64.dll") || Exists(game + L"dxgi.dll");
             if (b->hidden != hide) { b->hidden = hide; LayoutPage(); }
         }
         const bool addon = Exists(game + L"FlatVR_DepthProvider.addon64");
@@ -2418,9 +2425,9 @@ void RefreshGameCode() {
     const Item* head = FindItem(L"@status", L"sig_summary");
     if (!head || g_tab != head->tab) return;
     std::wstring path = g_ini;
-    path.resize(path.size() - wcslen(L"d2r_vr.ini"));
+    path.resize(path.size() - wcslen(L"d2r_pcvr.ini"));
     path += L"d2r_vr_game_code.txt";
-    std::ifstream f(path);
+    std::ifstream f{std::filesystem::path(path)};
     std::string line, time, summary;
     int answered = -1;
     std::map<std::string, std::pair<std::string, std::string>> rows;   // name -> (state, RVA now)
@@ -2685,22 +2692,26 @@ std::wstring g_d2rlError;   // the last try's failure, kept on the row until D2R
 struct D2RLProgress { int state; std::wstring text; bool done; };
 
 // The game's folder: this program sits beside D2R.exe, and a copy in d2rloader\plugins.
-std::wstring GameFolder() {
-    wchar_t exe[MAX_PATH];
-    DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
-    while (n && exe[n - 1] != L'\\') --n;
-    std::wstring dir(exe, n);
-    const std::wstring tail = L"d2rloader\\plugins\\";
-    if (dir.size() > tail.size() && _wcsicmp(dir.c_str() + dir.size() - tail.size(), tail.c_str()) == 0)
-        dir.resize(dir.size() - tail.size());
-    return dir;
+std::wstring PluginFolder() {
+    const std::wstring ini = g_ini;
+    const size_t end = ini.find_last_of(L'\\');
+    return end == std::wstring::npos ? L"" : ini.substr(0, end + 1);
 }
+
+std::wstring ModFolder() { return pcvrlayout::ModRootOfPluginDir(PluginFolder()); }
+
+std::wstring GameFolder() {
+    const auto game = pcvrlayout::GameOfPluginDir(PluginFolder());
+    return game.empty() ? PluginFolder() : game;
+}
+
+std::wstring ReShadeFolder() { return pcvrlayout::ReShadeDir(GameFolder(), ModFolder(), true); }
 
 // allow_global_extensions = true in d2rloader\config\d2rloader.toml: D2RLoader loads
 // the plugins in d2rloader\plugins only with it (as D2R VR Setup's EnableGlobalExtensions).
 void EnableGlobalExtensions(const std::wstring& game) {
     const std::wstring path = game + L"d2rloader\\config\\d2rloader.toml";
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in{std::filesystem::path(path), std::ios::binary};
     if (!in) return;
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     in.close();
@@ -2708,7 +2719,7 @@ void EnableGlobalExtensions(const std::wstring& game) {
     const size_t at = text.find(off);
     if (at == std::string::npos) return;
     text.replace(at, off.size(), "allow_global_extensions = true");
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    std::ofstream out{std::filesystem::path(path), std::ios::binary | std::ios::trunc};
     out << text;
     LogLine(L"d2rloader: allow_global_extensions switched on - D2RLoader loads the mod's plugins");
 }
@@ -2718,7 +2729,7 @@ void D2RLoaderStatus() {
     const bool have = Exists(game + L"D2RLoader.exe");
     if (!g_d2rlBusy.load()) {
         if (have) {
-            EnableGlobalExtensions(game);
+            if (ModFolder().empty()) EnableGlobalExtensions(game);
             SetStatus(L"d2rloader", kOk, L"D2RLoader installed");
         } else {
             SetStatus(L"d2rloader", kBad, g_d2rlError.empty() ? L"D2RLoader is not in the game's folder - the mod runs only under it"
@@ -2822,7 +2833,7 @@ void D2RLoaderThread(HWND wnd, std::wstring game) {
     GetTempPathW(MAX_PATH, tmp);
     const std::wstring zip = std::wstring(tmp) + kD2RLoaderZip;
     {
-        std::ofstream out(zip, std::ios::binary | std::ios::trunc);
+        std::ofstream out{std::filesystem::path(zip), std::ios::binary | std::ios::trunc};
         out.write((const char*)data.data(), (std::streamsize)data.size());
         if (!out) { fail(L"Could not save the D2RLoader download to " + zip); return; }
     }
@@ -2923,7 +2934,7 @@ void ReShadeThread(HWND wnd, std::wstring game) {
     GetTempPathW(MAX_PATH, tmp);
     const std::wstring exe = std::wstring(tmp) + wname;
     {
-        std::ofstream out(exe, std::ios::binary | std::ios::trunc);
+        std::ofstream out{std::filesystem::path(exe), std::ios::binary | std::ios::trunc};
         out.write((const char*)setup.data(), (std::streamsize)setup.size());
         if (!out) { fail(L"Could not save the ReShade setup to " + exe); return; }
     }
@@ -2974,6 +2985,11 @@ void ReShadeThread(HWND wnd, std::wstring game) {
 }
 
 void StartReShadeInstall() {
+    if (!ModFolder().empty()) {
+        MessageBoxW(g_main, L"Run the D2R PCVR installer and choose Update / repair to restore missing files while keeping your settings.",
+                    L"Repair D2R PCVR", MB_OK);
+        return;
+    }
     if (g_rsBusy.exchange(true)) return;
     if (Item* b = FindItem(L"@run", L"reshade_get")) EnableWindow(b->ctl, FALSE);
     SetStatus(L"reshade", kUnknown, L"Looking for the current ReShade on reshade.me...");
@@ -2996,6 +3012,11 @@ void OnReShadeProgress(D2RLProgress* raw) {
 }
 
 void StartD2RLoaderInstall() {
+    if (!ModFolder().empty()) {
+        MessageBoxW(g_main, L"Run the D2R PCVR installer and choose Update / repair to restore missing files while keeping your settings.",
+                    L"Repair D2R PCVR", MB_OK);
+        return;
+    }
     if (g_d2rlBusy.exchange(true)) return;
     if (Item* b = FindItem(L"@run", L"d2rloader_get")) EnableWindow(b->ctl, FALSE);
     SetStatus(L"d2rloader", kUnknown, L"Downloading D2RLoader 1.3.1 from d2rloader.net...");
@@ -3271,7 +3292,7 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM w, LPARAM l) {
 // ---------------------------------------------------------------------------
 // D2R_VR_Settings.exe --setup-bodywalk <settings file>...
 //
-// For the mod's installer (installer/D2R_VR_Setup.iss): BodyWalk's settings
+// For D2R VR's installer (upstream D2R_VR_Setup.iss, not kept here): BodyWalk's settings
 // as the VR mode needs them - Universal tracking output (the head reaches the
 // bridge), FlatVR on, Head Lock follows the game, frame generation off (it
 // shakes the picture in D2R) - and the D2R Bridge plugin not switched off.
@@ -3318,7 +3339,7 @@ int SetupBodyWalk(int argc, wchar_t** argv) {
         SetJsonBool(text, "flat_vr_optical_flow", false);
         EnablePlugin(text, "d2r_bridge");
         EnablePlugin(text, "\"flatvr\"");
-        std::ofstream f(argv[i], std::ios::binary | std::ios::trunc);
+        std::ofstream f{std::filesystem::path(argv[i]), std::ios::binary | std::ios::trunc};
         f << text;
         if (!f.good()) ++failed;
     }
@@ -3341,25 +3362,24 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);   // ShellExecute of the download page asks for it
 
-    // The program sits next to the game's exe (where players look for it, 2026-10-05); the
-    // ini stays in d2rloader\plugins beside the mod. An ini right next to it wins (the old place).
-    DWORD n = GetModuleFileNameW(nullptr, g_ini, MAX_PATH);
-    while (n && g_ini[n - 1] != L'\\') --n;
-    g_ini[n] = 0;
-    {
-        wchar_t here[MAX_PATH];
-        wcscpy_s(here, g_ini);
-        wcscat_s(g_ini, L"d2r_vr.ini");
-        if (GetFileAttributesW(g_ini) == INVALID_FILE_ATTRIBUTES) {
-            wcscpy_s(g_ini, here);
-            wcscat_s(g_ini, L"d2rloader\\plugins\\d2r_vr.ini");
+    // Find the active mod-folder configuration before considering a legacy copy.
+    wchar_t exe[MAX_PATH]{};
+    DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return 1;
+    while (n && exe[n - 1] != L'\\') --n;
+    const auto candidates = pcvrlayout::SettingsCandidates(std::wstring(exe, n));
+    wcscpy_s(g_ini, candidates.front().c_str());
+    for (const auto& candidate : candidates) {
+        if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            wcscpy_s(g_ini, candidate.c_str());
+            break;
         }
     }
     wcscpy_s(g_uiIni, g_ini);
-    g_uiIni[wcslen(g_uiIni) - wcslen(L"d2r_vr.ini")] = 0;
+    g_uiIni[wcslen(g_uiIni) - wcslen(L"d2r_pcvr.ini")] = 0;
     wcscat_s(g_uiIni, L"d2r_vr_settings.ini");
     if (GetFileAttributesW(g_ini) == INVALID_FILE_ATTRIBUTES) {
-        MessageBoxW(nullptr, L"There is no d2r_vr.ini in d2rloader\\plugins next to this program.\n"
+        MessageBoxW(nullptr, L"The D2R PCVR settings file was not found in its mod folder or legacy installation.\n"
                              L"Put this program next to the game's D2R.exe, with the mod installed.",
                     L"D2R VR Settings", MB_ICONWARNING);
         return 1;

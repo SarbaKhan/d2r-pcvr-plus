@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.29)
 project(d2r_vr LANGUAGES C CXX RC)
 
-#   d2rl-vrcam.dll    game side, D2RLoader plugin: the VR layer (vr/) on our own
+#   d2rl-pcvr.dll     game side, D2RLoader plugin: the VR layer (vr/) on our own
 #                     camera and render distance (cleanroom/) - no D2R-3D code
 #   d2r_bridge.dll    BodyWalk side, output plugin (head yaw -> shared memory)
 # D2R-3D/ is kept for reference only; nothing here builds from it.
@@ -46,30 +46,30 @@ add_library(minhook STATIC
 target_include_directories(minhook PUBLIC ${MINHOOK_DIR}/include)
 
 # Our camera and render distance, written clean-room from the game (cleanroom/).
-add_library(d2rcam STATIC cleanroom/camera/d2rcam.cpp cleanroom/drawdist/drawdist.cpp cleanroom/sigscan/sigscan.cpp)
+add_library(d2rcam STATIC cleanroom/camera/d2rcam.cpp cleanroom/drawdist/drawdist.cpp cleanroom/sigscan/sigscan.cpp cleanroom/pools/pools.cpp)
 target_include_directories(d2rcam PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cleanroom/camera ${CMAKE_CURRENT_SOURCE_DIR}/cleanroom/sigscan)
 target_link_libraries(d2rcam PUBLIC D2RLPlugin::D2RLPlugin)
 target_compile_definitions(d2rcam PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(d2rcam PRIVATE /utf-8 /W4 /EHsc /permissive-)
 
-add_library(d2rl-vrcam SHARED vr/vrcam.cpp vr/dlss_mv.cpp vr/skeletons.cpp vr/gamestate.cpp vr/gamecmd.cpp vr/probe.cpp vr/uitrace.cpp vr/hud.cpp vr/memdiff.cpp vr/writewatch.cpp vr/vrcam.rc)
-target_sources(d2rl-vrcam PRIVATE vr/dlss_depth.cpp)
-target_sources(d2rl-vrcam PRIVATE vr/billboards.cpp)
-target_include_directories(d2rl-vrcam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shared ${FLATVR_SHARED_DIR} ${RESHADE_SDK_INCLUDE} ${BODYWALK_SRC})
-target_link_libraries(d2rl-vrcam PRIVATE d2rcam minhook user32)
-target_compile_options(d2rl-vrcam PRIVATE /utf-8 /W3 /EHsc /permissive-)
+add_library(d2rl-pcvr SHARED vr/vrcam.cpp vr/dlss_mv.cpp vr/skeletons.cpp vr/gamestate.cpp vr/gamecmd.cpp vr/probe.cpp vr/uitrace.cpp vr/hud.cpp vr/memdiff.cpp vr/writewatch.cpp vr/vrcam.rc)
+target_sources(d2rl-pcvr PRIVATE vr/dlss_depth.cpp)
+target_sources(d2rl-pcvr PRIVATE vr/billboards.cpp)
+target_include_directories(d2rl-pcvr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shared ${FLATVR_SHARED_DIR} ${RESHADE_SDK_INCLUDE} ${BODYWALK_SRC})
+target_link_libraries(d2rl-pcvr PRIVATE d2rcam minhook user32)
+target_compile_options(d2rl-pcvr PRIVATE /utf-8 /W3 /EHsc /permissive-)
 
 add_library(d2r_bridge SHARED bodywalk_bridge/d2r_bridge.cpp)
 target_include_directories(d2r_bridge PRIVATE ${BODYWALK_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/shared ${FLATVR_SHARED_DIR})
 target_link_libraries(d2r_bridge PRIVATE advapi32)
 target_compile_options(d2r_bridge PRIVATE /utf-8 /W3 /EHsc)
 
-# Sliders for d2r_vr.ini, dropped next to it in <game>\d2rloader\plugins.
-# Its version (Home page, update check) is vrcam's g_info_version: d2r_vr_version.h is made from
-# vr/vrcam.cpp now and again whenever it changes (rewritten only when the number does).
+# Sliders for d2r_pcvr.ini, dropped next to it in <game>\d2rloader\plugins.
+# Its version (Home page, update check) is the plugin's D2RPCVR_VERSION: d2r_vr_version.h is made from
+# vr/pcvr_identity.h now and again whenever it changes (rewritten only when the number does).
 set(D2RVR_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(D2RVR_VERSION_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/tools/settings/version.cmake")
-set(SRC "${CMAKE_CURRENT_SOURCE_DIR}/vr/vrcam.cpp")
+set(SRC "${CMAKE_CURRENT_SOURCE_DIR}/vr/pcvr_identity.h")
 set(OUT "${D2RVR_GEN_DIR}/d2r_vr_version.h")
 set(STAMP "")
 include(${D2RVR_VERSION_SCRIPT})   # at configure time too: the header is there before the first build
@@ -78,10 +78,10 @@ unset(OUT)
 unset(STAMP)
 add_custom_command(OUTPUT "${D2RVR_GEN_DIR}/d2r_vr_version.stamp"
     BYPRODUCTS "${D2RVR_GEN_DIR}/d2r_vr_version.h"
-    COMMAND ${CMAKE_COMMAND} "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/vr/vrcam.cpp" "-DOUT=${D2RVR_GEN_DIR}/d2r_vr_version.h"
+    COMMAND ${CMAKE_COMMAND} "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/vr/pcvr_identity.h" "-DOUT=${D2RVR_GEN_DIR}/d2r_vr_version.h"
             "-DSTAMP=${D2RVR_GEN_DIR}/d2r_vr_version.stamp" -P "${D2RVR_VERSION_SCRIPT}"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/vr/vrcam.cpp" "${D2RVR_VERSION_SCRIPT}"
-    COMMENT "D2R VR version from vrcam.cpp" VERBATIM)
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/vr/pcvr_identity.h" "${D2RVR_VERSION_SCRIPT}"
+    COMMENT "D2R PCVR version from pcvr_identity.h" VERBATIM)
 add_executable(d2r_vr_settings WIN32 tools/settings/settings.cpp tools/settings/settings.rc "${D2RVR_GEN_DIR}/d2r_vr_version.stamp")
 target_compile_options(d2r_vr_settings PRIVATE /utf-8 /W3 /EHsc)
 # The file players see next to D2R.exe: capitals, like the game's own (2026-10-06). Its window state stays in

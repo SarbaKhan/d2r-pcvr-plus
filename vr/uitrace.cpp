@@ -2,7 +2,7 @@
 // world ends and the interface (HUD, panels, text) begins: which render
 // targets a frame draws into, in what order, what is cleared to what, what is
 // copied where, and which texture is presented. Ctrl + F10 in the game writes
-// d2r_vr_uitrace.txt beside d2r_vr.ini.
+// d2r_vr_uitrace.txt beside d2r_pcvr.ini.
 //
 // The order is the order the game RECORDS its commands in (D3D12 records on
 // several threads); each line carries its command list, so the lists can be
