@@ -510,6 +510,50 @@ def main():
     put(mod_identity.MODINFO, mod_identity.modinfo_bytes())
     # ReShade's paths are relative to its base, the mod's reshade\ folder (the plugin sets it).
     put_config(mod_identity.RESHADE_DIR / 'ReShade.ini', b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
+    # Always repair the mod-owned search roots while retaining custom settings.
+    reshade_config = game / mod_identity.RESHADE_DIR / 'ReShade.ini'
+    repair = configparser.ConfigParser(interpolation=None, strict=False)
+    repair.optionxform = str
+    try:
+        repair.read(reshade_config, encoding='utf-8-sig')
+    except (configparser.Error, UnicodeError):
+        print('ReShade configuration could not be parsed; leaving it unchanged.')
+    else:
+        if not repair.has_section('GENERAL'):
+            repair.add_section('GENERAL')
+        for key, required in (('EffectSearchPaths', r'.\reshade-shaders\Shaders'),
+                              ('TextureSearchPaths', r'.\reshade-shaders\Textures')):
+            paths = [v.strip() for v in repair.get('GENERAL', key, fallback='').split(',') if v.strip()]
+            if required not in paths:
+                paths.insert(0, required)
+            repair.set('GENERAL', key, ','.join(paths))
+        import re
+        original = reshade_config.read_text(encoding='utf-8-sig')
+        lines = original.splitlines(keepends=True)
+        in_general = False
+        pending = {key: repair.get('GENERAL', key) for key in ('EffectSearchPaths', 'TextureSearchPaths')}
+        result = []
+        for line in lines:
+            if line.lstrip().startswith('['):
+                if in_general:
+                    result.extend(key + '=' + value + '\n' for key, value in pending.items())
+                    pending.clear()
+                in_general = line.strip().lower() == '[general]'
+            match = re.match(r'\s*(EffectSearchPaths|TextureSearchPaths)\s*=', line, re.I) if in_general else None
+            if match:
+                key = next((key for key in pending if key.lower() == match[1].lower()), None)
+                if key:
+                    value = pending.pop(key)
+                    if line.split('=', 1)[1].strip() != value:
+                        line = key + '=' + value + '\n'
+            result.append(line)
+        if pending:
+            if not in_general:
+                result.append('\n[GENERAL]\n')
+            result.extend(key + '=' + value + '\n' for key, value in pending.items())
+        repaired = ''.join(result)
+        if repaired != original:
+            put(mod_identity.RESHADE_DIR / 'ReShade.ini', repaired.encode())
     put_config(mod_identity.RESHADE_DIR / 'D2R_Frame_ReShade.ini', b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
     put(mod_identity.RESHADE_DIR / 'reshade-shaders/Shaders/D2R_DepthFog.fx', (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())
     # Flat preferences survive repairs and VR calibration resets.

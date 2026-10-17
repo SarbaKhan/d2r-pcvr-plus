@@ -1908,7 +1908,11 @@ bool Begin() {
     // Rearm pointer input when story/choices change, keeping the same anchored
     // canvas. A trigger that dismisses speech must not also choose an option.
     if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
-    const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
+    bool keepWorld=true;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    keepWorld=externalMode==3||externalMode==4;
+#endif
+    const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!keepWorld;
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
@@ -2540,7 +2544,7 @@ void EndPair() {
         hudAt=now;
         const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count));
         const float radius=tableWidth*.5f+.025f;
-        const float arc=hudArc*spatialui::HudScale;
+        const float arc=hudArc*spatialui::HudScale*.775f/radius;
         const float h=radius*arc*float(hudHeight)/hudWidth;
         for(int i=0;i<segments;++i) {
             auto p=spatialui::HudSegment(tableAnchor,radius,hudHeading,arc,h,hudTilt,i,segments);
@@ -2878,26 +2882,27 @@ void ObserveDialogueTarget(float x,float z) {
     if(!std::isfinite(x+z)||gamestate::DialogueOnly())return;
     dialogueGrid={x,0,z};dialogueAt=GetTickCount64();dialogueSession=gamestate::LocalPlayer();
 }
-void ConfigureDioramaPlacement(float height,float floorOffset){
-    std::lock_guard lock(mutex);tableControls.Configure(height);
+void ConfigureDioramaPlacement(float height,float floorOffset,float width){
+    std::lock_guard lock(mutex);tableControls.Configure(height,width);
     tableFloorOffset=std::isfinite(floorOffset)?std::clamp(floorOffset,-3.f,3.f):0;
 }
-uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch){
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch,uint8_t lt,uint8_t rt){
     std::lock_guard lock(mutex);
     allowed=allowed&&externalMode==3&&valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;
-    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64());
-    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0);
+    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64(),lt,rt);
+    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0)|(tableControls.BlockAxes(int(slot))?0x20000u:0);
 }
-bool TakeDioramaHeight(float& height,bool allowed){
+bool TakeDioramaHeight(float& height,float& width,bool allowed){
     std::lock_guard lock(mutex);tableControls.Expire(GetTickCount64());
     if(!allowed||!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
     if(!tableControls.dirty||tableControls.owner>=0)return false;
-    height=tableControls.heightCm*.01f;tableControls.dirty=false;return true;
+    height=tableControls.heightCm*.01f;width=tableControls.widthCm*.01f;tableControls.dirty=false;return true;
 }
 void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
     float width,float radius,float distance,float drop,float follow,float heading,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
+    width=tableControls.widthCm*.01f;
     if(!externalRigValid) {
         tableControls.Expire(GetTickCount64());
         if(!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
@@ -2906,11 +2911,24 @@ bool DioramaView(float out[16],float center[16],float sampled[3],const float her
             tableFloorKnown=true;
             if(!floorSpace)Say("Diorama: no STAGE floor; using fixed estimated floor. Calibrate diorama.floor_offset_m if needed.");
         }
-        if(!tablePlaced||tableControls.owner>=0) {
+        static bool grabbing=false;static math::Vec grabHead{},grabAnchor{};static float grabYaw=0,grabHeading=0;
+        if(!tablePlaced||tableControls.recenter) {
+            grabbing=false;
             const float yaw=math::Heading(Q(head.orientation));
             tableAnchor=perspective::TablePosition(V(head.position),yaw,distance,tableFloor+tableFloorOffset,tableControls.heightCm*.01f);
-            tableHeading=heading-yaw;tablePlaced=true;
+            tableHeading=heading-yaw;tablePlaced=true;tableControls.recenter=false;
         }
+        // Preserve the current grab offset, then rotate/translate it with head yaw.
+        if(tableControls.moving) {
+            const float yaw=math::Heading(Q(head.orientation));
+            if(!grabbing){grabHead=V(head.position);grabAnchor=tableAnchor;grabYaw=yaw;grabHeading=tableHeading;}
+            const float a=yaw-grabYaw,c=std::cos(a),s=std::sin(a);
+            const auto d=grabAnchor-grabHead;
+            tableAnchor.x=head.position.x+c*d.x+s*d.z;
+            tableAnchor.z=head.position.z-s*d.x+c*d.z;
+            tableHeading=grabHeading-a;
+        }
+        grabbing=tableControls.moving;
         tableAnchor.y=tableFloor+tableFloorOffset+tableControls.heightCm*.01f;
         const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
         if(!tableFollowing||now-tableAt>500)tableCenter=target;

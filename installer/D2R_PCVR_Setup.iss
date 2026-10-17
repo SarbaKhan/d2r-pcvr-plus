@@ -17,6 +17,8 @@ AppPublisher=D2R PCVR Plus contributors
 AppPublisherURL=https://github.com/SarbaKhan/d2r-pcvr-plus
 AppSupportURL=https://github.com/SarbaKhan/d2r-pcvr-plus/issues
 DefaultDirName={localappdata}\Programs\D2R PCVR Plus
+; Do not inherit the obsolete game-local helper directory from preview builds.
+UsePreviousAppDir=no
 DefaultGroupName=D2R PCVR Plus
 DisableDirPage=yes
 DisableProgramGroupPage=yes

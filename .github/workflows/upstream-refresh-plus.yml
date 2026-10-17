@@ -1,7 +1,7 @@
 name: Upstream refresh Plus
 on:
   push:
-    branches: [feature/upstream-refresh-plus]
+    branches: [feature/upstream-refresh-plus, feature/diorama-editor-floating-menus]
   workflow_dispatch:
 permissions:
   contents: read

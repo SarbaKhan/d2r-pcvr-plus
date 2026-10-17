@@ -58,11 +58,11 @@ bool PerspectiveReady();
 void ConfigureDioramaPassthrough(bool requested);
 void DioramaShaderReady(bool ready);
 bool DioramaPassthroughActive();
-void ConfigureDioramaPlacement(float height,float floorOffset);
+void ConfigureDioramaPlacement(float height,float floorOffset,float width);
 void ConfigureSpatialUi(float hudTilt,float hudArc,float panelWidth,float panelHeight);
 void ObserveDialogueTarget(float x,float z);
-uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch);
-bool TakeDioramaHeight(float& height,bool allowed);
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch,uint8_t lt,uint8_t rt);
+bool TakeDioramaHeight(float& height,float& width,bool allowed);
 void RecenterTable();
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
     float width,float radius,float distance,float drop,float follow,float heading,int eye);

@@ -47,6 +47,8 @@ class CoexistMigrationTests(unittest.TestCase):
             cfg = configparser.ConfigParser()
             cfg.read(effect / 'ReShade.ini', encoding='utf-8-sig')
             self.assertEqual(cfg['INPUT']['KeyOverlay'], '42,1,0,0')
+            self.assertIn(r'.\reshade-shaders\Shaders', cfg['GENERAL']['EffectSearchPaths'])
+            self.assertIn(r'.\reshade-shaders\Textures', cfg['GENERAL']['TextureSearchPaths'])
             self.assertEqual(Path(cfg['GENERAL']['PresetPath']).resolve(), (effect / 'D2R_Frame_ReShade.ini').resolve())
             self.assertIn(str(game / 'custom-textures'), cfg['GENERAL']['TextureSearchPaths'])
             self.assertIn(str(game / 'reshade-shaders/Textures'), cfg['GENERAL']['TextureSearchPaths'])

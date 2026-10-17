@@ -12,43 +12,29 @@ math::Vec Camera(const float* m){return {-m[12]*m[0]-m[13]*m[1]-m[14]*m[2],-m[12
 void PlacementTests(){
     using namespace placement;
     Controls c;
-    auto poll=[&](uint16_t b,uint64_t t,bool allowed=true,uint32_t epoch=1){return c.Poll(0,true,b,allowed,epoch,t);};
-    assert(c.heightCm==74);
-    poll(0,0);assert(poll(Back,10)==0);assert(poll(0,100)==Back);
-    assert(poll(0,120)==Back);assert(poll(0,151)==0); // one deferred tap pulse
-    poll(Back,200);poll(Back,400);poll(Back,600);poll(Back,700);
-    assert(c.owner==0);assert(poll(Back|Up,710)==0);assert(c.heightCm==84);
-    poll(Back|Up,720);assert(c.heightCm==84); // no auto-repeat
-    poll(Back,730);poll(Back|Right,740);assert(c.heightCm==85);
-    poll(Back,750);poll(Back|Left,760);assert(c.heightCm==84);
-    poll(Back,770);poll(Back|Down,780);assert(c.heightCm==74);
-    poll(Back|Up|Down,790);assert(c.heightCm==74); // opposing coarse keys
-    assert(poll(Down,800)==0);assert(c.owner==-1); // held D-pad cannot leak at release
-    assert(poll(Down,810)==0);poll(0,820);assert(poll(Down,830)==Down);
-    poll(0,840);poll(Back,850);assert(poll(Back|Right,860,false)==0);
-    assert(poll(Back|Right,870)==0);assert(poll(0,880)==0);assert(c.owner==-1);
-    // UI epoch change cancels short taps rather than replaying a map toggle.
-    poll(Back,900);poll(Back,920,true,2);assert(poll(0,930,true,2)==0);
-    // Held at entry/reconnect requires a neutral observation first.
-    Controls entry;assert(entry.Poll(0,true,Back,true,0,0)==0);
-    assert(entry.Poll(0,true,Back,true,0,100)==0);assert(entry.owner==-1);
-    entry.Poll(0,true,0,true,0,110);entry.Poll(0,true,Back,true,0,120);
-    entry.Poll(0,true,Back,true,0,300);entry.Poll(0,true,Back,true,0,500);entry.Poll(0,true,Back,true,0,620);
-    assert(entry.owner==0);entry.Expire(1000);assert(entry.owner==-1);
-    assert(entry.Poll(0,true,Back,true,0,1010)==0);entry.Poll(0,false,0,true,0,1020);assert(!entry.Pending());
-    assert(entry.Poll(0,true,Back,true,0,1030)==0);
-    // Only one pad may place the table; idle other slots do not cancel it.
-    Controls multi;for(int i=0;i<2;++i)multi.Poll(i,true,0,true,0,0);
-    for(uint64_t t:{10,200,400,510})multi.Poll(0,true,Back,true,0,t);
-    multi.Poll(1,true,0,true,0,520);assert(multi.owner==0);
-    assert(multi.Poll(1,true,Back|Up,true,0,530)==0);assert(multi.heightCm==74);
-    multi.Poll(1,false,0,true,0,540);assert(multi.owner==0);
-    multi.CancelAll();assert(multi.owner==-1);assert(multi.Poll(0,true,Back,false,0,550)==0);
-    // Clamp and exact centimetre arithmetic, other buttons untouched.
-    c=Controls{};c.Configure(1.99f);poll(0,0);
-    for(uint64_t t:{10,200,400,510})poll(Back,t);
-    assert(poll(Back|Up|0x1000,520)==0x1000);assert(c.heightCm==200);
-    c.heightCm=20;poll(Back,530);poll(Back|Down,540);assert(c.heightCm==20);
+    auto poll=[&](uint16_t b,uint64_t t,uint8_t lt=0,uint8_t rt=0){return c.Poll(0,true,b,true,1,t,lt,rt);};
+    poll(0,0);assert(poll(Back,10)==Back);poll(0,20);
+    assert(poll(Start,30)==0);assert(poll(0,100)==Start);poll(0,151);
+    for(uint64_t t:{200,400,600,700})poll(Start,t);
+    assert(c.owner==0);poll(0,710);assert(c.owner==0);
+    poll(Up,720);assert(c.heightCm==84);poll(Up,730);assert(c.heightCm==84);
+    poll(0,740);poll(Down,750,255);assert(c.heightCm==83);
+    poll(0,760);poll(Right,770);assert(c.widthCm==160);
+    poll(0,780);poll(Left,790);assert(c.widthCm==150);
+    poll(RB,800);assert(c.recenter);poll(0,810,0,255);assert(c.moving&&c.BlockAxes(0));
+    poll(0,820);assert(!c.moving);
+    c.heightCm=150;poll(Up,830);assert(c.heightCm==150);
+    c.heightCm=20;poll(Down,840);assert(c.heightCm==20);
+    c.widthCm=300;poll(Right,850);assert(c.widthCm==300);
+    c.widthCm=50;poll(Left,860);assert(c.widthCm==50);
+    poll(0,870);poll(Start,880);assert(poll(0,890)==0);assert(c.owner==-1);
+    poll(0,900);assert(poll(Back,910)==Back);
+    Controls entry;entry.Poll(0,true,Start,true,0,0);entry.Poll(0,true,Start,true,0,600);assert(entry.owner==-1);
+    entry.Poll(0,true,0,true,0,610);
+    for(uint64_t t:{620,820,1020,1120})entry.Poll(0,true,Start,true,0,t);
+    assert(entry.owner==0);entry.Poll(1,false,0,true,0,1130);assert(entry.owner==0);
+    entry.Expire(1500);assert(entry.owner==-1);
+    entry.Poll(0,true,Start,true,0,1510);assert(entry.owner==-1);
     // Floor-height placement ignores head height and preserves horizontal distance.
     for(float y:{.8f,1.7f,2.f}) {
         const auto p=perspective::TablePosition({2,y,3},0,1.2f,0,.74f);
