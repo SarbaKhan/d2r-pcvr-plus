@@ -41,3 +41,20 @@ instead of inheriting obsolete game-local helper paths; explicit /DIR still work
 - Minimum/maximum scale preserves UI readability and the same visible map radius.
 - Focus/perspective/menu changes, unplug/reconnect and held buttons never leak attacks.
 - Height/width survive restart. Test Windows SteamVR/VDXR and Linux SteamVR/WiVRn.
+
+## DLL-only follow-up
+
+The editor shows "Diorama edit mode" and controls for four seconds, then
+"Editing - press Start to finish" until editing ends. Normal exit shows
+"Diorama placement saved" for three seconds. Interrupted editing uses the neutral
+"Diorama editing ended" notice. This fixed-size view-space panel does not scale
+with the miniature. No sound or external assets are required.
+
+For opaque native F3/F4 menus only, the captured native UI source is emptied in
+both eye passes after copying the floating panel. This prevents a native final
+composite from retaining the black menu backing. Both-eye behavior still needs
+headset validation. F1/F2, dialogue and Flat paths are unchanged.
+
+This branch now builds a DLL-only ZIP instead of full installers. Follow its
+README to replace `mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll` inside the game
+folder on either Windows or Linux/Proton. Keep existing configuration files.

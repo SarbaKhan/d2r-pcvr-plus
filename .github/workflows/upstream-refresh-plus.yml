@@ -43,15 +43,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
           & ./deps/python/python.exe -m unittest discover -s steamvr -p '*test.py'
           if ($LASTEXITCODE -ne 0) { throw 'Python fixtures failed' }
+      - name: DLL-only update package
+        if: github.ref == 'refs/heads/feature/diorama-editor-floating-menus'
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe steamvr/package_dll_update.py --commit $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DLL update packaging failed' }
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/feature/diorama-editor-floating-menus'
+        with:
+          name: D2R-PCVR-Plus-DLL-Update
+          path: dist-plus/D2R-PCVR-Plus-DLL-Update.zip
+          if-no-files-found: error
       - name: Full Windows installer and payload smoke tests
+        if: github.ref != 'refs/heads/feature/diorama-editor-floating-menus'
         shell: powershell
         run: ./installer/build_plus_release.ps1
       - name: Linux source and DLL kit
+        if: github.ref != 'refs/heads/feature/diorama-editor-floating-menus'
         shell: powershell
         run: |
           & ./deps/python/python.exe steamvr/package_linux_test.py
           if ($LASTEXITCODE -ne 0) { throw 'Linux kit failed' }
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/feature/diorama-editor-floating-menus'
         with:
           name: D2R-PCVR-Plus-Upstream-Preview-Windows
           path: |
@@ -59,11 +74,13 @@ jobs:
             docs/upstream-refresh-plus.md
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/feature/diorama-editor-floating-menus'
         with:
           name: linux-kit
           path: dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
           if-no-files-found: error
   linux-setup:
+    if: github.ref != 'refs/heads/feature/diorama-editor-floating-menus'
     needs: [linux-tests, windows]
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -80,6 +97,7 @@ jobs:
       - run: python -m pip install -r installer/linux-requirements.txt
       - run: python installer/build_linux_setup.py --kit dist-plus/D2R-PCVR-Plus-Linux-Test.tar.gz
       - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/feature/diorama-editor-floating-menus'
         with:
           name: D2R-PCVR-Plus-Upstream-Preview-Linux
           path: dist-plus/*Setup*Linux*.tar.gz*

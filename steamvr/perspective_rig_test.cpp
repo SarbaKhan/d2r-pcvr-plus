@@ -16,7 +16,7 @@ void PlacementTests(){
     poll(0,0);assert(poll(Back,10)==Back);poll(0,20);
     assert(poll(Start,30)==0);assert(poll(0,100)==Start);poll(0,151);
     for(uint64_t t:{200,400,600,700})poll(Start,t);
-    assert(c.owner==0);poll(0,710);assert(c.owner==0);
+    assert(c.owner==0);assert(c.Notice(700)==1);assert(c.Notice(4701)==2);poll(0,710);assert(c.owner==0);
     poll(Up,720);assert(c.heightCm==84);poll(Up,730);assert(c.heightCm==84);
     poll(0,740);poll(Down,750,255);assert(c.heightCm==83);
     poll(0,760);poll(Right,770);assert(c.widthCm==160);
@@ -27,7 +27,7 @@ void PlacementTests(){
     c.heightCm=20;poll(Down,840);assert(c.heightCm==20);
     c.widthCm=300;poll(Right,850);assert(c.widthCm==300);
     c.widthCm=50;poll(Left,860);assert(c.widthCm==50);
-    poll(0,870);poll(Start,880);assert(poll(0,890)==0);assert(c.owner==-1);
+    poll(0,870);poll(Start,880);assert(poll(0,890)==0);assert(c.owner==-1);assert(c.Notice(890)==3);assert(c.Notice(3890)==0);
     poll(0,900);assert(poll(Back,910)==Back);
     Controls entry;entry.Poll(0,true,Start,true,0,0);entry.Poll(0,true,Start,true,0,600);assert(entry.owner==-1);
     entry.Poll(0,true,0,true,0,610);
@@ -41,7 +41,7 @@ void PlacementTests(){
     for(uint64_t t:{10,210,410,510})cancel.Poll(0,true,Start,true,1,t);
     cancel.Poll(0,true,0,true,1,520);
     assert(cancel.Poll(0,true,RB|0x1000,false,2,530,0,255)==0);
-    assert(cancel.owner==-1&&cancel.BlockAxes(0));
+    assert(cancel.owner==-1&&cancel.BlockAxes(0));assert(cancel.Notice(530)==4);
     assert(cancel.Poll(0,true,RB|0x1000,true,2,540,0,255)==0);
     cancel.Poll(0,true,0,true,2,550);assert(!cancel.BlockAxes(0));
     assert(cancel.Poll(0,true,0x1000,true,2,560)==0x1000);

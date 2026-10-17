@@ -16,6 +16,12 @@ struct Controls {
     std::array<Slot,4> slots{};
     int owner=-1, heightCm=74, widthCm=150;
     bool dirty=false, moving=false, recenter=false;
+    int notice=0;
+    uint64_t noticeUntil=0;
+    int Notice(uint64_t now) const {
+        if(owner>=0)return now<noticeUntil?1:2;
+        return now<noticeUntil?notice:0;
+    }
     void Configure(float height,float width=1.5f) {
         if(!dirty&&owner<0) {
             if(std::isfinite(height))heightCm=int(std::lround(std::clamp(height,.2f,1.5f)*100));
@@ -29,7 +35,7 @@ struct Controls {
     }
     void Cancel(int i) {
         auto& s=slots[i];
-        if(owner==i){s.quarantine|=s.last;s.triggerQuarantine=true;owner=-1;moving=false;recenter=false;}
+        if(owner==i){notice=4;noticeUntil=s.seen+3000;s.quarantine|=s.last;s.triggerQuarantine=true;owner=-1;moving=false;recenter=false;}
         if(s.pressing)s.quarantine|=s.last&Start;
         s.pressing=s.entered=s.ready=false;s.pulseUntil=0;
     }
@@ -54,7 +60,7 @@ struct Controls {
             if(start&&(rise&Start)&&!s.pressing){s.pressing=true;s.entered=false;s.pressed=now;}
             if(!start&&s.pressing) {
                 const bool exit=!s.entered;s.pressing=false;s.entered=false;
-                if(exit){s.last=buttons;Cancel(i);return 0;}
+                if(exit){s.last=buttons;Cancel(i);notice=3;noticeUntil=now+3000;return 0;}
             }
             moving=rt>30;
             if(rise&RB)recenter=true;
@@ -70,7 +76,7 @@ struct Controls {
             if(s.ready){s.pressing=true;s.pressed=now;s.epoch=epoch;s.pulseUntil=0;}
             else s.quarantine|=Start;
         }
-        if(s.pressing&&start&&now-s.pressed>=500){owner=i;s.entered=true;moving=false;}
+        if(s.pressing&&start&&now-s.pressed>=500){owner=i;s.entered=true;moving=false;notice=1;noticeUntil=now+4000;}
         if(!start&&s.pressing){s.pressing=false;s.pulseUntil=now+50;}
         if(!start)s.ready=true;
         uint16_t out=buttons;
