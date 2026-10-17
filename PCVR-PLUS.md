@@ -4,7 +4,7 @@ This branch combines current upstream PCVR with Plus Flat cameras, alternative n
 
 - Flat: F1 isometric, F2 third person, F3 first person. Mouse/keyboard and the game's native controller; right-stick camera in F2/F3. WASD or ZQSD selected during setup.
 - VR: F1 isometric and F2 third person use the native classic controller. F3 uses upstream physical VR controls, including its skill wheels. F4 is a stereoscopic tabletop diorama.
-- Diorama: native controller gameplay, hold Select to reposition; D-pad up/down changes height by 10 cm, right/left by 1 cm. Optional WiVRn alpha passthrough; black fallback on SteamVR/VDXR.
+- Diorama: native controller gameplay, hold Start to enter editing, RT to move, RB to recenter, and tap Start to finish. D-pad up/down changes height by 10 cm (LT: 1 cm); left/right changes physical width by 10 cm. See [editor controls](docs/diorama-editor.md). Optional WiVRn alpha passthrough; black fallback on SteamVR/VDXR.
 - Native controller cursor and separate profile preferences; no character relocation or backup.
 
 The DLL is now `mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll`, the VR profile is `d2r_pcvr.ini` in that folder, and Flat uses `d2r_pcvr_plus_flat.ini`. The DLL, shader and launchers must be updated together through setup. The old DLL-only overlay updater is not supported on this branch.

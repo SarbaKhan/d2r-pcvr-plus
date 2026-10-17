@@ -8,6 +8,7 @@
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
 #include <windows.h>
+#include "diorama_notice.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -137,6 +138,9 @@ bool dialoguePlaced=false;uint32_t spatialEpoch=~0u;
 
 bool tableFloorKnown=false;
 placement::Controls tableControls;
+XrSwapchain editorNoticeChain=XR_NULL_HANDLE;
+bool editorNoticeReady=false;
+uint64_t editorNoticeRetry=0;
 bool tablePlaced=false,tableFollowing=false;
 ULONGLONG tableAt=0;
 bool externalRigValid=false;
@@ -311,7 +315,7 @@ UiBlit hudBlit;bool hudSupported=false;uint32_t hudWidth=0,hudHeight=0;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
-bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
+bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false,clearMenuSource=false;
 bool npcChoicesMode=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
@@ -1908,11 +1912,16 @@ bool Begin() {
     // Rearm pointer input when story/choices change, keeping the same anchored
     // canvas. A trigger that dismisses speech must not also choose an option.
     if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
-    const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
+    bool keepWorld=true;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    keepWorld=externalMode==3||externalMode==4;
+#endif
+    clearMenuSource=spatial&&gamestate::OpaqueMenuOpen()&&keepWorld;
+    const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!keepWorld;
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
-    hud::UiFrame(spatialMode,!journalMode,0);
+    hud::UiFrame(spatialMode,!journalMode,0,clearMenuSource);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
     for(auto& e:eyes)e.copied=false;
@@ -2236,7 +2245,7 @@ void ConfigureDeferredWait(bool on) {
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
-    hud::UiFrame(spatialMode,!journalMode,eye);
+    hud::UiFrame(spatialMode,!journalMode,eye,clearMenuSource);
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     hud::DioramaHudFrame(externalMode==3&&hudSupported&&!panelMode&&!spatialMode&&layerLimit>=8,eye);
 #endif
@@ -2538,9 +2547,12 @@ void EndPair() {
         if(!hudAt)hudHeading=std::atan2(d.x,d.z);
         else hudHeading=spatialui::FollowAngle(hudHeading,V(head.position),tableAnchor,float(now-hudAt)*.001f);
         hudAt=now;
-        const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count));
+        // Reserve a composition slot for the editor indication on runtimes
+        // with small layer limits; the segmented HUD must not crowd it out.
+        const uint32_t noticeSlot=tableControls.Notice(now)>0&&contentLimit>count?1u:0u;
+        const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count-noticeSlot));
         const float radius=tableWidth*.5f+.025f;
-        const float arc=hudArc*spatialui::HudScale;
+        const float arc=hudArc*spatialui::HudScale*.775f/radius;
         const float h=radius*arc*float(hudHeight)/hudWidth;
         for(int i=0;i<segments;++i) {
             auto p=spatialui::HudSegment(tableAnchor,radius,hudHeading,arc,h,hudTilt,i,segments);
@@ -2559,6 +2571,30 @@ void EndPair() {
             {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
         book.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    XrCompositionLayerQuad editorNotice{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    const auto noticeNow=GetTickCount64();
+    const int notice=tableControls.Notice(noticeNow);
+    if(layer&&externalMode==3&&!panelMode&&!spatialMode&&!settingsModel.open&&
+       !bodyCalibration.Active()&&notice>0&&headSpace&&count<contentLimit) {
+        if(!editorNoticeReady&&noticeNow>=editorNoticeRetry) {
+            editorNoticeRetry=noticeNow+5000;
+            const auto pixels=placement::PaintNotices();
+            if(!pixels.empty())editorNoticeReady=UploadAtlas(editorNoticeChain,atlasFormat,
+                placement::NoticeWidth,placement::NoticeRow*placement::NoticeRows,pixels);
+        }
+        if(editorNoticeReady) {
+            // View-space panel: stable angular size, independent of table scale.
+            editorNotice.space=headSpace;editorNotice.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
+            editorNotice.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+            editorNotice.pose.orientation.w=1;editorNotice.pose.position={0,.28f,-1.2f};
+            editorNotice.size={.9f,.9f*placement::NoticeRow/placement::NoticeWidth};
+            editorNotice.subImage.swapchain=editorNoticeChain;
+            editorNotice.subImage.imageRect={{0,(notice-1)*placement::NoticeRow},{placement::NoticeWidth,placement::NoticeRow}};
+            layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&editorNotice);
+        }
+    }
+#endif
     XrCompositionLayerQuad settingsPanel{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady)
         motionQuad(settingsPanel,settingsPose,settingsWidth,settingsHeight,{{0,0},{settings::Width,settings::Height}},settingsChain);
@@ -2878,26 +2914,27 @@ void ObserveDialogueTarget(float x,float z) {
     if(!std::isfinite(x+z)||gamestate::DialogueOnly())return;
     dialogueGrid={x,0,z};dialogueAt=GetTickCount64();dialogueSession=gamestate::LocalPlayer();
 }
-void ConfigureDioramaPlacement(float height,float floorOffset){
-    std::lock_guard lock(mutex);tableControls.Configure(height);
+void ConfigureDioramaPlacement(float height,float floorOffset,float width){
+    std::lock_guard lock(mutex);tableControls.Configure(height,width);
     tableFloorOffset=std::isfinite(floorOffset)?std::clamp(floorOffset,-3.f,3.f):0;
 }
-uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch){
+uint32_t DioramaPad(unsigned slot,bool connected,uint16_t buttons,bool allowed,uint32_t epoch,uint8_t lt,uint8_t rt){
     std::lock_guard lock(mutex);
     allowed=allowed&&externalMode==3&&valid&&!failed&&motionHeadTracked&&state==XR_SESSION_STATE_FOCUSED;
-    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64());
-    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0);
+    const auto filtered=tableControls.Poll(int(slot),connected,buttons,allowed,epoch,GetTickCount64(),lt,rt);
+    return uint32_t(filtered)|(tableControls.Pending()?0x10000u:0)|(tableControls.BlockAxes(int(slot))?0x20000u:0);
 }
-bool TakeDioramaHeight(float& height,bool allowed){
+bool TakeDioramaHeight(float& height,float& width,bool allowed){
     std::lock_guard lock(mutex);tableControls.Expire(GetTickCount64());
     if(!allowed||!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
     if(!tableControls.dirty||tableControls.owner>=0)return false;
-    height=tableControls.heightCm*.01f;tableControls.dirty=false;return true;
+    height=tableControls.heightCm*.01f;width=tableControls.widthCm*.01f;tableControls.dirty=false;return true;
 }
 void RecenterTable(){std::lock_guard lock(mutex);tablePlaced=false;tableFollowing=false;externalRigValid=false;}
 bool DioramaView(float out[16],float center[16],float sampled[3],const float hero[3],
     float width,float radius,float distance,float drop,float follow,float heading,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
+    width=tableControls.widthCm*.01f;
     if(!externalRigValid) {
         tableControls.Expire(GetTickCount64());
         if(!motionHeadTracked||state!=XR_SESSION_STATE_FOCUSED)tableControls.CancelAll();
@@ -2906,11 +2943,22 @@ bool DioramaView(float out[16],float center[16],float sampled[3],const float her
             tableFloorKnown=true;
             if(!floorSpace)Say("Diorama: no STAGE floor; using fixed estimated floor. Calibrate diorama.floor_offset_m if needed.");
         }
-        if(!tablePlaced||tableControls.owner>=0) {
+        static bool grabbing=false;static math::Vec grabHead{},grabAnchor{};static float grabYaw=0,grabHeading=0;
+        if(!tablePlaced||tableControls.recenter) {
+            grabbing=false;
             const float yaw=math::Heading(Q(head.orientation));
             tableAnchor=perspective::TablePosition(V(head.position),yaw,distance,tableFloor+tableFloorOffset,tableControls.heightCm*.01f);
-            tableHeading=heading-yaw;tablePlaced=true;
+            tableHeading=heading-yaw;tablePlaced=true;tableControls.recenter=false;
         }
+        // Preserve the current grab offset, then rotate/translate it with head yaw.
+        if(tableControls.moving) {
+            const float yaw=math::Heading(Q(head.orientation));
+            if(!grabbing){grabHead=V(head.position);grabAnchor=tableAnchor;grabYaw=yaw;grabHeading=tableHeading;}
+            const float a=yaw-grabYaw;
+            tableAnchor=perspective::GrabPosition(grabAnchor,grabHead,V(head.position),a);
+            tableHeading=grabHeading-a;
+        }
+        grabbing=tableControls.moving;
         tableAnchor.y=tableFloor+tableFloorOffset+tableControls.heightCm*.01f;
         const auto now=GetTickCount64();const math::Vec target{hero[0],hero[1],hero[2]};
         if(!tableFollowing||now-tableAt>500)tableCenter=target;
@@ -3026,6 +3074,11 @@ void Shutdown(bool preserveResolution) {
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
     bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    if(editorNoticeChain&&pDestroySwapchain)pDestroySwapchain(editorNoticeChain);
+    editorNoticeChain=XR_NULL_HANDLE;editorNoticeReady=false;editorNoticeRetry=0;
+    tableControls.notice=0;tableControls.noticeUntil=0;
+#endif
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
     atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;

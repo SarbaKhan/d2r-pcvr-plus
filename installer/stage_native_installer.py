@@ -11,7 +11,7 @@ ROOT_FILES = {
     'PCVR-PLUS-SETUP.md', 'd2r_pcvr_plus_flat.ini',
     'INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
     'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd', 'Install-Windows.cmd',
-    'Install-BattleNet-Preview.cmd', 'Uninstall-Windows.cmd', 'docs/upstream-refresh-plus.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
+    'Install-BattleNet-Preview.cmd', 'Uninstall-Windows.cmd', 'docs/upstream-refresh-plus.md', 'docs/diorama-editor.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
     'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt', 'external/reshade/LICENSE.md',
     'bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'bin/CascLib.dll', 'steamvr/vendor/bitknit.py',
 }

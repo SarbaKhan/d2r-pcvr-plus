@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
-    files = ['LICENSE', 'docs/upstream-refresh-plus.md', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'LINUX-SETUP.md', 'd2r_pcvr.ini',
+    files = ['LICENSE', 'docs/upstream-refresh-plus.md', 'docs/diorama-editor.md', 'THIRD_PARTY.md', 'CONTROLS.md', 'LINUX-TEST.md', 'LINUX-SETUP.md', 'd2r_pcvr.ini',
              'd2r_pcvr_plus_flat.ini', 'reshade/D2R_DepthFog.fx']
     modules = ['launch_linux', 'linux_test', 'launch_plus', 'install', 'game_install', 'mod_identity',
                'process_guard', 'prepare_icons', 'steam_assets', 'game_assets', 'casc_assets',

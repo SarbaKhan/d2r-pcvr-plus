@@ -868,10 +868,10 @@ void LoadSettings() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(!g_flatSession)LoadFlatBindings();
     framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
-    framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f));
+    framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f),IniF(L"diorama",L"width_m",1.5f));
     framevr::ConfigureSpatialUi(IniF(L"diorama",L"hud_tilt_deg",10.f),IniF(L"diorama",L"hud_arc_deg",103.f),
         IniF(L"diorama",L"panel_width_m",1.2f),IniF(L"diorama",L"panel_above_m",.7f));
-    g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.2124f),.3f,3.f));
+    g_dioramaWidth.store(std::clamp(IniF(L"diorama",L"width_m",1.5f),.5f,3.f));
     g_dioramaRadius.store(std::clamp(IniF(L"diorama",L"radius_units",24.f),8.f,60.f));
     g_dioramaDistance.store(std::clamp(IniF(L"diorama",L"distance_m",.65f),.3f,2.f));
     g_dioramaDrop.store(std::clamp(IniF(L"diorama",L"below_eye_m",.45f),.1f,1.2f));
@@ -3562,10 +3562,11 @@ void FilterDioramaPad(DWORD idx,DWORD result,XINPUT_STATE* s){
     if(!NativeDiorama()&&!g_dioramaPadPending.load())return;
     const bool connected=result==ERROR_SUCCESS&&s;
     const uint16_t raw=connected?s->Gamepad.wButtons:0;
-    const auto filtered=framevr::DioramaPad(idx,connected,raw,DioramaPlacementAllowed(),gamestate::MenuEpoch());
+    const auto filtered=framevr::DioramaPad(idx,connected,raw,DioramaPlacementAllowed(),gamestate::MenuEpoch(),connected?s->Gamepad.bLeftTrigger:0,connected?s->Gamepad.bRightTrigger:0);
     g_dioramaPadPending.store((filtered&0x10000u)!=0);
     if(connected){
         s->Gamepad.wButtons=uint16_t(filtered);
+        if(filtered&0x20000u){s->Gamepad.bLeftTrigger=s->Gamepad.bRightTrigger=0;s->Gamepad.sThumbLX=s->Gamepad.sThumbLY=s->Gamepad.sThumbRX=s->Gamepad.sThumbRY=0;}
         // Deferred tap and hold threshold transitions happen without a physical
         // packet change. Advertise a fresh packet while filtering (and on exit).
         static std::atomic<DWORD> serial{0};
@@ -3574,16 +3575,18 @@ void FilterDioramaPad(DWORD idx,DWORD result,XINPUT_STATE* s){
 }
 void DioramaPlacementTick(){
     if(g_flatSession)return;
-    static bool pending=false,wasDiorama=false;static float height=.74f;static ULONGLONG retry=0;
+    static bool pending=false,wasDiorama=false;static float height=.74f,width=1.5f;static ULONGLONG retry=0;
     const bool active=NativeDiorama();
     if(!active&&!wasDiorama&&!pending&&!g_dioramaPadPending.load())return;
     wasDiorama=active;
-    float changed;
-    if(framevr::TakeDioramaHeight(changed,DioramaPlacementAllowed())){height=changed;pending=true;retry=0;}
+    float changed,changedWidth;
+    if(framevr::TakeDioramaHeight(changed,changedWidth,DioramaPlacementAllowed())){height=changed;width=changedWidth;g_dioramaWidth.store(width);pending=true;retry=0;}
     const auto now=GetTickCount64();
     if(pending&&now>=retry){
         wchar_t value[32];swprintf_s(value,L"%.2f",height);
-        if(WritePrivateProfileStringW(L"diorama",L"height_m",value,g_iniPath))pending=false;
+        const bool savedHeight=WritePrivateProfileStringW(L"diorama",L"height_m",value,g_iniPath);
+        swprintf_s(value,L"%.2f",width);
+        if(WritePrivateProfileStringW(L"diorama",L"width_m",value,g_iniPath)&&savedHeight)pending=false;
         else {if(!retry)Log("Diorama: could not save height_m; retrying");retry=now+2000;}
     }
 }
@@ -7459,7 +7462,7 @@ int Lights(Light* out) {
 
 bool WorldMenuBlocksEffects() {
 #ifdef D2RVR_NATIVE_OPENXR
-    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen());
+    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen()&&!framevr::SpatialMenu());
 #else
     return gamestate::MenuOpen();
 #endif

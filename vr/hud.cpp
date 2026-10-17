@@ -354,7 +354,7 @@ void ZoomedUv(const rect& r, float ax, float ay, float z, uint32_t w, uint32_t h
 struct Labels { resource tex{}; resource_view srv{}; uint32_t w = 0, h = 0; bool fresh = true;
                 bool on = false; float keep[2][4] = {}; ULONGLONG at = 0; };
 Labels g_lab;
-std::atomic<bool> uiActive{false},workspaceActive{false};
+std::atomic<bool> uiActive{false},workspaceActive{false},uiClearSource{false};
 bool uiCaptured=false;
 std::atomic<int> uiEye{0};
 int32_t uiCrop[4]{};
@@ -513,8 +513,11 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
                     if(uiCaptured) {
                         g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
                         ++g_frames;DrainRetired(dev);
-                        // Keep upstream's world-only final compositor contract:
-                        // it excludes this UI source in both stereo eye passes.
+                        // The floating panel owns the captured UI. Empty the native source
+                        // in BOTH passes, after the left-eye copy. A retained/rebound
+                        // native composite must not put its opaque menu backdrop
+                        // over either world eye. CopyLayer restores render-target state.
+                        if(uiClearSource.load())cl->clear_render_target_view(layerRtv,kEmpty);
                         Untrack(it);
                         if(now.handle){const auto d=framevr::resources::Describe(dev,framevr::resources::Resolve(dev,now));Track(cl,Drawing{now,false,d.texture.width,d.texture.height});}
                         return;
@@ -576,10 +579,10 @@ uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height) {
     if(!dioramaHud.load()||!dioramaHudCaptured||!s.tex.handle)return 0;
     width=s.w;height=s.h;return s.tex.handle;
 }
-void UiFrame(bool active,bool workspace,int eye){
+void UiFrame(bool active,bool workspace,int eye,bool clearSource){
     std::lock_guard lock(g_lock);
     if(!active||eye==0)uiCaptured=false;
-    uiActive=active;workspaceActive=workspace;uiEye=eye;
+    uiActive=active;workspaceActive=workspace;uiEye=eye;uiClearSource=clearSource;
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::uiworld::SetActive(active);
 #endif

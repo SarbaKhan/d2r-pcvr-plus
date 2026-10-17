@@ -8,14 +8,30 @@
 using namespace framevr::settings;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s (Win32 %lu)\n",label,GetLastError());std::exit(1);}}
 static int Int(const std::wstring& path,const wchar_t* section,const wchar_t* key){return GetPrivateProfileIntW(section,key,-999,path.c_str());}
+// The production poller checks size + mtime. Rapid equal-length fixture writes
+// can share an NTFS timestamp on CI; give each simulated external edit a distinct
+// timestamp instead of depending on runner speed or adding sleeps.
+static BOOL WriteFixture(const wchar_t* section,const wchar_t* key,const wchar_t* value,const wchar_t* path){
+    if(!WritePrivateProfileStringW(section,key,value,path))return FALSE;
+    WritePrivateProfileStringW(nullptr,nullptr,nullptr,path);
+    HANDLE file=CreateFileW(path,FILE_READ_ATTRIBUTES|FILE_WRITE_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(file==INVALID_HANDLE_VALUE)return FALSE;
+    FILETIME stamp{};const bool read=GetFileTime(file,nullptr,nullptr,&stamp)!=FALSE;
+    static ULONGLONG previous=0;
+    ULARGE_INTEGER ticks{};ticks.LowPart=stamp.dwLowDateTime;ticks.HighPart=stamp.dwHighDateTime;
+    ticks.QuadPart=(ticks.QuadPart>previous?ticks.QuadPart:previous)+10000000ULL;previous=ticks.QuadPart;
+    stamp.dwLowDateTime=ticks.LowPart;stamp.dwHighDateTime=ticks.HighPart;
+    const BOOL result=read&&SetFileTime(file,nullptr,nullptr,&stamp);CloseHandle(file);return result;
+}
 int main(){
     wchar_t dir[MAX_PATH],name[MAX_PATH];Check(GetTempPathW(MAX_PATH,dir)&&GetTempFileNameW(dir,L"vrs",0,name),"create isolated INI");
     const std::wstring path=name,backup=path+L".before-vr-menu";
-    Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
-    Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
+    Check(WriteFixture(L"custom",L"keep",L"12345",name),"write unrelated key");
+    Check(WriteFixture(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
     Check(before.values[LootLabelSize]==45,"missing loot size uses original shipped percentage");
-    Check(WritePrivateProfileStringW(L"hud",L"labels_size",L"65",name),"existing player loot size");
+    Check(WriteFixture(L"hud",L"labels_size",L"65",name),"existing player loot size");
     vrsettings::Poll(name);
     {
         const auto current=vrsettings::Read();
@@ -114,25 +130,25 @@ int main(){
     Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
     Check(before.values[VitalsLocation]==0&&before.values[CriticalAlerts]==0,"legacy INI preserves wrist but disables unsolicited vitals alerts");
     Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==300,"explicit distance retained; missing object distance uses shipped default");
-    Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
+    Check(WriteFixture(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
     vrsettings::Poll(name);before=vrsettings::Read();
     Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==300,"missing draw distances do not silently select 4 rings and radius 1000");
-    Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"restore explicit terrain distance");
+    Check(WriteFixture(L"render",L"rings",L"6",name),"restore explicit terrain distance");
     vrsettings::Poll(name);before=vrsettings::Read();
     // Old separate switches migrate only until an explicit combined choice exists.
     for(int map:{0,1})for(int compass:{0,1}) {
-        Check(WritePrivateProfileStringW(L"interactions",L"wrist_map",map?L"1":L"0",name),"write legacy map preference");
-        Check(WritePrivateProfileStringW(L"interactions",L"wrist_compass",compass?L"1":L"0",name),"write legacy compass preference");
+        Check(WriteFixture(L"interactions",L"wrist_map",map?L"1":L"0",name),"write legacy map preference");
+        Check(WriteFixture(L"interactions",L"wrist_compass",compass?L"1":L"0",name),"write legacy compass preference");
         vrsettings::Poll(name);
         Check(vrsettings::Read().values[NavigationLocation]==(map||compass?0:3),"legacy both-off stays off; either enabled migrates to combined wrist");
     }
-    Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",L"1",name),"set explicit palm navigation");
-    Check(WritePrivateProfileStringW(L"interactions",L"wrist_map",L"0",name)&&WritePrivateProfileStringW(L"interactions",L"wrist_compass",L"0",name),"legacy switches now off");
+    Check(WriteFixture(L"interactions",L"navigation_location",L"1",name),"set explicit palm navigation");
+    Check(WriteFixture(L"interactions",L"wrist_map",L"0",name)&&WriteFixture(L"interactions",L"wrist_compass",L"0",name),"legacy switches now off");
     vrsettings::Poll(name);Check(vrsettings::Read().values[NavigationLocation]==1,"explicit combined preference overrides old switches");
-    Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",L"1.5",name),"malformed enum");
+    Check(WriteFixture(L"interactions",L"navigation_location",L"1.5",name),"malformed enum");
     vrsettings::Poll(name);Check(vrsettings::Read().values[NavigationLocation]==0,"fractional location falls back to Wrist");
-    Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",nullptr,name)&&
-        WritePrivateProfileStringW(L"interactions",L"wrist_map",L"1",name)&&WritePrivateProfileStringW(L"interactions",L"wrist_compass",L"1",name),"restore legacy defaults");
+    Check(WriteFixture(L"interactions",L"navigation_location",nullptr,name)&&
+        WriteFixture(L"interactions",L"wrist_map",L"1",name)&&WriteFixture(L"interactions",L"wrist_compass",L"1",name),"restore legacy defaults");
     vrsettings::Poll(name);before=vrsettings::Read();
     Model model;model.Open(before);model.Click({Kind::Change,Foveation,1});model.Click({Kind::Change,Motion,1});
     model.Click({Kind::Change,OrdinaryMobBars,1});
@@ -207,20 +223,20 @@ int main(){
     model.Open(saved);model.Click({Kind::Change,Foveation,-1});model.Click({Kind::Change,Foveation,-1});
     model.Click({Kind::Change,OrdinaryMobBars,-1});
     request=model.Click({Kind::Apply});
-    Check(WritePrivateProfileStringW(L"custom",L"later",L"42",name),"simulate unrelated external edit");
+    Check(WriteFixture(L"custom",L"later",L"42",name),"simulate unrelated external edit");
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"merge unrelated external edit");
     Check(Int(path,L"render",L"fixed_foveation")==0&&Int(path,L"render",L"eye_tracked_foveation")==0,"Off writes both keys");
     Check(vrsettings::Read().values[OrdinaryMobBars]==0&&Int(path,L"hud",L"ordinary_mob_bars")==0,"hide ordinary bars round trips");
     Check(Int(path,L"custom",L"later")==42&&Int(backup,L"custom",L"later")==-999,"backup is not overwritten on subsequent saves");
     model.Open(vrsettings::Read());model.Click({Kind::Change,DrawDistance,-1});request=model.Click({Kind::Apply});
-    Check(WritePrivateProfileStringW(L"render",L"rings",L"2",name),"simulate same-key external edit");
+    Check(WriteFixture(L"render",L"rings",L"2",name),"simulate same-key external edit");
     Check(vrsettings::Submit(request)&&!vrsettings::Poll(name),"concurrent same-key write rejected");
     Check(vrsettings::Read().result==Result::Conflict&&Int(path,L"render",L"rings")==2,"conflict preserves external value");
     request.base=vrsettings::Read().values;request.values=request.base;request.values[DrawDistance]=99;request.changed=1u<<DrawDistance;request.sequence=900;
     Check(!vrsettings::Submit(request),"out of range request rejected before disk write");
     request.values[DrawDistance]=3;request.changed=1u<<Motion;Check(!vrsettings::Submit(request),"mismatched key mask rejected");
     request.changed=1u<<DrawDistance;request.base[Sky]=NAN;Check(!vrsettings::Submit(request),"nonfinite request baseline rejected");
-    Check(WritePrivateProfileStringW(L"interactions",L"belt_forward",L"0.06",name),"save closer belt preference");
+    Check(WriteFixture(L"interactions",L"belt_forward",L"0.06",name),"save closer belt preference");
     vrsettings::Poll(name);before=vrsettings::Read();
     Check(before.values[BeltForward]==.06f&&!framevr::calibration::Stored(before.values),"uncalibrated profile keeps belt preference");
     request=framevr::calibration::SaveRequest(before,{1.72f,1.63f});
@@ -228,11 +244,11 @@ int main(){
     saved=vrsettings::Read();
     Check(framevr::calibration::Stored(saved.values)&&std::fabs(saved.values[EyeHeight]-1.72f)<1e-5f&&std::fabs(saved.values[ArmSpan]-1.63f)<1e-5f,"eye height, arm span and version round trip together");
     Check(Int(path,L"calibration",L"version")==1&&Int(path,L"custom",L"keep")==12345&&saved.values[BeltForward]==.06f,"calibration preserves unrelated settings");
-    Check(WritePrivateProfileStringW(L"calibration",L"version",L"99",name),"simulate future calibration version");
+    Check(WriteFixture(L"calibration",L"version",L"99",name),"simulate future calibration version");
     vrsettings::Poll(name);Check(!framevr::calibration::Stored(vrsettings::Read().values),"unknown record version requests calibration");
-    Check(WritePrivateProfileStringW(L"calibration",L"version",L"1",name)&&WritePrivateProfileStringW(L"calibration",L"eye_height_m",L"3.4",name),"simulate corrupt height");
+    Check(WriteFixture(L"calibration",L"version",L"1",name)&&WriteFixture(L"calibration",L"eye_height_m",L"3.4",name),"simulate corrupt height");
     vrsettings::Poll(name);Check(!framevr::calibration::Stored(vrsettings::Read().values),"invalid raw height cannot become calibrated through clamps");
-    Check(WritePrivateProfileStringW(L"turn",L"snap",L"45",name),"set a custom snap angle");
+    Check(WriteFixture(L"turn",L"snap",L"45",name),"set a custom snap angle");
     vrsettings::Poll(name);
     for(int mode=1;mode>=0;--mode){
         model.Open(vrsettings::Read());model.Click({Kind::Change,SmoothTurn,1});request=model.Click({Kind::Apply});
@@ -241,14 +257,14 @@ int main(){
         Check(saved.values[SmoothTurn]==mode&&saved.values[Snap]==45&&Int(path,L"turn",L"smooth")==mode&&Int(path,L"turn",L"snap")==45,"toggle round trip preserves custom snap angle");
         Check(EffectiveSnapAngle(saved.values[Snap],saved.values[SmoothTurn])==(mode?0:45),"saved mode selects expected camera turning");
     }
-    Check(WritePrivateProfileStringW(L"turn",L"smooth",nullptr,name)&&WritePrivateProfileStringW(L"turn",L"snap",L"0",name),"simulate legacy smooth profile");
+    Check(WriteFixture(L"turn",L"smooth",nullptr,name)&&WriteFixture(L"turn",L"snap",L"0",name),"simulate legacy smooth profile");
     vrsettings::Poll(name);saved=vrsettings::Read();
     Check(saved.values[SmoothTurn]==1&&saved.values[Snap]==30,"legacy smooth profile loads with a usable snap angle");
     model.Open(saved);model.Click({Kind::Change,SmoothTurn,1});request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"legacy smooth profile can opt into snap turning");
     saved=vrsettings::Read();
     Check(saved.values[SmoothTurn]==0&&saved.values[Snap]==30&&EffectiveSnapAngle(float(Int(path,L"turn",L"snap")),float(Int(path,L"turn",L"smooth")))==30,"explicit off overrides legacy snap zero in menu and camera");
-    Check(WritePrivateProfileStringW(L"turn",L"smooth",nullptr,name),"restore legacy smooth mode");
+    Check(WriteFixture(L"turn",L"smooth",nullptr,name),"restore legacy smooth mode");
     vrsettings::Poll(name);model.Open(vrsettings::Read());model.Click({Kind::Change,Snap,1});request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"edit angle in legacy smooth profile");
     saved=vrsettings::Read();

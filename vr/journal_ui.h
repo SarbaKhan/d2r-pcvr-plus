@@ -15,7 +15,7 @@ namespace hud {
 bool LayerFound();
 void DioramaHudFrame(bool active,int eye);
 uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height);
-void UiFrame(bool active,bool workspace,int eye);
+void UiFrame(bool active,bool workspace,int eye,bool clearSource=false);
 // Hide the native HUDPanel for the entire XR session, including menus/loading.
 // Per-eye gameplay cropping is separate so native menu content is not erased.
 void NativeSession(bool active);
