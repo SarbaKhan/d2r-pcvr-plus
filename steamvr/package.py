@@ -38,7 +38,7 @@ def main():
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
              'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/hdr_check.py',
-             'docs/upstream-refresh-plus.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
+             'docs/upstream-refresh-plus.md', 'docs/diorama-editor.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
              'steamvr/plus_artwork.py', 'steamvr/plus_preferences.py', 'artwork/manifest.json', 'artwork/README.md',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
              'external/reshade/LICENSE.md', 'steamvr/install.py', 'steamvr/mod_identity.py',

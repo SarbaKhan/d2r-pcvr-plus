@@ -35,6 +35,8 @@ void PlacementTests(){
     assert(entry.owner==0);entry.Poll(1,false,0,true,0,1130);assert(entry.owner==0);
     entry.Expire(1500);assert(entry.owner==-1);
     entry.Poll(0,true,Start,true,0,1510);assert(entry.owner==-1);
+    Same(perspective::GrabPosition({0,.74f,-1.2f},{0,1.7f,0},{0,1.7f,0},0),{0,.74f,-1.2f});
+    Same(perspective::GrabPosition({0,.74f,-1.2f},{0,1.7f,0},{1,2.f,2},1.57079632679f),{-.2f,.74f,2});
     // Floor-height placement ignores head height and preserves horizontal distance.
     for(float y:{.8f,1.7f,2.f}) {
         const auto p=perspective::TablePosition({2,y,3},0,1.2f,0,.74f);

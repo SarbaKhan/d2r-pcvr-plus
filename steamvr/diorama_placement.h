@@ -43,7 +43,7 @@ struct Controls {
         Expire(now);if(i<0||i>=4)return buttons;
         auto& s=slots[i];
         if(!connected){Cancel(i);s={};return buttons;}
-        if(!allowed||((s.pressing||owner==i)&&epoch!=s.epoch))Cancel(i);
+        if(!allowed||((s.pressing||owner==i)&&epoch!=s.epoch)){if(owner==i)s.last=buttons;Cancel(i);}
         s.seen=now;s.quarantine&=buttons;
         if(lt<=30&&rt<=30)s.triggerQuarantine=false;
         const bool start=(buttons&Start)!=0;
@@ -54,7 +54,7 @@ struct Controls {
             if(start&&(rise&Start)&&!s.pressing){s.pressing=true;s.entered=false;s.pressed=now;}
             if(!start&&s.pressing) {
                 const bool exit=!s.entered;s.pressing=false;s.entered=false;
-                if(exit){Cancel(i);s.last=buttons;return 0;}
+                if(exit){s.last=buttons;Cancel(i);return 0;}
             }
             moving=rt>30;
             if(rise&RB)recenter=true;

@@ -67,4 +67,10 @@ inline Rig Orbit(math::Vec hero,float height,float distance,float heading,float 
     return {hero+math::Vec{0,height,0}-forward*distance, reference,
             math::Multiply(orientation,math::Yaw(-referenceYaw)),units};
 }
+// Move the grabbed table with horizontal head translation/yaw, never pitch/height.
+inline math::Vec GrabPosition(math::Vec anchor,math::Vec initialHead,math::Vec head,float yawDelta) {
+    const auto d=anchor-initialHead;const float c=std::cos(yawDelta),s=std::sin(yawDelta);
+    return {head.x+c*d.x+s*d.z,anchor.y,head.z-s*d.x+c*d.z};
+}
+
 }

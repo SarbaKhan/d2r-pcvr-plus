@@ -2922,10 +2922,8 @@ bool DioramaView(float out[16],float center[16],float sampled[3],const float her
         if(tableControls.moving) {
             const float yaw=math::Heading(Q(head.orientation));
             if(!grabbing){grabHead=V(head.position);grabAnchor=tableAnchor;grabYaw=yaw;grabHeading=tableHeading;}
-            const float a=yaw-grabYaw,c=std::cos(a),s=std::sin(a);
-            const auto d=grabAnchor-grabHead;
-            tableAnchor.x=head.position.x+c*d.x+s*d.z;
-            tableAnchor.z=head.position.z-s*d.x+c*d.z;
+            const float a=yaw-grabYaw;
+            tableAnchor=perspective::GrabPosition(grabAnchor,grabHead,V(head.position),a);
             tableHeading=grabHeading-a;
         }
         grabbing=tableControls.moving;
