@@ -47,11 +47,12 @@ print('Installer lifecycle fixture passed; no game or Steam configuration touche
 '@
 [IO.File]::WriteAllText((Join-Path $payload 'steamvr/setup_native.py'), $backend)
 $script = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'D2R_PCVR_Setup.iss'))
-$script = $script.Replace('AppId=D2R-PCVR-Native-Windows','AppId=D2R-PCVR-Installer-Fixture')
+$script = $script.Replace('AppId=D2R-PCVR-Plus-Windows','AppId=D2R-PCVR-Installer-Fixture')
 $script = $script.Replace('D2R-PCVR-Managed-Operation','D2R-PCVR-Installer-Fixture-Operation')
 $script = $script.Replace('DefaultGroupName=D2R PCVR','DefaultGroupName=D2R PCVR Installer Fixture')
 $script = $script.Replace('AppName=D2R PCVR','AppName=D2R PCVR Installer Fixture')
 $script = $script.Replace('UninstallDisplayName=D2R PCVR (Windows VR mod)','UninstallDisplayName=D2R PCVR Installer Fixture')
+if ($script -notmatch '(?m)^AppId=D2R-PCVR-Installer-Fixture$') { throw 'Fixture AppId isolation failed' }
 $scriptPath = Join-Path $qaRoot 'Fixture.iss'
 [IO.File]::WriteAllText($scriptPath, $script)
 & $ISCCPath /Qp "/DPayloadDir=$payload" /DModVersion=0.0.1 "/DInstallerOutput=$qaRoot" $scriptPath

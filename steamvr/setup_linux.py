@@ -207,7 +207,7 @@ def install_choices(choices, source_bundle, payload, runner):
             for folder in ('installation-backups', 'configuration-backups', 'deps'):
                 if (destination / folder).is_dir():
                     shutil.copytree(destination / folder, stage / folder, dirs_exist_ok=True)
-        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.2.3', 'game': c['game']}))
+        (stage / 'plus-linux-managed.json').write_text(json.dumps({'version': '0.4.0', 'game': c['game']}))
         if destination.exists():
             destination.rename(old)
         stage.rename(destination)
