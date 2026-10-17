@@ -13,6 +13,7 @@ import uninstall_windows as uninstall
 
 class CoexistMigrationTests(unittest.TestCase):
     def fixture(self, root, effects=False):
+        root = root.resolve()
         helper = install_test.RenameMigrationTests()
         game, saves = helper.fixture(root)
         first = helper.old_release(root, game, saves)
@@ -45,7 +46,7 @@ class CoexistMigrationTests(unittest.TestCase):
             cfg = configparser.ConfigParser()
             cfg.read(effect / 'ReShade.ini', encoding='utf-8-sig')
             self.assertEqual(cfg['INPUT']['KeyOverlay'], '42,1,0,0')
-            self.assertEqual(Path(cfg['GENERAL']['PresetPath']), effect / 'D2R_Frame_ReShade.ini')
+            self.assertEqual(Path(cfg['GENERAL']['PresetPath']).resolve(), (effect / 'D2R_Frame_ReShade.ini').resolve())
             self.assertIn(str(game / 'custom-textures'), cfg['GENERAL']['TextureSearchPaths'])
             self.assertIn(str(game / 'reshade-shaders/Textures'), cfg['GENERAL']['TextureSearchPaths'])
             self.assertEqual((effect / 'D2R_Frame_ReShade.ini').read_bytes(), old_preset)
@@ -66,6 +67,19 @@ class CoexistMigrationTests(unittest.TestCase):
             self.assertEqual((game / 'reshade-shaders/Shaders/D2R_DepthFog.fx').read_bytes(), b'old stock shader')
             self.assertFalse((effect / 'reshade-shaders/Shaders/D2R_DepthFog.fx').exists())
             self.assertEqual((saves / 'Friend.d2s').read_bytes(), b'progress')
+
+    def test_plus_flat_preferences_follow_owned_legacy_mod_and_survive_repair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h, game, _ = self.fixture(Path(tmp))
+            original = b'[input]\nflat_layout=ZQSD\nmouse_sensitivity=0.7\n'
+            legacy = h.put(game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini', original)
+            h.run_install('--preserve-settings')
+            current = game / ids.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini'
+            self.assertEqual(current.read_bytes(), original)
+            self.assertEqual(legacy.read_bytes(), original)
+            current.write_bytes(original + b'; new settings\n')
+            h.run_install('--preserve-settings')
+            self.assertEqual(current.read_bytes(), original + b'; new settings\n')
 
     def test_unrelated_root_configuration_is_not_adopted_or_deleted(self):
         with tempfile.TemporaryDirectory() as tmp:

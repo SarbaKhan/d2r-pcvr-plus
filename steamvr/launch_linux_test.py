@@ -10,6 +10,7 @@ from unittest.mock import patch
 import launch_linux as launch
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux/Proton integration fixtures run in the Linux CI job")
 class LinuxLaunchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='plus paths é ')

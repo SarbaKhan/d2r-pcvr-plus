@@ -122,7 +122,7 @@ class NativeSetupTests(unittest.TestCase):
             self.assertEqual(result['backup_required'], '1')
             self.assertEqual(result['backup_folder'], str(folder.resolve()))
             chain = native.check_backups(game, app, Path(result['backup_folder']))
-            self.assertEqual([path for path, _ in chain], [original, upgrade])
+            self.assertEqual([path.resolve() for path, _ in chain], [original.resolve(), upgrade.resolve()])
             self.assertIn(game / 'ReShade.ini', uninstall.restore_plan(game, chain))
             self.assertFalse((game / install.RECORD).exists())
 
@@ -244,7 +244,7 @@ class NativeSetupTests(unittest.TestCase):
             self.assertEqual(result['backup_required'], '1')
             self.assertEqual(result['backup_folder'], str(folder.resolve()))
             chain = native.check_backups(game, app, Path(result['backup_folder']))
-            self.assertEqual([path for path, _ in chain], [original, upgrade])
+            self.assertEqual([path.resolve() for path, _ in chain], [original.resolve(), upgrade.resolve()])
             self.assertIn(game / 'ReShade.ini', uninstall.restore_plan(game, chain))
 
     def test_steam_wrapper_for_another_game_copy_is_not_used(self):

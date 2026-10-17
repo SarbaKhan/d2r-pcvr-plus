@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import shutil
@@ -10,6 +11,7 @@ import setup_linux as setup
 import steam_config as vdf
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux/Proton integration fixtures run in the Linux CI job")
 class SetupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='Plus setup é spaces ')

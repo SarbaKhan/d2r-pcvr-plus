@@ -167,7 +167,7 @@ class UninstallTests(unittest.TestCase):
                                    [str(mod_identity.SETTINGS), legacy_plugin, legacy_ini, str(uninstall.PLUGIN)],
                                    {legacy_plugin: b'old plugin', legacy_ini: b'calibration'}, saves)
             record = {'game': str(game), 'snapshots': [str(first), str(second)]}
-            self.assertEqual([path for path, _ in uninstall.snapshots(game, record, [])], [first, second])
+            self.assertEqual([path.resolve() for path, _ in uninstall.snapshots(game, record, [])], [first.resolve(), second.resolve()])
             # Rolling back only the update returns the old release's files.
             plan = uninstall.restore_plan(game, [(second, json.loads((second / 'manifest.json').read_text()))])
             self.assertEqual(plan[game / legacy_plugin], b'old plugin')

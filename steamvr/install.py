@@ -515,7 +515,10 @@ def main():
     # Flat preferences survive repairs and VR calibration resets.
     flat_profile = mod_identity.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini'
     if not (game / flat_profile).is_file():
-        put(flat_profile, (ROOT / 'd2r_pcvr_plus_flat.ini').read_bytes())
+        legacy_flat = game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini'
+        # Migrate preferences only after upstream positively identifies our old mod.
+        source = legacy_flat if (found.legacy or found.moved) and legacy_flat.is_file() else ROOT / 'd2r_pcvr_plus_flat.ini'
+        put(flat_profile, source.read_bytes())
     for texture in (ROOT / 'reshade/sky').glob('*.png'):
         put(mod_identity.RESHADE_DIR / 'D2R_Sky_ours' / texture.name, texture.read_bytes())
         put(mod_identity.RESHADE_DIR / 'reshade-shaders/Textures/D2R_Sky_ours' / texture.name, texture.read_bytes())
