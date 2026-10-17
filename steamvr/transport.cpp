@@ -110,8 +110,8 @@ std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
 // Lock-free for other threads; desktop and flat play never stamp it.
 std::atomic<uint64_t> vrGameplayAt{0};
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
 std::atomic<bool> externalPerspective{false};
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
 std::atomic<bool> mrRequested{true},mrShaderReady{false};
 bool mrSupported=false,mrBlocked=false,mrPair=false;
 int mrReported=-1;
@@ -982,12 +982,12 @@ bool FocusGameForUi() {
 }
 panels::Size UiSurfaceSize() {
     // The handheld journal keeps its book size; native workspaces fit in both axes.
-    if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
+    if(journalMode||externalPerspective)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
 XrPosef UiSurfacePose() {
     auto pose=uiPose;
-    if(upperBandMenuMode&&!journalMode) {
+    if(upperBandMenuMode&&!journalMode&&!externalPerspective) {
         const auto p=V(pose.position)+math::Rotate(Q(pose.orientation),{0,panels::UpperBandOffset(UiSurfaceSize()),0});
         pose.position={p.x,p.y,p.z};
     }
@@ -1891,6 +1891,12 @@ bool Begin() {
     if(!loaded)worldCalibrationPending=worldRecenter=false;
     worldWasLoaded=loaded;
     const bool spatial=SpatialMenu();
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    const auto epoch=gamestate::MenuEpoch();
+    if(externalPerspective&&spatialEpoch!=epoch) {
+        workspacePlaced=false;dialoguePlaced=false;spatialEpoch=epoch;
+    }
+#endif
     const bool book=spatial&&gamestate::JournalOnly()&&!externalPerspective;
     const bool npc=spatial&&gamestate::NpcChoicesOnly();
     const bool surfaceChanged=spatial!=spatialMode||book!=journalMode;

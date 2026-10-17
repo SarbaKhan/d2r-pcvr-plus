@@ -25,6 +25,7 @@ This branch starts from **bearstonem/d2r-pcvr 772d33720984616517da075f4b4c1570ca
 |---|---|
 | Right VR stick click toggles run/walk | Explicitly excluded. Current upstream bindings win. |
 | Plus opaque menus floating over a visible world in F3/F4 | Deferred. Keep upstream black-menu composition and handheld quest-journal behavior in F3; do not restore the old UI source-clearing workaround over the new compositor. |
+| Plus physical keyboard/mouse suppression in F3 | Deferred: upstream laser positioning uses untagged mouse movement. Keep upstream F3 event handling so inventory hover/selection remains available. Suppression remains limited to F1/F2/F4. |
 | Legacy portable DLL-only updater and rollback CMD package | Deferred. It targeted a global DLL/INI and cannot safely migrate the new per-mod layout. Use the full installer; replacing only the old DLL is not supported. |
 | Historical 0.3.12 first-person source hash lock | Replaced by upstream-control provenance checks and runtime/launcher tests. Applying it would reject the requested upstream fixes. |
 | Experimental Steam-independent launcher branch | Never merged into Plus main; intentionally not imported. |

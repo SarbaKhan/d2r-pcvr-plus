@@ -4635,7 +4635,8 @@ LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     // F1..F3 (F4 in VR) pick the view: the game, which has skills on them, never sees them.
     if ((msg == WM_KEYDOWN || msg == WM_KEYUP) && w >= VK_F1 && (int)w < VK_F1 + ViewCount()) return 0;
 #ifdef D2RVR_NATIVE_OPENXR
-    if(!g_flatSession&&g_inWorld.load()) {
+    if(!g_flatSession&&NativeExternal()&&g_inWorld.load()) {
+        // Keep F3 on upstream input handling; its laser uses untagged SetCursorPos.
         // Let the game select its native controller cursor. It is copied to
         // the XR menu; physical mouse input below remains disabled.
         if(msg==WM_SETCURSOR&&LOWORD(l)==HTCLIENT&&(!NativeExternal()||!gamestate::MenuOpen())){SetCursor(nullptr);return TRUE;}
