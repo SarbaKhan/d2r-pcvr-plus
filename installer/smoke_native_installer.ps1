@@ -52,7 +52,7 @@ $script = $script.Replace('D2R-PCVR-Managed-Operation','D2R-PCVR-Installer-Fixtu
 $script = $script.Replace('DefaultGroupName=D2R PCVR','DefaultGroupName=D2R PCVR Installer Fixture')
 $script = $script.Replace('AppName=D2R PCVR','AppName=D2R PCVR Installer Fixture')
 $script = $script.Replace('UninstallDisplayName=D2R PCVR (Windows VR mod)','UninstallDisplayName=D2R PCVR Installer Fixture')
-if ($script -notmatch '(?m)^AppId=D2R-PCVR-Installer-Fixture$') { throw 'Fixture AppId isolation failed' }
+if ($script -notmatch '(?m)^AppId=D2R-PCVR-Installer-Fixture\r?$') { throw 'Fixture AppId isolation failed' }
 $scriptPath = Join-Path $qaRoot 'Fixture.iss'
 [IO.File]::WriteAllText($scriptPath, $script)
 & $ISCCPath /Qp "/DPayloadDir=$payload" /DModVersion=0.0.1 "/DInstallerOutput=$qaRoot" $scriptPath
