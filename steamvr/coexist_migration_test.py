@@ -7,6 +7,7 @@ import unittest
 
 import install
 import install_test
+import plus_preferences
 import mod_identity as ids
 import uninstall_windows as uninstall
 
@@ -73,6 +74,7 @@ class CoexistMigrationTests(unittest.TestCase):
             h, game, _ = self.fixture(Path(tmp))
             original = b'[input]\nflat_layout=ZQSD\nmouse_sensitivity=0.7\n'
             legacy = h.put(game / 'd2rloader/plugins/d2r_pcvr_plus_flat.ini', original)
+            self.assertEqual(plus_preferences.preferences(game)['layout'], 'ZQSD')
             h.run_install('--preserve-settings')
             current = game / ids.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini'
             self.assertEqual(current.read_bytes(), original)

@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import re
+import mod_identity
 
 LANGUAGES = {'': 'Default (game language)', 'enUS': 'English', 'deDE': 'German',
              'esES': 'Spanish (Spain)', 'frFR': 'French', 'itIT': 'Italian',
@@ -12,7 +13,12 @@ LANGUAGES = {'': 'Default (game language)', 'enUS': 'English', 'deDE': 'German',
 
 def preferences(game):
     result = {'layout': 'WASD', 'text_locale': '', 'audio_locale': ''}
-    for rel, keys in [('mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr_plus_flat.ini', ['flat_layout']),
+    flat = mod_identity.PLUGIN.parent / 'd2r_pcvr_plus_flat.ini'
+    if not (Path(game) / flat).is_file():
+        found = mod_identity.survey(game)
+        if found.legacy or found.moved:
+            flat = Path('d2rloader/plugins/d2r_pcvr_plus_flat.ini')
+    for rel, keys in [(flat, ['flat_layout']),
                       ('d2rloader/config/d2rloader.toml', ['text_locale', 'audio_locale'])]:
         path = Path(game) / rel
         if not path.is_file():
