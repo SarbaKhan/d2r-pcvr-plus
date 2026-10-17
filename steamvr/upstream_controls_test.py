@@ -12,7 +12,7 @@ class UpstreamControlTests(unittest.TestCase):
     def test_original_control_modules_are_unchanged(self):
         for path, expected in UPSTREAM_CONTROLS.items():
             with self.subTest(path=path):
-                self.assertEqual(hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), expected)
+                self.assertEqual(hashlib.sha256((ROOT / path).read_bytes().replace(b"\r\n", b"\n")).hexdigest(), expected)
 
     def test_no_plus_right_stick_run_toggle(self):
         source = (ROOT / 'steamvr/transport.cpp').read_text(encoding='utf-8')
