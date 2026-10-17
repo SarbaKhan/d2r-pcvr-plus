@@ -1,6 +1,6 @@
 # Upstream refresh + Plus integration
 
-This branch starts from **bearstonem/d2r-pcvr 772d33720984616517da075f4b4c1570cab190dc** (2026-10-17), not from the older 0.3.16 release DLL. The Plus source reference is **0d51f359a0f1a611fe8b23e0fd37cd0798e0cf02**. This is an integration preview requiring fresh headset acceptance, not a replacement for the validated main build.
+Historical integration baseline: this branch started from **bearstonem/d2r-pcvr 772d33720984616517da075f4b4c1570cab190dc** (2026-10-17), not from the older 0.3.16 release DLL. The Plus source reference is **0d51f359a0f1a611fe8b23e0fd37cd0798e0cf02**. This is an integration preview requiring fresh headset acceptance, not a replacement for the validated main build.
 
 ## Upstream behavior retained
 
@@ -24,7 +24,7 @@ This branch starts from **bearstonem/d2r-pcvr 772d33720984616517da075f4b4c1570ca
 | Addition | Decision / reason |
 |---|---|
 | Right VR stick click toggles run/walk | Explicitly excluded. Current upstream bindings win. |
-| Plus opaque menus floating over a visible world in F3/F4 | Deferred. Keep upstream black-menu composition and handheld quest-journal behavior in F3; do not restore the old UI source-clearing workaround over the new compositor. |
+| Plus opaque menus floating over a visible world in F3/F4 | Restored by the subsequent Diorama editor work using native alpha and the upstream world-only compositor; no old UI source-clearing workaround. See diorama-editor.md. |
 | Plus physical keyboard/mouse suppression in F3 | Deferred: upstream laser positioning uses untagged mouse movement. Keep upstream F3 event handling so inventory hover/selection remains available. Suppression remains limited to F1/F2/F4. |
 | Legacy portable DLL-only updater and rollback CMD package | Deferred. It targeted a global DLL/INI and cannot safely migrate the new per-mod layout. Use the full installer; replacing only the old DLL is not supported. |
 | Historical 0.3.12 first-person source hash lock | Replaced by upstream-control provenance checks and runtime/launcher tests. Applying it would reject the requested upstream fixes. |
@@ -38,7 +38,7 @@ Use a disposable offline character and test Windows SteamVR/VDXR and Linux Steam
 1. Start stock Steam Play, then each Plus shortcut. Confirm correct mod selection, no duplicate plugins, and Flat without any active XR runtime.
 2. F3: body calibration, both skill wheels, movement/casting, inventory sorting, mercenary potion toss and upstream controls. Right stick must not trigger the old Plus run/walk command.
 3. F1/F2: native gamepad, right-stick F2 camera, native menu navigation/cursor, NPC dialogue size and visibility, HUD, no VR gameplay injection.
-4. F4: 1.5 m width / 60-unit radius, Select hold placement, 10 cm / 1 cm D-pad height adjustments, stable stereo/parallax, HUD/cursor. WiVRn passthrough; black background on SteamVR/VDXR.
-5. Open/close every menu in both eyes; switch perspectives while controls are held. Check upstream opaque-menu behavior explicitly.
+4. F4: 1.5 m width / 60-unit radius, Start editor, RT placement, 10 cm / LT + 1 cm height adjustments and bounded physical resizing, stable stereo/parallax, HUD/cursor. WiVRn passthrough; black background on SteamVR/VDXR.
+5. Open/close every menu in both eyes; switch perspectives while controls are held. Check that F3/F4 floating menus retain the live world in both eyes.
 6. Act III exterior/interior transitions, roofs and hanging fixtures, long sessions, resolution changes, GPU performance.
 7. Fresh install and existing-install update: Steam shortcuts/art, settings persistence, languages, keyboard, Linux desktop/WiVRn entries, rollback/uninstall preserving unrelated mods and original saves.
