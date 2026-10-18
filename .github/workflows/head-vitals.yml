@@ -1,7 +1,7 @@
 name: VR head-space vitals
 on:
   push:
-    branches: [feature/vr-head-vitals, feature/vr-menu-policy]
+    branches: [feature/vr-head-vitals, feature/vr-menu-policy, feature/view-keys-menu-controllers]
   workflow_dispatch:
 permissions:
   contents: read

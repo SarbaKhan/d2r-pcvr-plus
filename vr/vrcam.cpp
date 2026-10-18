@@ -823,9 +823,10 @@ std::atomic<float> g_nativeTopDistance{40},g_nativeThirdDistance{12};
 std::atomic<float> g_dioramaWalkYaw{0};
 std::atomic<float> g_dioramaWidth{1.2124f},g_dioramaRadius{24},g_dioramaDistance{.65f},g_dioramaDrop{.45f},g_dioramaFollow{.15f};
 #endif
+extern std::atomic<bool> g_inWorld;
 bool NativeExternal() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    return !g_flatSession&&framevr::perspective::External(g_nativeMode.load());
+    return !g_flatSession&&framevr::perspective::ClassicControls(g_nativeMode.load(),g_inWorld.load());
 #else
     return false;
 #endif
@@ -5417,8 +5418,8 @@ bool ApplyView(const char** said) {
     // stuck to the head ("the camera sticks to my head, it must not", 2026-10-05).
     gamestate::SetViewMode(!on ? 0u : table ? 4u : vr && v == 1 ? 0u : (uint32_t)g_view.load());
     g_gen.fetch_add(1);
-    static const char* const kFlat[] = {"", "flat: the game's own camera (F1)", "flat: third person (F2)",
-                                        "flat: first person (F3) - mouse look, W A S D"};
+    static const char* const kFlat[] = {"", "flat: the game's own camera (F3)", "flat: third person (F2)",
+                                        "flat: first person (F1) - mouse look, W A S D"};
     static const char* const kVr[] = {"", "VR: from above (F1)", "VR: third person (F2)",
                                       "VR: the game on the floor (F3) - walk round it; F11 puts it in front of you again",
                                       "VR: first person, the body is yours (F4)"};
@@ -5457,7 +5458,7 @@ void CommitNativePerspective() {
     d2rcam::SetScreenRayOverride(&NativeScreenRay);
     prevscan::g_lastViewOk=false;prevscan::g_lastProjOk=false;
     const char* message="";ApplyView(&message);
-    LogF("Native VR experimental: perspective %d (F1 overhead, F2 third person, F3 immersive, F4 diorama)",mode);
+    LogF("Native VR experimental: perspective %d (F1 immersive, F2 third person, F3 overhead, F4 diorama)",mode);
 #endif
 }
 
@@ -8559,7 +8560,7 @@ DWORD WINAPI UpdateThread(void*) {
         for (int k = 0; k < 5; ++k)
             if (fView[k].Pressed(focus) && k < ViewCount()) {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-                SetView(g_flatSession?k+1:framevr::perspective::KeyMode(k+1));
+                SetView(g_flatSession?framevr::perspective::FlatKeyMode(k+1):framevr::perspective::KeyMode(k+1));
 #else
                 SetView(k+1);
 #endif

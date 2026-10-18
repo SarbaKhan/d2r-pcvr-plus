@@ -6,8 +6,10 @@ namespace framevr::perspective {
 // Persisted IDs: 3 is Diorama (F4), 4 is immersive (F3).
 constexpr bool Supported(int mode) { return mode==1||mode==2||mode==3||mode==4; }
 constexpr bool External(int mode) { return mode==1||mode==2||mode==3; }
-constexpr int KeyMode(int key) { return key==1?1:key==2?2:key==3?4:key==4?3:0; }
-constexpr int Next(int mode) { return mode==4?1:mode==1?2:mode==2?3:4; }
+constexpr int KeyMode(int key) { return key==1?4:key==2?2:key==3?1:key==4?3:0; }
+constexpr int FlatKeyMode(int key) { return key==1?3:key==2?2:key==3?1:0; }
+constexpr bool ClassicControls(int mode,bool inWorld) { return inWorld&&External(mode); }
+constexpr int Next(int mode) { return mode==4?2:mode==2?1:mode==1?3:4; }
 struct Pose { math::Vec p; math::Quat q; };
 struct Rig {
     math::Vec anchor{}, reference{};
