@@ -1956,12 +1956,10 @@ bool Begin() {
     // Rearm pointer input when story/choices change, keeping the same anchored
     // canvas. A trigger that dismisses speech must not also choose an option.
     if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
-    bool keepWorld=true;
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    keepWorld=false; // management menus no longer retain the stereo world
-#endif
-    clearMenuSource=spatial&&gamestate::OpaqueMenuOpen()&&keepWorld;
-    const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!keepWorld;
+    // Match upstream: capture native UI independently of its background.
+    // Opaque management panels suppress the submitted world, not UI capture.
+    clearMenuSource=false;
+    const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
@@ -2242,9 +2240,8 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
 bool SpatialMenu(){
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    if(!spatialui::Spatial(externalMode,gamestate::DialogueOnly()))return false;
-#endif
+    // DialogueOnly is a placement hint, never a prerequisite for UI capture.
+    // Native conversation containers can coexist with other modal roots.
     return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}

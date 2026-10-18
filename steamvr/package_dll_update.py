@@ -67,7 +67,8 @@ Changes:
   still require native-reader/asset validation; this is an incomplete test build.
 - Hide the original HUDPanel in all native VR perspectives using the F3 path.
 - Retire completed GPU uploads in external views to keep refreshing the HUD.
-- All management menus return to the mono panel on black.
+- Restore upstream native menu capture, black backgrounds and distance presets.
+- Conversations no longer fall back to a flat scene because of dialogue classification.
 - F4 dialogues use the same NPC-anchor placement as F1/F2, with the world visible.
 - Retain the already-tested skybox preview (existing shader/image required).
 

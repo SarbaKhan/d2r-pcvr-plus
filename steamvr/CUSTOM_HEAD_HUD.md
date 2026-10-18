@@ -64,7 +64,9 @@ native stat semantics, skill bindings, readability or headset performance.
 
 ## Menu policy
 
-Management menus use the original mono canvas on black in all VR perspectives.
+Management menus use upstream's native UI capture and opaque-background policy
+in all VR perspectives, including the existing menu-distance presets. Dialogue
+classification controls placement only; it must not disable stereo UI capture.
 NPC conversations alone retain the stereo world. F4 uses the same observed NPC
 interaction target, viewer-facing dialogue panel and angular size as F1/F2.
 Verify both eyes, shops, inventories, quest/options/pause menus, and transitions

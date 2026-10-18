@@ -1,5 +1,6 @@
 #include "native_hud.h"
 #include "spatial_ui.h"
+#include "native_panels.h"
 #include "callback_ticket.h"
 #include <cassert>
 #include <vector>
@@ -15,10 +16,19 @@ int main(){
     const auto invalid=Layout(NAN,NAN,NAN,NAN,1,1,1,NAN,NAN,NAN);
     assert(invalid.vitalsY==-.50f&&invalid.xpY==.55f&&invalid.beltY==-.50f);
     assert(invalid.vitalsX==-.40f&&invalid.skillsY==-.50f&&invalid.skillsScale==1.2f);
-    for(int mode=0;mode<=5;++mode) {
-        assert(!framevr::spatialui::Spatial(mode,false));
-        assert(framevr::spatialui::Spatial(mode,true)==(mode>=1&&mode<=4));
+    // Upstream separates UI capture from background policy. Dialogue stays
+    // stereoscopic; management panels share an opaque canvas in every mode.
+    for(auto name:{"NpcDialogPanel","ScrollSpeechPanel"}) {
+        assert(framevr::panels::Modal(name));
+        assert(!framevr::panels::OpaqueBackground(name));
+        assert(!framevr::panels::BlockWorldEffects(true,true,false));
     }
+    for(auto name:{"UISwitcher","PlayerInventoryPanel","VendorPanelLayout","WaypointPanel"}) {
+        assert(framevr::panels::OpaqueBackground(name));
+        assert(framevr::panels::BlockWorldEffects(true,true,true));
+    }
+    assert(framevr::panels::MenuDistance(0)<framevr::panels::MenuDistance(1));
+    assert(framevr::panels::MenuDistance(1)<framevr::panels::MenuDistance(2));
     // Shared NPC dialogue placement faces the viewer, retaining angular size
     // at tabletop as well as distant orbit-camera distances.
     for(float distance:{.6f,1.2f,5.f,20.f}) {

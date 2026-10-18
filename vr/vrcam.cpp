@@ -7470,7 +7470,7 @@ int Lights(Light* out) {
 
 bool WorldMenuBlocksEffects() {
 #ifdef D2RVR_NATIVE_OPENXR
-    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen()&&!framevr::SpatialMenu());
+    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen());
 #else
     return gamestate::MenuOpen();
 #endif

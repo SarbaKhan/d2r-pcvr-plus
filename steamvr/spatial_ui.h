@@ -6,11 +6,6 @@ inline bool Dialogue(std::string_view name) {
     return name.find("Npc")!=name.npos||name.find("NPC")!=name.npos||
         name.find("ScrollSpeech")!=name.npos;
 }
-constexpr bool Spatial(int mode,bool dialogueOnly) {
-    // All management menus use the original mono panel on black.
-    // Conversations alone retain the stereo scene, in all four perspectives.
-    return mode>=1&&mode<=4&&dialogueOnly;
-}
 // Full native dialogue canvas: keep its angular width stable even in F1's
 // distant orbit. The previous 5 m cap made native text tiny at that distance.
 inline float DialogueWidth(float distance) {return 1.4f*std::max(distance,.5f);}
