@@ -439,6 +439,10 @@ std::vector<uint8_t> PaintHead(const Snapshot& s,bool alternate) {
     auto out=Paint(s,{},-1);
     if(out.size()!=1024*1024*4)return {};
     std::fill(out.begin(),out.begin()+1024*768*4,0);
+    // Only the vitals crop is borrowed from the hand atlas. Remove the old XP
+    // strip and labelled belt entirely from this external-view image.
+    std::fill(out.begin()+1024*982*4,out.end(),0);
+    for(int y=768;y<982;++y)std::fill(out.begin()+y*1024*4,out.begin()+(y*1024+512)*4,0);
     auto blend=[&](int x,int y,const uint8_t* p){
         if(x<0||x>=1024||y<0||y>=768)return;
         auto* d=&out[(y*1024+x)*4];const float a=p[3]/255.f,b=d[3]/255.f,alpha=a+b*(1-a);
