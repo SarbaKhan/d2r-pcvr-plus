@@ -1956,12 +1956,10 @@ bool Begin() {
     // Rearm pointer input when story/choices change, keeping the same anchored
     // canvas. A trigger that dismisses speech must not also choose an option.
     if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
-    bool keepWorld=true;
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    keepWorld=externalMode==3||externalMode==4;
-#endif
-    clearMenuSource=spatial&&gamestate::OpaqueMenuOpen()&&keepWorld;
-    const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!keepWorld;
+    // Match upstream: capture native UI independently of its background.
+    // Opaque management panels suppress the submitted world, not UI capture.
+    clearMenuSource=false;
+    const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
@@ -2242,9 +2240,8 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
 bool SpatialMenu(){
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    if(!spatialui::Spatial(externalMode,gamestate::DialogueOnly()))return false;
-#endif
+    // DialogueOnly is a placement hint, never a prerequisite for UI capture.
+    // Native conversation containers can coexist with other modal roots.
     return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}
@@ -2551,11 +2548,7 @@ void EndPair() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(spatialMode&&externalPerspective&&externalRigValid) {
         math::Vec at=V(uiPose.position);auto rotation=Q(uiPose.orientation);
-        if(externalMode==3&&tablePlaced) {
-            at=tableAnchor+math::Vec{0,spatialPanelHeight,0};
-            const auto d=V(head.position)-tableAnchor;
-            rotation=math::Yaw(std::atan2(d.x,d.z));uiSize=spatialPanelWidth;
-        } else if(gamestate::DialogueOnly()) {
+        if(gamestate::DialogueOnly()) {
             if(!dialoguePlaced&&dialogueSession==gamestate::LocalPlayer()&&GetTickCount64()-dialogueAt<1500) {
                 dialogueWorld=coordinates::RenderGround(dialogueGrid,externalGroundY);dialoguePlaced=true;
             }
@@ -2998,6 +2991,7 @@ bool DioramaView(float out[16],float center[16],float sampled[3],const float her
         else tableCenter=perspective::Follow(tableCenter,target,float(now-tableAt)*.001f,follow,radius*.2f);
         tableAt=now;tableFollowing=true;
         externalRig=perspective::Table(tableCenter,tableAnchor,tableHeading,2*radius/width);
+        externalGroundY=tableCenter.y; // NPC grid anchor uses the current table ground, never an old orbit height
         externalRigValid=perspective::Valid(externalRig);
     }
     if(!externalRigValid){render=false;return false;}

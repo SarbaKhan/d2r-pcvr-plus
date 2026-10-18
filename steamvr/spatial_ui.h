@@ -6,9 +6,6 @@ inline bool Dialogue(std::string_view name) {
     return name.find("Npc")!=name.npos||name.find("NPC")!=name.npos||
         name.find("ScrollSpeech")!=name.npos;
 }
-constexpr bool Spatial(int mode,bool dialogueOnly) {
-    return mode==3||mode==4||((mode==1||mode==2)&&dialogueOnly);
-}
 // Full native dialogue canvas: keep its angular width stable even in F1's
 // distant orbit. The previous 5 m cap made native text tiny at that distance.
 inline float DialogueWidth(float distance) {return 1.4f*std::max(distance,.5f);}
