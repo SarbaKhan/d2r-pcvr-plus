@@ -27,18 +27,54 @@ The same Windows DLL is used on Windows and Linux through Proton.
 2. Locate your game folder, then {destination}.
 3. Move the existing DLL outside the plugins directory for rollback.
 4. Copy the enclosed DLL to the same path, replacing that one file only.
-5. Launch using your existing shortcut.
+5. Extract your own HUD.zip into the plugins directory. It must contain:
+   HUD/ExpbarBackground.png, HUD/ExpBar.png,
+   HUD/SkillBackground.png, HUD/BeltStaminaBackground.png.
+   These local game-derived/custom textures are not included in this artifact.
+6. Launch using your existing shortcut.
 
-Do not change INI files, shaders, launchers, dependencies or saves.
+Keep your existing configuration, shaders, launchers, dependencies and saves.
 Do not install this alongside an older global d2rl-vrcam.dll installation.
 To roll back: close the game and restore the previous DLL at the same path.
 
-Changes:
-- Candidate fix for the left-eye black background behind floating F3/F4 menus.
-- English Diorama editor entry, persistent editing and exit notices.
+Optional: append to your existing d2r_pcvr.ini (defaults already apply):
+[head_hud]
+vitals_x_m=-0.30
+vitals_y_m=-0.42
+vitals_scale=1.0
+xp_y_m=0.30
+xp_scale=1.0
+belt_y_m=-0.42
+belt_scale=1.0
+belt_x_m=0.40
+skills_y_m=-0.42
+skills_scale=1.0
+Y: negative = lower; positive = higher. X: negative = left; positive = right.
+Positions are metres from view centre, range -0.8..0.8.
+Scale: 1.0 = current size, 0.5 = half, 1.5 = 150%, range 0.25..3.
+Scaling preserves proportions and panel centre. XP/skills stay horizontally centred; belt has its own X position.
+Restart after editing.
 
-Verify both eyes with inventory/stash/shop/waypoint menus in F3/F4.
-Verify Start entry/exit, notice timeout, F1/F2/Flat and normal F3 dialogue.
+Changes:
+- Configurable F1/F2 life/mana height, now lower by default.
+- Custom XP/notification panel at the top; six skill cells at bottom centre.
+- Belt/stamina panel on the right, item icons only (no names/counts).
+- Native skill/item images use the existing local cache.
+- Provisional Xbox-style legends are drawn, not extracted native glyphs.
+- RT skill remains empty until its native analog binding reader is verified.
+- Level-up uses a provisional + while unspent skill/stat points remain.
+- Native notification art, quest notification state and idle run/walk indicator
+  still require native-reader/asset validation; this is an incomplete test build.
+- Hide the original HUDPanel in all native VR perspectives using the F3 path.
+- Retire completed GPU uploads in external views to keep refreshing the HUD.
+- F4: remove the curved rim HUD; keep floating menus and NPC dialogues.
+- Retain the already-tested skybox preview (existing shader/image required).
+
+Verify Desktop 2560x1440 and square resolutions, including after restarting.
+Check life/mana damage, recovery and maximum-value changes in F1/F2.
+Check menus/dialogues, F1/F2/F3/F4 transitions, loading and character changes.
+Check that F3 hand panels and Flat Screen remain unchanged.
+F4 intentionally has no replacement gameplay HUD in this first step.
 Headset validation remains required; successful CI is not a visual test.
 '''
     output = root / 'dist-plus/D2R-PCVR-Plus-DLL-Update.zip'

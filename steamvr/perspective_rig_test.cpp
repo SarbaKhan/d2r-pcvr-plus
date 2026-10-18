@@ -1,5 +1,6 @@
 #include "perspective_rig.h"
 #include "diorama_mr.h"
+#include "diorama_skybox.h"
 #include "diorama_placement.h"
 #include "mouse_cursor.h"
 #include "../cleanroom/camera/mat4.h"
@@ -9,7 +10,22 @@ using namespace framevr;
 void Near(float a,float b){assert(std::isfinite(a)&&std::fabs(a-b)<.0002f);}
 void Same(math::Vec a,math::Vec b){Near(a.x,b.x);Near(a.y,b.y);Near(a.z,b.z);}
 math::Vec Camera(const float* m){return {-m[12]*m[0]-m[13]*m[1]-m[14]*m[2],-m[12]*m[4]-m[13]*m[5]-m[14]*m[6],-m[12]*m[8]-m[13]*m[9]-m[14]*m[10]};}
+void SkyboxTests(){
+    const math::Quat identity{0,0,0,1};
+    const auto symmetric=dioramasky::MakeRays(identity,-.7f,.7f,-.6f,.6f);
+    Same(dioramasky::Direction(symmetric,.5f,.5f),{0,0,-1});
+    const auto asymmetric=dioramasky::MakeRays(identity,-.8f,.6f,-.5f,.7f);
+    Same(dioramasky::Direction(asymmetric,0,0),math::Normalized({std::tan(-.8f),std::tan(.7f),-1}));
+    Same(dioramasky::Direction(asymmetric,1,1),math::Normalized({std::tan(.6f),std::tan(-.5f),-1}));
+    const auto yaw=dioramasky::MakeRays(math::Yaw(1.57079632679f),-.7f,.7f,-.6f,.6f);
+    Same(dioramasky::Direction(yaw,.5f,.5f),{-1,0,0});
+    const auto tilt=dioramasky::MakeRays({std::sin(.25f),0,0,std::cos(.25f)},-.7f,.7f,-.6f,.6f);
+    Same(dioramasky::Direction(tilt,.5f,.5f),{0,std::sin(.5f),-std::cos(.5f)});
+    // The preview refuses runtime passthrough, including saved enabled profiles.
+    assert(!dioramamr::Enabled(3,true,true,true,true,dioramasky::Preview));
+}
 void PlacementTests(){
+    SkyboxTests();
     using namespace placement;
     Controls c;
     auto poll=[&](uint16_t b,uint64_t t,uint8_t lt=0,uint8_t rt=0){return c.Poll(0,true,b,true,1,t,lt,rt);};

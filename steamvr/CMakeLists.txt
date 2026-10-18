@@ -180,6 +180,8 @@ target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
+add_test(NAME interaction-head-hud COMMAND interaction-preview head-hud-check.png --head-hud-check)
+
 add_executable(pool-guard-test pool_guard_test.cpp ${ROOT}/cleanroom/pools/pools.cpp)
 target_link_libraries(pool-guard-test PRIVATE framevr-runtime)
 foreach(pool_case IN ITEMS grow off enough foreign free-slot free-call layout broken prev-flag missing waiting)

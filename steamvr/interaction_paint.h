@@ -27,6 +27,6 @@ inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh,const c
 inline bool LocationImageCurrent(const PaintContext& painted,const Snapshot& snapshot) {
     return painted.fresh&&painted.session==snapshot.session&&painted.location==snapshot.location;
 }
-struct PaintJob {Snapshot snapshot;Output output;int selection=-1;controllers::Labels labels{};};
+struct PaintJob {Snapshot snapshot;Output output;int selection=-1;controllers::Labels labels{};bool headHud=false;bool alternate=false;};
 struct PaintedAtlas {std::vector<uint8_t> pixels;double paintMs=0;};
 }
