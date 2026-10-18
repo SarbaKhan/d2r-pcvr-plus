@@ -11,7 +11,7 @@ Its legacy arc/tilt settings are accepted but no longer affect an active HUD.
 
 F1/F2 reuse the F3 wrist atlas artwork and game statistics. A single transparent
 quad is submitted in OpenXR VIEW space, visible to both eyes. Its centre is
-0.30 m left and 0.25 m below the viewing centre at 1.10 m distance; width is
+0.30 m left and 0.32 m below the viewing centre at 1.10 m distance; width is
 0.40 m. These are physical dimensions, independent of desktop/render resolution,
 aspect ratio and Diorama scale. The wrist XP strip is excluded from this first
 life/mana panel. F4 has no replacement HUD yet. F3's hand display is retained.
@@ -36,3 +36,6 @@ Menus suppress the head-space panel. Perspective changes invalidate pending art.
 Automated CPU fixtures cover mode gating, stale/foreign-session rejection,
 central-field geometry and the shared native visibility policy. They cannot
 verify the game's HUDPanel hierarchy or actual headset comfort.
+
+GPU upload retirement runs before the external-view input return, so F1/F2
+atlas refreshes cannot exhaust the three-upload queue after movement starts.

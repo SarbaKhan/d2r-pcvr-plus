@@ -1,10 +1,23 @@
 #include "native_hud.h"
 #include "callback_ticket.h"
 #include <cassert>
+#include <vector>
 #include <cstdio>
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    struct Upload {uint64_t fence;};
+    std::vector<Upload> uploads{{10},{20},{30}};
+    RetireUploads(uploads,9);assert(uploads.size()==3);
+    RetireUploads(uploads,20);assert(uploads.size()==1&&uploads[0].fence==30);
+    // External views must sustain repeated refreshes, not stop after three.
+    for(uint64_t completed=30;completed<300;++completed){
+        RetireUploads(uploads,completed);
+        assert(uploads.size()<3);
+        uploads.push_back({completed+2});
+    }
+    RetireUploads(uploads,1000);assert(uploads.empty());
+
     for(int mode:{1,2,3,4}) {
         assert(HeadVitalsVisible(mode,true,true,false)==(mode==1||mode==2));
         assert(!HeadVitalsVisible(mode,true,true,true));

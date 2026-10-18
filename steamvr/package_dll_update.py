@@ -35,7 +35,8 @@ To roll back: close the game and restore the previous DLL at the same path.
 
 Changes:
 - Hide the original HUDPanel in all native VR perspectives using the F3 path.
-- F1/F2: reuse F3 life/mana artwork in a lower-left head-space panel.
+- F1/F2: life/mana panel moved down 7 cm; retire GPU uploads in external views
+  so repeated refreshes no longer fill the queue and hide the panel.
 - F4: remove the curved rim HUD; keep floating menus and NPC dialogues.
 - Retain the already-tested skybox preview (existing shader/image required).
 
