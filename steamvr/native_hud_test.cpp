@@ -1,6 +1,7 @@
 #include "native_hud.h"
 #include "spatial_ui.h"
 #include "native_panels.h"
+#include "frontend_panel.h"
 #include "callback_ticket.h"
 #include <cassert>
 #include <vector>
@@ -9,6 +10,18 @@
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    assert(framevr::frontend::Scene("act2_frontend_biome"));
+    assert(!framevr::frontend::Scene("act1_wilderness"));
+    assert(!framevr::frontend::Scene("ui_characterselectscreen"));
+    for(int preset=0;preset<3;++preset) {
+        const float d=framevr::panels::MenuDistance(preset,true);
+        assert(std::fabs(framevr::frontend::BackgroundScale(d)/(d+.12f)-1/d)<.0001f);
+    }
+    assert(framevr::frontend::Eligible(true,false,true,true,true,false));
+    assert(!framevr::frontend::Eligible(true,true,true,true,true,false));
+    assert(!framevr::frontend::Eligible(true,false,true,false,true,false));
+    assert(!framevr::frontend::Eligible(true,false,true,true,true,true));
+
     const auto defaults=Layout(VitalsY,XpY,VitalsY);
     assert(defaults.vitalsY==-.50f&&defaults.xpY==.55f&&defaults.beltY==-.50f);
     assert(defaults.vitalsX==VitalsX&&defaults.vitalsScale==1&&defaults.xpScale==1&&defaults.beltScale==1);

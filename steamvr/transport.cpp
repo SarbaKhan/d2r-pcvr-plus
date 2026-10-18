@@ -4,6 +4,7 @@
 #include "diorama_skybox.h"
 #include "diorama_placement.h"
 #include "spatial_ui.h"
+#include "frontend_panel.h"
 #include "world_coordinates.h"
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
@@ -317,7 +318,8 @@ Eye uiEye;
 Eye mapEye;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
-std::atomic<bool> uiSupported{false};
+std::atomic<bool> uiSupported{false},frontendScene{false};
+bool frontendArmed=false,frontendMode=false,frontendDisabled=false;
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false,clearMenuSource=false;
 bool npcChoicesMode=false;
 UiBlit uiBlit;
@@ -1940,6 +1942,7 @@ bool Begin() {
     if(loaded!=worldWasLoaded) { ClearInput();vrGameplayAt.store(0); }
     worldWasLoaded=loaded;
     const bool spatial=SpatialMenu();
+    frontendMode=frontendArmed&&!loaded&&frontendScene.load();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     const auto epoch=gamestate::MenuEpoch();
     if(externalPerspective&&spatialEpoch!=epoch) {
@@ -1964,7 +1967,9 @@ bool Begin() {
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
-    hud::UiFrame(spatialMode,!journalMode,0,clearMenuSource);
+    // Mono frontend capture was armed after the previous Present. Do not
+    // erase its UI snapshot here: this frame has already been rendered.
+    if(!frontendMode)hud::UiFrame(spatialMode,!journalMode,0,clearMenuSource);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
     for(auto& e:eyes)e.copied=false;
@@ -2115,10 +2120,12 @@ bool CopyMap(reshade::api::command_queue* rq) {
     e.copyFence=fenceValue;e.copied=true;return true;
 }
 bool CopyUi(reshade::api::command_queue* rq) {
-    if(!spatialMode||uiEye.copied)return true;
+    if((!spatialMode&&!frontendMode)||uiEye.copied)return true;
+    if(frontendMode&&!uiworld::Used()){frontendDisabled=true;Say("Frame frontend: verified compositor not used; keeping original combined menu");return true;}
     uint32_t w=0,h=0;int32_t crop[4]{};
     auto* src=reinterpret_cast<ID3D12Resource*>(hud::UiTexture(w,h,crop));
     if(!src||!w||!h){
+        if(frontendMode){frontendDisabled=true;Say("Frame frontend: UI snapshot missing; retaining original menu next frame");return true;}
         if(++uiMissingFrames>120){uiSupported=false;Say("Frame panels: UI capture unavailable; falling back to native menu");}
         return true;
     }
@@ -2175,7 +2182,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
         afrHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,FLATVR_AFR_EYE_NAME);
         if(afrHandle)afr=static_cast<FlatVRAfrEye*>(MapViewOfFile(afrHandle,FILE_MAP_READ,0,0,sizeof(FlatVRAfrEye)));
     }
-    const bool stereo=afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
+    const bool stereo=!(frontendArmed&&!(inWorld&&inWorld()))&&afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
@@ -2240,6 +2247,7 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     resolution::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
+void SetFrontendScene(bool active){frontendScene.store(active);}
 bool SpatialMenu(){
     // DialogueOnly is a placement hint, never a prerequisite for UI capture.
     // Native conversation containers can coexist with other modal roots.
@@ -2353,6 +2361,7 @@ void EndPair() {
     XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     std::array<XrCompositionLayerProjectionView,2> pv{{{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}}};
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    const bool separated=frontendMode&&uiEye.copied&&uiCrop[2]>0&&uiCrop[3]>0;
     const XrCompositionLayerBaseHeader* layer=nullptr;
     if(render&&valid&&!panelMode&&eyes[0].copied&&eyes[1].copied) {
         for(int i=0;i<2;++i){pv[i].pose=views[i].pose;pv[i].fov=views[i].fov;pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};}
@@ -2360,6 +2369,12 @@ void EndPair() {
     } else if(render&&valid&&eyes[0].copied&&menuPlaced) {
         const auto size=panels::Fit(width,height,panelWidth);
         quad.space=space;quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.pose=menuPose;quad.size={size.width,size.height};
+        if(separated) {
+            const auto offset=math::Rotate(Q(menuPose.orientation),{0,0,-frontend::Separation});
+            quad.pose.position={menuPose.position.x+offset.x,menuPose.position.y+offset.y,menuPose.position.z+offset.z};
+            const float scale=frontend::BackgroundScale(panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
+            quad.size.width*=scale;quad.size.height*=scale;
+        }
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=frameState.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -2567,6 +2582,13 @@ void EndPair() {
         uiPose=XrPose({at,rotation});workspacePlaced=true;
     }
 #endif
+    XrCompositionLayerQuad frontendUi{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(layer&&separated&&menuPlaced) {
+        const auto size=panels::Fit(width,height,panelWidth);
+        motionQuad(frontendUi,menuPose,size.width,size.height,
+            {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
+        frontendUi.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+    }
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
         const auto size=UiSurfaceSize();
@@ -2728,6 +2750,14 @@ void EndPair() {
     timing.submitMs=Milliseconds()-start;
     timing.pipelines=pipelineCreates.exchange(0);timing.maxPipelineMs=maxPipelineMs.exchange(0);
     lastTiming=timing;frame=false;
+    const bool arm=frontend::Eligible(frontendScene.load(),inWorld&&inWorld(),uiSupported.load(),
+        uiworld::Ready(),hud::LayerFound(),frontendDisabled)&&running&&!failed;
+    if(arm!=frontendArmed)Say(arm?"Frame frontend: separate UI pilot armed; backdrop remains mono":"Frame frontend: original menu restored");
+    if(arm||frontendArmed)hud::UiFrame(arm,true,0,false,true);
+    frontendArmed=arm;
+    static bool reported=false;
+    if(separated&&!reported)Say("Frame frontend: transparent UI submitted 0.12m ahead of mono backdrop");
+    reported=separated;
 }
 FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
 void ConfigureGameplay(bool enabled) {
@@ -3097,7 +3127,7 @@ void Shutdown(bool preserveResolution) {
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
-    if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
+    if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};frontendArmed=frontendMode=frontendDisabled=false;potionModels.Reset();potionScene={};
     hud::DioramaHudFrame(false,0);
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
