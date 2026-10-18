@@ -56,7 +56,7 @@ Scaling preserves proportions and panel centre. XP/skills stay horizontally cent
 Restart after editing.
 
 Changes:
-- Configurable F1/F2/F4 life/mana height, now lower by default.
+- Configurable F2/F3/F4 life/mana height, now lower by default.
 - Custom XP/notification panel at the top; six skill cells at bottom centre.
 - Belt/stamina panel on the right, item icons only (no names/counts).
 - Native skill/item images use the existing local cache.
@@ -65,18 +65,20 @@ Changes:
 - Level-up uses a provisional + while unspent skill/stat points remain.
 - Native notification art, quest notification state and idle run/walk indicator
   still require native-reader/asset validation; this is an incomplete test build.
-- Hide the original HUDPanel in all native VR perspectives using the F3 path.
+- Hide the original HUDPanel in all native VR perspectives using the immersive F1 path.
 - Retire completed GPU uploads in external views to keep refreshing the HUD.
-- Restore upstream native menu capture, black backgrounds and distance presets.
+- F1 first person (default), F2 third person, F3 isometric; F4 Diorama in VR only.
+- Returning to the VR main menu restores tracked-controller input; Flat is unchanged.
+- Saved mode IDs and custom HUD settings remain compatible.
 - Conversations no longer fall back to a flat scene because of dialogue classification.
-- F4 dialogues use the same NPC-anchor placement as F1/F2, with the world visible.
+- F4 dialogues use the same NPC-anchor placement as F2/F3, with the world visible.
 - Retain the already-tested skybox preview (existing shader/image required).
 
 Verify Desktop 2560x1440 and square resolutions, including after restarting.
-Check life/mana damage, recovery and maximum-value changes in F1/F2/F4.
+Check life/mana damage, recovery and maximum-value changes in F2/F3/F4.
 Check menus/dialogues, F1/F2/F3/F4 transitions, loading and character changes.
-Check that F3 hand gameplay panels and Flat Screen remain unchanged.
-F4 temporarily uses the same head-attached HUD as F1/F2, independent of table scale.
+Check that F1 hand gameplay panels and Flat Screen remain unchanged.
+F4 temporarily uses the same head-attached HUD as F2/F3, independent of table scale.
 Headset validation remains required; successful CI is not a visual test.
 '''
     output = root / 'dist-plus/D2R-PCVR-Plus-DLL-Update.zip'

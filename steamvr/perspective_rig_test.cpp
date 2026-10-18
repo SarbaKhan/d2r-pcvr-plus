@@ -103,9 +103,14 @@ int main(){
         const auto center=hit+math::Rotate(q,mousecursor::CenterOffset(96,80,7,3,scale));
         const auto tip=center+math::Rotate(q,{(7-48)*scale,(40-3)*scale,0});Same(tip,hit);
     }
-    assert(KeyMode(1)==1&&KeyMode(2)==2&&KeyMode(3)==4&&KeyMode(4)==3);
+    assert(FlatKeyMode(1)==3&&FlatKeyMode(2)==2&&FlatKeyMode(3)==1&&FlatKeyMode(4)==0);
+    for(int mode=1;mode<=4;++mode) {
+        assert(!ClassicControls(mode,false));
+        assert(ClassicControls(mode,true)==External(mode));
+    }
+    assert(KeyMode(1)==4&&KeyMode(2)==2&&KeyMode(3)==1&&KeyMode(4)==3);
     assert(Supported(4)&&!External(4)&&Supported(3)&&External(3));
-    assert(Next(4)==1&&Next(1)==2&&Next(2)==3&&Next(3)==4);
+    assert(Next(4)==2&&Next(2)==1&&Next(1)==3&&Next(3)==4);
     for(int mode:{1,2,3,4})for(bool panel:{false,true})
         assert(MouseVisible(mode,panel)==(mode==1||((mode==2||mode==3)&&panel)));
     for(float units:{1.f,3.8f,20.f})for(float yaw:{-2.f,0.f,1.2f})for(float down:{-.4f,.25f,.95f}){

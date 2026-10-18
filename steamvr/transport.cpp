@@ -1380,7 +1380,7 @@ void Input() {
     // Otherwise three F1/F2 atlas refreshes permanently fill the upload queue.
     nativehud::RetireUploads(atlasUploads,fence->GetCompletedValue());
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    if(externalPerspective) {
+    if(perspective::ClassicControls(externalMode,inWorld&&inWorld())) {
         PaintHeadVitals();
         panelinput::WorldInput(true);
         // Keep 6DoF tracking, but publish no synthetic pad, mouse or combat input.
@@ -1937,6 +1937,7 @@ bool Begin() {
     const bool loaded=inWorld&&inWorld();
     if(loaded&&!worldWasLoaded)worldCalibrationPending=true;
     if(!loaded)worldCalibrationPending=worldRecenter=false;
+    if(loaded!=worldWasLoaded) { ClearInput();vrGameplayAt.store(0); }
     worldWasLoaded=loaded;
     const bool spatial=SpatialMenu();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
