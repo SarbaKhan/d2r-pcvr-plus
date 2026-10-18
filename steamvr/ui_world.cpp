@@ -16,7 +16,7 @@ using namespace reshade::api;
 NativeMutex mutex;
 std::atomic<uint64_t> generation{1};
 std::unordered_map<uint64_t,pipeline> copies;
-std::atomic<bool> active{false},ready{false};
+std::atomic<bool> active{false},ready{false},used{false};
 thread_local bool ours=false;
 void (*logger)(const char*)=nullptr;
 std::mutex compileMutex;
@@ -87,7 +87,7 @@ void Bind(command_list* commands,pipeline_stage stages,pipeline original) {
         cache.Put(original.handle,version,replacement);
     }
     if(!replacement.handle)return;
-    ours=true;commands->bind_pipeline(stages,replacement);ours=false;
+    ours=true;commands->bind_pipeline(stages,replacement);ours=false;used.store(true);
 }
 }
 void Register(void (*log)(const char*)) {
@@ -97,5 +97,6 @@ void Register(void (*log)(const char*)) {
     reshade::register_event<reshade::addon_event::bind_pipeline>(&Bind);
 }
 bool Ready(){return ready.load();}
-void SetActive(bool on){active.store(on);}
+bool Used(){return used.load();}
+void SetActive(bool on){active.store(on);if(!on)used.store(false);}
 }

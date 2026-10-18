@@ -56,6 +56,9 @@ Scaling preserves proportions and panel centre. XP/skills stay horizontally cent
 Restart after editing.
 
 Changes:
+- Frontend pilot: native UI 12 cm ahead of a mono backdrop; no stereo scene yet.
+- Verified UI/compositor capture required; unsupported screens keep the combined menu.
+- Creation/loading screens, gameplay cameras and Flat remain unchanged.
 - Configurable F2/F3/F4 life/mana height, now lower by default.
 - Custom XP/notification panel at the top; six skill cells at bottom centre.
 - Belt/stamina panel on the right, item icons only (no names/counts).

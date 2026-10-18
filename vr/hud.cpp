@@ -354,7 +354,7 @@ void ZoomedUv(const rect& r, float ax, float ay, float z, uint32_t w, uint32_t h
 struct Labels { resource tex{}; resource_view srv{}; uint32_t w = 0, h = 0; bool fresh = true;
                 bool on = false; float keep[2][4] = {}; ULONGLONG at = 0; };
 Labels g_lab;
-std::atomic<bool> uiActive{false},workspaceActive{false},uiClearSource{false};
+std::atomic<bool> uiActive{false},workspaceActive{false},uiClearSource{false},uiDeferComposite{false};
 bool uiCaptured=false;
 std::atomic<int> uiEye{0};
 int32_t uiCrop[4]{};
@@ -511,6 +511,9 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
                         uiCaptured=true;
                     }
                     if(uiCaptured) {
+#ifdef D2RVR_NATIVE_OPENXR
+                        if(uiDeferComposite.load())framevr::uiworld::SetActive(true);
+#endif
                         g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
                         ++g_frames;DrainRetired(dev);
                         // The floating panel owns the captured UI. Empty the native source
@@ -579,12 +582,12 @@ uint64_t DioramaHudTexture(uint32_t& width,uint32_t& height) {
     if(!dioramaHud.load()||!dioramaHudCaptured||!s.tex.handle)return 0;
     width=s.w;height=s.h;return s.tex.handle;
 }
-void UiFrame(bool active,bool workspace,int eye,bool clearSource){
+void UiFrame(bool active,bool workspace,int eye,bool clearSource,bool deferComposite){
     std::lock_guard lock(g_lock);
     if(!active||eye==0)uiCaptured=false;
-    uiActive=active;workspaceActive=workspace;uiEye=eye;uiClearSource=clearSource;
+    uiActive=active;workspaceActive=workspace;uiEye=eye;uiClearSource=clearSource;uiDeferComposite=deferComposite;
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::uiworld::SetActive(active);
+    framevr::uiworld::SetActive(active&&!deferComposite);
 #endif
 }
 void NativeSession(bool active){g_nativeSession.store(active);}

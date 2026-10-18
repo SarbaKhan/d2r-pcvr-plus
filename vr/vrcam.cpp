@@ -7495,6 +7495,9 @@ void SkyTick() {
         const bool world = !biome.empty() && biome.find("frontend") == std::string::npos &&
                            biome.rfind("ui_", 0) != 0;
         g_inWorld.store(world);
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+        framevr::SetFrontendScene(biome.find("frontend")!=std::string::npos);
+#endif
         g_fogAct.store(world ? ActOfBiome(biome) : 0);
         g_underground.store(world && !IsOutdoorBiome(biome));
         g_ceilBiome.store(world && IsCeilingBiome(biome));
