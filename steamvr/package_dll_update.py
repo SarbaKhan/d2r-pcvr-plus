@@ -34,11 +34,16 @@ Do not install this alongside an older global d2rl-vrcam.dll installation.
 To roll back: close the game and restore the previous DLL at the same path.
 
 Changes:
-- Candidate fix for the left-eye black background behind floating F3/F4 menus.
-- English Diorama editor entry, persistent editing and exit notices.
+- Hide the original HUDPanel in all native VR perspectives using the F3 path.
+- F1/F2: reuse F3 life/mana artwork in a lower-left head-space panel.
+- F4: remove the curved rim HUD; keep floating menus and NPC dialogues.
+- Retain the already-tested skybox preview (existing shader/image required).
 
-Verify both eyes with inventory/stash/shop/waypoint menus in F3/F4.
-Verify Start entry/exit, notice timeout, F1/F2/Flat and normal F3 dialogue.
+Verify Desktop 2560x1440 and square resolutions, including after restarting.
+Check life/mana damage, recovery and maximum-value changes in F1/F2.
+Check menus/dialogues, F1/F2/F3/F4 transitions, loading and character changes.
+Check that F3 hand panels and Flat Screen remain unchanged.
+F4 intentionally has no replacement gameplay HUD in this first step.
 Headset validation remains required; successful CI is not a visual test.
 '''
     output = root / 'dist-plus/D2R-PCVR-Plus-DLL-Update.zip'

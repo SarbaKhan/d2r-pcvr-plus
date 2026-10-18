@@ -5,6 +5,25 @@
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    for(int mode:{1,2,3,4}) {
+        assert(HeadVitalsVisible(mode,true,true,false)==(mode==1||mode==2));
+        assert(!HeadVitalsVisible(mode,true,true,true));
+        assert(!HeadVitalsVisible(mode,false,true,false));
+        assert(!HeadVitalsVisible(mode,true,false,false));
+        // All VR views use the same existing hide policy, even classic views.
+        const auto policy=Resolve(true,false,mode!=4,true,true,0);
+        assert(policy.hide==1&&!policy.copyToolbar&&!policy.redrawToolbar);
+    }
+    assert(VitalsCurrent(7,7,100,750));
+    assert(!VitalsCurrent(7,7,100,751));
+    assert(!VitalsCurrent(7,8,100,110));
+    assert(!VitalsCurrent(0,0,100,110));
+    assert(!VitalsCurrent(7,7,100,99));
+    // Entire panel stays left/below centre and within the central +/- 30 degrees.
+    assert(VitalsX+VitalsWidth/2<0&&VitalsY+VitalsHeight/2<0);
+    assert((-VitalsX+VitalsWidth/2)/VitalsDistance<.5774f);
+    assert((-VitalsY+VitalsHeight/2)/VitalsDistance<.5774f);
+
     // Crash regression: the hidden HUD update dereferenced a null first
     // notification widget at +0x145. Cover either missing child and a layout
     // rebuild; normal desktop updates and fully bound layouts pass through.

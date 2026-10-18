@@ -1,6 +1,18 @@
 #pragma once
 #include <cstdint>
 namespace framevr::nativehud {
+// Persisted mode IDs: F1=1, F2=2, F4=3, immersive F3=4.
+constexpr bool HeadVitalsMode(int mode){return mode==1||mode==2;}
+constexpr bool HeadVitalsVisible(int mode,bool focused,bool inWorld,bool menu){
+    return HeadVitalsMode(mode)&&focused&&inWorld&&!menu;
+}
+constexpr bool VitalsCurrent(uint64_t paintedSession,uint64_t session,uint64_t at,uint64_t now){
+    return session&&paintedSession==session&&now>=at&&now-at<=650;
+}
+// Metres in XR VIEW space: left/below the centre, at a comfortable fixed depth.
+// Independent of game resolution, aspect ratio and Diorama scale.
+constexpr float VitalsX=-.30f,VitalsY=-.25f,VitalsDistance=1.1f;
+constexpr float VitalsWidth=.40f,VitalsHeight=VitalsWidth*214.f/512.f;
 // The native HUD update assumes ExpFlashLeft/ExpFlashRight exist. A hidden
 // controller HUD may lack them (observed null +0x170 during combat).
 // Defer that presentation update until the layout is ready.

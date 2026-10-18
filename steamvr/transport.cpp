@@ -132,8 +132,7 @@ constexpr int MouseAtlasSide=256;
 perspective::Rig externalRig{};
 math::Vec tableAnchor{},tableCenter{};
 float tableHeading=0,tableFloor=0,tableFloorOffset=0;
-float tableWidth=1.5f,hudTilt=.174532925f,hudArc=1.8f,spatialPanelWidth=1.2f,spatialPanelHeight=.7f;
-float hudHeading=0;ULONGLONG hudAt=0;
+float tableWidth=1.5f,spatialPanelWidth=1.2f,spatialPanelHeight=.7f;
 math::Vec dialogueGrid{},dialogueWorld{};ULONGLONG dialogueAt=0;uint64_t dialogueSession=0;
 bool dialoguePlaced=false;uint32_t spatialEpoch=~0u;
 
@@ -207,6 +206,7 @@ uint64_t interactionPaintKey=~0ull;
 uint64_t interactionRequestedKey=~0ull,interactionPaintRequest=0;
 interaction::PaintContext interactionPaintContext{},interactionRequestedContext{};
 bool interactionPaintValid=false;
+uint64_t headVitalsSession=0,headVitalsAt=0,headVitalsRequestedAt=0;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
@@ -311,8 +311,6 @@ struct Eye {
 std::array<Eye,2> eyes;
 Eye uiEye;
 Eye mapEye;
-Eye hudEye;
-UiBlit hudBlit;bool hudSupported=false;uint32_t hudWidth=0,hudHeight=0;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
@@ -932,7 +930,6 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!SetupPointer(eyeFormat))return false;
     atlasFormat=eyeFormat;
     if(!SetupGameplay(eyeFormat))Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
-    hudSupported=uiSupported&&hudBlit.Initialize(device.Get(),&Say);
     potionModels.Initialize(device.Get(),queue.Get(),eyeFormat,width,height,&Say);
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
@@ -1327,6 +1324,39 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         settingsPaintAt=now+100;
     }
 }
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+void PaintHeadVitals() {
+    if(!nativehud::HeadVitalsMode(externalMode)||!inWorld||!inWorld())return;
+    const auto now=GetTickCount64();
+    const auto snapshot=interactionstate::Read();
+    const bool fresh=interaction::Fresh(snapshot,gamestate::LocalPlayer(),now)&&snapshot.vitalsKnown;
+    if(!fresh){headVitalsSession=0;return;}
+    const interaction::Output neutral{};
+    const auto context=interaction::Context(snapshot,neutral,true,controllerLabels);
+    const uint64_t key=uint64_t(snapshot.revision)<<32;
+    // Unchanged values can keep their image, but only while readings remain fresh.
+    if(interactionPaintValid&&key==interactionPaintKey&&context==interactionPaintContext) {
+        headVitalsSession=snapshot.session;headVitalsAt=snapshot.at;return;
+    }
+    // Drain completed work before submitting the next sample. Do not starve the
+    // background painter when health is changing faster than it can paint.
+    interaction::PaintedAtlas painted;
+    if(interactionPaintRequest&&!interactionAtlasPending&&atlasUploads.size()<3&&
+       interactionPainter.Take(interactionPaintRequest,painted)) {
+        if(!painted.pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,painted.pixels,true)) {
+            interactionPaintKey=interactionRequestedKey;interactionPaintContext=interactionRequestedContext;
+            interactionPaintValid=true;headVitalsSession=interactionRequestedContext.session;
+            headVitalsAt=headVitalsRequestedAt;
+        }
+        interactionPaintRequest=0;
+    }
+    if(!interactionPaintRequest&&now>=interactionPaintAt) {
+        interactionPaintRequest=interactionPainter.Submit({snapshot,neutral,-1,controllerLabels});
+        interactionRequestedKey=key;interactionRequestedContext=context;
+        headVitalsRequestedAt=snapshot.at;interactionPaintAt=now+100;
+    }
+}
+#endif
 void Input() {
     gazeValid=false;
     if(!tracking.data) return;
@@ -1338,6 +1368,7 @@ void Input() {
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(externalPerspective) {
+        PaintHeadVitals();
         panelinput::WorldInput(true);
         // Keep 6DoF tracking, but publish no synthetic pad, mouse or combat input.
         auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;s.handsValid=0;
@@ -1875,7 +1906,7 @@ void Events() {
             if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();ClearInput();pEndSession(session);running=false;resolution::Restore(); }
             if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;resolution::Restore();ClearInput();}
         } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;resolution::Restore();ClearInput();}
-        hud::NativeSession(running&&!externalPerspective);
+        hud::NativeSession(running);
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
@@ -1921,7 +1952,7 @@ bool Begin() {
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!keepWorld;
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
-    mapEye.copied=false;hudEye.copied=false;hud::MapFrame();
+    mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0,clearMenuSource);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
@@ -2119,40 +2150,6 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
-bool CopyHud(reshade::api::command_queue* rq) {
-    if(!hudSupported||hudEye.copied)return true;
-    uint32_t w=0,h=0;
-    auto* src=reinterpret_cast<ID3D12Resource*>(hud::DioramaHudTexture(w,h));
-    if(!src||!w||!h)return true;
-    auto& e=hudEye;
-    if(e.chain&&(w!=hudWidth||h!=hudHeight)) {
-        if(!WaitGpuValue(e.copyFence))return false;
-        pDestroySwapchain(e.chain);e={};
-    }
-    if(!e.chain) {
-        XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-        c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=w;c.height=h;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
-        if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {hudSupported=false;Say("Frame panels: UI format unavailable; native menu retained");return true;}
-        uint32_t n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
-        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
-           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)))||FAILED(e.commands->Close()))return false;
-        hudWidth=w;hudHeight=h;
-        char message[160];std::snprintf(message,sizeof message,"Frame panels: native curved HUD surface %ux%u ready; one shared image for both eyes",w,h);Say(message);
-    }
-    if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
-    rq->flush_immediate_command_list();
-    if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
-    ID3D12Resource* dest=e.images[e.index].texture;
-    if(!hudBlit.Render(device.Get(),e.commands.Get(),src,dest,opaqueMenuMode)) {
-        e.commands->Close();hudSupported=false;
-        Say("Frame panels: conversion rejected; native flat menu fallback next frame");return true;
-    }
-    if(FAILED(e.commands->Close()))return false;
-    ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
-    if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
-    e.copyFence=fenceValue;e.copied=true;return true;
-}
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     std::lock_guard lock(mutex);
     if(failed)return;
@@ -2171,7 +2168,6 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
-    if(eye==0&&!CopyHud(rq)){hudSupported=false;hudEye.copied=false;Say("Diorama HUD: copy failed; restoring screen HUD");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         PlaceMainMenu();
@@ -2248,10 +2244,10 @@ void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye,clearMenuSource);
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    hud::DioramaHudFrame(externalMode==3&&hudSupported&&!panelMode&&!spatialMode&&layerLimit>=8,eye);
+    hud::DioramaHudFrame(false,eye);
 #endif
     std::lock_guard lock(mutex);
-    hud::NativeGameplay(!externalPerspective&&nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
+    hud::NativeGameplay(nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
     lightbounds::SetActive(Active()&&inWorld&&inWorld());
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
     d2rcam::TraceStereoLabels(capturePair?eye:-1);
@@ -2339,8 +2335,6 @@ void EndPair() {
         if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;}
         e.acquired=false;
     }
-    if(hudEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        if(!Check(pReleaseSwapchainImage(hudEye.chain,&release),"release Diorama HUD"))hudEye.copied=false;hudEye.acquired=false;}
     if(uiEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         Check(pReleaseSwapchainImage(uiEye.chain,&release),"release journal");uiEye.acquired=false;}
     if(mapEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -2407,6 +2401,19 @@ void EndPair() {
         q.subImage.swapchain=chain;q.subImage.imageRect=rect;
         layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
     };
+#if D2RVR_EXPERIMENTAL_PERSPECTIVES
+    XrCompositionLayerQuad headVitals{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(nativehud::HeadVitalsVisible(externalMode,layer&&valid&&state==XR_SESSION_STATE_FOCUSED,
+        inWorld&&inWorld(),panelMode||spatialMode||settingsModel.open||bodyCalibration.Active())&&
+        headSpace&&interactionChain&&interactionPaintValid&&
+        nativehud::VitalsCurrent(headVitalsSession,gamestate::LocalPlayer(),headVitalsAt,GetTickCount64())) {
+        XrPosef pose{};pose.orientation.w=1;
+        pose.position={nativehud::VitalsX,nativehud::VitalsY,-nativehud::VitalsDistance};
+        motionQuad(headVitals,pose,nativehud::VitalsWidth,nativehud::VitalsHeight,
+            {{512,768},{512,214}},interactionChain); // orbs + labels, without the wrist XP strip
+        headVitals.space=headSpace;
+    }
+#endif
     const bool interactionVisible=layer&&!panelMode&&interactionInput.active&&interactionChain;
     if(interactionVisible&&interactionOutput.wheel&&interactionPaintValid&&interactionPaintContext==interaction::Context(
         interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))
@@ -2539,30 +2546,6 @@ void EndPair() {
             }
         }
         uiPose=XrPose({at,rotation});workspacePlaced=true;
-    }
-#endif
-#if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    std::array<XrCompositionLayerQuad,16> curvedHud{};
-    if(layer&&externalMode==3&&tablePlaced&&!panelMode&&!spatialMode&&hudEye.copied&&hudWidth&&hudHeight) {
-        const auto now=GetTickCount64();const auto d=V(head.position)-tableAnchor;
-        if(!hudAt)hudHeading=std::atan2(d.x,d.z);
-        else hudHeading=spatialui::FollowAngle(hudHeading,V(head.position),tableAnchor,float(now-hudAt)*.001f);
-        hudAt=now;
-        // Reserve a composition slot for the editor indication on runtimes
-        // with small layer limits; the segmented HUD must not crowd it out.
-        const uint32_t noticeSlot=tableControls.Notice(now)>0&&contentLimit>count?1u:0u;
-        const int segments=int(std::min(uint32_t(curvedHud.size()),contentLimit-count-noticeSlot));
-        const float radius=tableWidth*.5f+.025f;
-        const float arc=hudArc*spatialui::HudScale*.775f/radius;
-        const float h=radius*arc*float(hudHeight)/hudWidth;
-        for(int i=0;i<segments;++i) {
-            auto p=spatialui::HudSegment(tableAnchor,radius,hudHeading,arc,h,hudTilt,i,segments);
-            curvedHud[i]={XR_TYPE_COMPOSITION_LAYER_QUAD};
-            const int left=int(uint64_t(hudWidth)*i/segments),right=int(uint64_t(hudWidth)*(i+1)/segments);
-            motionQuad(curvedHud[i],XrPose({p.p,p.q}),2*radius*std::tan(arc/(2*segments)),h,
-                {{left,0},{right-left,int32_t(hudHeight)}},hudEye.chain);
-            curvedHud[i].layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-        }
     }
 #endif
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
@@ -2899,7 +2882,10 @@ void SetExternalPerspective(int mode) {
     std::lock_guard lock(mutex);
     // Cancel pending casts, gestures and pointer presses before changing ownership.
     tableControls.CancelAll();workspacePlaced=false;dialoguePlaced=false;spatialEpoch=~0u;
-    ClearInput();vrGameplayAt.store(0);motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;hud::NativeSession(running&&!externalPerspective);
+    ClearInput();vrGameplayAt.store(0);motionInput={};interactionInput={};externalMode=mode;externalPerspective=perspective::External(mode);externalGeneration=~0u;externalRigValid=false;hud::NativeSession(running);
+    // Never reuse a pending hand/menu image across a perspective change.
+    interactionPaintValid=false;interactionPaintRequest=0;interactionPaintAt=0;
+    headVitalsSession=headVitalsAt=headVitalsRequestedAt=0;
 }
 bool DioramaSkyboxRays(float out[18]) {
     std::lock_guard lock(mutex);
@@ -2918,8 +2904,8 @@ void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
 bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
 void ConfigureSpatialUi(float tilt,float arc,float width,float height) {
     std::lock_guard lock(mutex);
-    hudTilt=std::clamp(tilt,0.f,60.f)*.0174532925f;
-    hudArc=std::clamp(arc,30.f,150.f)*.0174532925f;
+    // Legacy rim settings remain accepted, but the rim HUD is retired.
+    (void)tilt;(void)arc;
     spatialPanelWidth=std::clamp(width,.5f,2.f);spatialPanelHeight=std::clamp(height,.3f,1.5f);
 }
 void ObserveDialogueTarget(float x,float z) {
@@ -3083,7 +3069,7 @@ void Shutdown(bool preserveResolution) {
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
-    if(hudEye.chain&&pDestroySwapchain)pDestroySwapchain(hudEye.chain);hudEye={};hudBlit={};hudSupported=false;hudWidth=hudHeight=0;hud::DioramaHudFrame(false,0);
+    hud::DioramaHudFrame(false,0);
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
     bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
@@ -3094,6 +3080,7 @@ void Shutdown(bool preserveResolution) {
 #endif
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
     atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
+    headVitalsSession=headVitalsAt=headVitalsRequestedAt=0;
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
     if(compassChain&&pDestroySwapchain)pDestroySwapchain(compassChain);compassChain=XR_NULL_HANDLE;wristHeading.Reset();compassFrame=compassAtlasReady=false;
@@ -3106,7 +3093,7 @@ void Shutdown(bool preserveResolution) {
     tableControls.CancelAll();tableFloorKnown=false;
     if(mouseChain&&pDestroySwapchain)pDestroySwapchain(mouseChain);mouseChain=XR_NULL_HANDLE;
     mouseAtlasPending=mouseImageReady=false;uploadedMouseCursor=nullptr;mouseRetryAt=0;
-    tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;hudAt=0;dialoguePlaced=false;dialogueAt=0;spatialEpoch=~0u;
+    tablePlaced=tableFollowing=false;tableAt=0;externalRigValid=false;dialoguePlaced=false;dialogueAt=0;spatialEpoch=~0u;
 #endif
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;

@@ -1,0 +1,55 @@
+name: VR head-space vitals
+on:
+  push:
+    branches: [feature/vr-head-vitals]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python and camera fixtures
+        run: |
+          python3 -m unittest discover -s steamvr -p '*test.py'
+          for test in flat_controls classic_gamepad perspective_rig native_hud; do
+            g++ -std=c++20 -Wall -Wextra -Werror steamvr/${test}_test.cpp -o /tmp/$test
+            /tmp/$test
+          done
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Pinned Windows toolchain
+        shell: powershell
+        run: ./steamvr/setup_windows_tools.ps1
+      - uses: actions/cache/save@v4
+        with:
+          path: deps
+          key: pcvr-plus-tools-windows-20260616-4.4.4-3.12.10-v1
+      - name: Compile current upstream plus perspectives
+        shell: powershell
+        run: ./steamvr/build_windows.ps1 -ExperimentalPerspectives
+      - name: CPU and Python fixtures
+        shell: powershell
+        run: |
+          & ./deps/cmake-4.4.4-windows-x86_64/bin/ctest.exe --test-dir build-frame/windows-native --output-on-failure -E '^(ui-blit-|swapchain-color|interaction-weapon-skills|interaction-map-tab)'
+          if ($LASTEXITCODE -ne 0) { throw 'C++ fixtures failed' }
+          & ./deps/python/python.exe -m unittest discover -s steamvr -p '*test.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Python fixtures failed' }
+      - name: Package DLL-only update
+        shell: powershell
+        run: |
+          & ./deps/python/python.exe steamvr/package_dll_update.py --commit $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'DLL package failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: D2R-PCVR-Plus-DLL-Update
+          path: dist-plus/D2R-PCVR-Plus-DLL-Update.zip
+          if-no-files-found: error
