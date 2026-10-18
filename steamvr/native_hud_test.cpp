@@ -1,4 +1,5 @@
 #include "native_hud.h"
+#include "spatial_ui.h"
 #include "callback_ticket.h"
 #include <cassert>
 #include <vector>
@@ -7,9 +8,26 @@
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
-    const auto defaults=Layout(-.42f,.30f,-.42f);
-    assert(defaults.vitalsY==-.42f&&defaults.xpY==.30f&&defaults.beltY==-.42f);
+    const auto defaults=Layout(VitalsY,XpY,VitalsY);
+    assert(defaults.vitalsY==-.50f&&defaults.xpY==.55f&&defaults.beltY==-.50f);
     assert(defaults.vitalsX==VitalsX&&defaults.vitalsScale==1&&defaults.xpScale==1&&defaults.beltScale==1);
+    assert(defaults.vitalsX==-.40f&&defaults.skillsScale==1.2f&&defaults.skillsY==-.50f);
+    const auto invalid=Layout(NAN,NAN,NAN,NAN,1,1,1,NAN,NAN,NAN);
+    assert(invalid.vitalsY==-.50f&&invalid.xpY==.55f&&invalid.beltY==-.50f);
+    assert(invalid.vitalsX==-.40f&&invalid.skillsY==-.50f&&invalid.skillsScale==1.2f);
+    for(int mode=0;mode<=5;++mode) {
+        assert(!framevr::spatialui::Spatial(mode,false));
+        assert(framevr::spatialui::Spatial(mode,true)==(mode>=1&&mode<=4));
+    }
+    // Shared NPC dialogue placement faces the viewer, retaining angular size
+    // at tabletop as well as distant orbit-camera distances.
+    for(float distance:{.6f,1.2f,5.f,20.f}) {
+        const auto pose=framevr::spatialui::DialoguePanel({0,0,0},{distance,1,distance});
+        const auto toward=framevr::math::Normalized(framevr::math::Vec{distance,1,distance}-pose.p);
+        const auto normal=framevr::math::Rotate(pose.q,{0,0,1});
+        assert(framevr::math::Dot(normal,toward)>.999f);
+        assert(std::fabs(framevr::spatialui::DialogueWidth(distance)/distance-1.4f)<.001f);
+    }
     const auto custom=Layout(-.5f,.4f,-.3f,-.4f,1.5f,.5f,2.f);
     assert(custom.vitalsX==-.4f&&custom.vitalsY==-.5f&&custom.xpY==.4f&&custom.beltY==-.3f);
     assert(custom.vitalsScale==1.5f&&custom.xpScale==.5f&&custom.beltScale==2.f);
@@ -36,7 +54,7 @@ int main(){
     RetireUploads(uploads,1000);assert(uploads.empty());
 
     for(int mode:{1,2,3,4}) {
-        assert(HeadVitalsVisible(mode,true,true,false)==(mode==1||mode==2));
+        assert(HeadVitalsVisible(mode,true,true,false)==(mode==1||mode==2||mode==3));
         assert(!HeadVitalsVisible(mode,true,true,true));
         assert(!HeadVitalsVisible(mode,false,true,false));
         assert(!HeadVitalsVisible(mode,true,false,false));

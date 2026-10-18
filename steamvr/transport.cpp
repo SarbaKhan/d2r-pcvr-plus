@@ -1958,7 +1958,7 @@ bool Begin() {
     if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
     bool keepWorld=true;
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
-    keepWorld=externalMode==3||externalMode==4;
+    keepWorld=false; // management menus no longer retain the stereo world
 #endif
     clearMenuSource=spatial&&gamestate::OpaqueMenuOpen()&&keepWorld;
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!keepWorld;
@@ -2551,11 +2551,7 @@ void EndPair() {
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(spatialMode&&externalPerspective&&externalRigValid) {
         math::Vec at=V(uiPose.position);auto rotation=Q(uiPose.orientation);
-        if(externalMode==3&&tablePlaced) {
-            at=tableAnchor+math::Vec{0,spatialPanelHeight,0};
-            const auto d=V(head.position)-tableAnchor;
-            rotation=math::Yaw(std::atan2(d.x,d.z));uiSize=spatialPanelWidth;
-        } else if(gamestate::DialogueOnly()) {
+        if(gamestate::DialogueOnly()) {
             if(!dialoguePlaced&&dialogueSession==gamestate::LocalPlayer()&&GetTickCount64()-dialogueAt<1500) {
                 dialogueWorld=coordinates::RenderGround(dialogueGrid,externalGroundY);dialoguePlaced=true;
             }
@@ -2998,6 +2994,7 @@ bool DioramaView(float out[16],float center[16],float sampled[3],const float her
         else tableCenter=perspective::Follow(tableCenter,target,float(now-tableAt)*.001f,follow,radius*.2f);
         tableAt=now;tableFollowing=true;
         externalRig=perspective::Table(tableCenter,tableAnchor,tableHeading,2*radius/width);
+        externalGroundY=tableCenter.y; // NPC grid anchor uses the current table ground, never an old orbit height
         externalRigValid=perspective::Valid(externalRig);
     }
     if(!externalRigValid){render=false;return false;}

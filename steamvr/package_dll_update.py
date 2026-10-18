@@ -39,16 +39,16 @@ To roll back: close the game and restore the previous DLL at the same path.
 
 Optional: append to your existing d2r_pcvr.ini (defaults already apply):
 [head_hud]
-vitals_x_m=-0.30
-vitals_y_m=-0.42
+vitals_x_m=-0.40
+vitals_y_m=-0.50
 vitals_scale=1.0
-xp_y_m=0.30
+xp_y_m=0.55
 xp_scale=1.0
-belt_y_m=-0.42
+belt_y_m=-0.50
 belt_scale=1.0
 belt_x_m=0.40
-skills_y_m=-0.42
-skills_scale=1.0
+skills_y_m=-0.50
+skills_scale=1.2
 Y: negative = lower; positive = higher. X: negative = left; positive = right.
 Positions are metres from view centre, range -0.8..0.8.
 Scale: 1.0 = current size, 0.5 = half, 1.5 = 150%, range 0.25..3.
@@ -56,7 +56,7 @@ Scaling preserves proportions and panel centre. XP/skills stay horizontally cent
 Restart after editing.
 
 Changes:
-- Configurable F1/F2 life/mana height, now lower by default.
+- Configurable F1/F2/F4 life/mana height, now lower by default.
 - Custom XP/notification panel at the top; six skill cells at bottom centre.
 - Belt/stamina panel on the right, item icons only (no names/counts).
 - Native skill/item images use the existing local cache.
@@ -67,14 +67,15 @@ Changes:
   still require native-reader/asset validation; this is an incomplete test build.
 - Hide the original HUDPanel in all native VR perspectives using the F3 path.
 - Retire completed GPU uploads in external views to keep refreshing the HUD.
-- F4: remove the curved rim HUD; keep floating menus and NPC dialogues.
+- All management menus return to the mono panel on black.
+- F4 dialogues use the same NPC-anchor placement as F1/F2, with the world visible.
 - Retain the already-tested skybox preview (existing shader/image required).
 
 Verify Desktop 2560x1440 and square resolutions, including after restarting.
-Check life/mana damage, recovery and maximum-value changes in F1/F2.
+Check life/mana damage, recovery and maximum-value changes in F1/F2/F4.
 Check menus/dialogues, F1/F2/F3/F4 transitions, loading and character changes.
-Check that F3 hand panels and Flat Screen remain unchanged.
-F4 intentionally has no replacement gameplay HUD in this first step.
+Check that F3 hand gameplay panels and Flat Screen remain unchanged.
+F4 temporarily uses the same head-attached HUD as F1/F2, independent of table scale.
 Headset validation remains required; successful CI is not a visual test.
 '''
     output = root / 'dist-plus/D2R-PCVR-Plus-DLL-Update.zip'
