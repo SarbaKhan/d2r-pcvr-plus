@@ -207,10 +207,13 @@ uint64_t interactionRequestedKey=~0ull,interactionPaintRequest=0;
 interaction::PaintContext interactionPaintContext{},interactionRequestedContext{};
 bool interactionPaintValid=false;
 nativehud::HeadLayout headHudLayout;
+std::atomic<int> hudPadSlot{-1};
+std::atomic<bool> hudAlternate{false};
+std::atomic<uint64_t> hudPadAt{0};
 uint64_t headVitalsSession=0,headVitalsAt=0,headVitalsRequestedAt=0;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
-    auto pixels=interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
+    auto pixels=job.headHud?interaction::PaintHead(job.snapshot,job.alternate):interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
     return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
 });
 uint64_t interactionPrefetchSession=0;
@@ -1336,7 +1339,10 @@ void PaintHeadVitals() {
     const auto context=interaction::Context(snapshot,neutral,true,controllerLabels);
     // Queue native belt icons asynchronously, including when F3 was never used.
     for(const auto& belt:snapshot.belt)if(belt.known&&belt.count)interaction::icons::Get(belt.Next());
-    const uint64_t key=(uint64_t(snapshot.revision)<<32)^
+    const bool alternate=hudAlternate.load()&&now-hudPadAt.load()<650;
+    for(const auto* asset:{"hud_xp","hud_fill","hud_skills","hud_belt"})interaction::icons::Get(asset);
+    for(const auto& skill:snapshot.classicSkills)if(skill.known&&skill.id>=0)interaction::icons::Get("s"+std::to_string(skill.id));
+    const uint64_t key=(uint64_t(snapshot.revision)<<32)^uint64_t(alternate)^
         (interaction::icons::Revision()*0x9e3779b97f4a7c15ull);
     // Unchanged values can keep their image, but only while readings remain fresh.
     if(interactionPaintValid&&key==interactionPaintKey&&context==interactionPaintContext) {
@@ -1355,7 +1361,7 @@ void PaintHeadVitals() {
         interactionPaintRequest=0;
     }
     if(!interactionPaintRequest&&now>=interactionPaintAt) {
-        interactionPaintRequest=interactionPainter.Submit({snapshot,neutral,-1,controllerLabels});
+        interactionPaintRequest=interactionPainter.Submit({snapshot,neutral,-1,controllerLabels,true,alternate});
         interactionRequestedKey=key;interactionRequestedContext=context;
         headVitalsRequestedAt=snapshot.at;interactionPaintAt=now+100;
     }
@@ -2409,7 +2415,7 @@ void EndPair() {
     };
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     XrCompositionLayerQuad headVitals{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    XrCompositionLayerQuad headXp{XR_TYPE_COMPOSITION_LAYER_QUAD},headBelt{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad headXp{XR_TYPE_COMPOSITION_LAYER_QUAD},headBelt{XR_TYPE_COMPOSITION_LAYER_QUAD},headSkills{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(nativehud::HeadVitalsVisible(externalMode,layer&&valid&&state==XR_SESSION_STATE_FOCUSED,
         inWorld&&inWorld(),panelMode||spatialMode||settingsModel.open||bodyCalibration.Active())&&
         headSpace&&interactionChain&&interactionPaintValid&&
@@ -2421,12 +2427,16 @@ void EndPair() {
         headVitals.space=headSpace;
         pose.position={0,headHudLayout.xpY,-nativehud::VitalsDistance};
         motionQuad(headXp,pose,nativehud::XpWidth*headHudLayout.xpScale,nativehud::XpHeight*headHudLayout.xpScale,
-            {{554,982},{428,40}},interactionChain);
+            {{0,0},{1024,132}},interactionChain);
         headXp.space=headSpace;
-        pose.position={0,headHudLayout.beltY,-nativehud::VitalsDistance};
+        pose.position={headHudLayout.beltX,headHudLayout.beltY,-nativehud::VitalsDistance};
         motionQuad(headBelt,pose,nativehud::BeltWidth*headHudLayout.beltScale,nativehud::BeltHeight*headHudLayout.beltScale,
-            {{0,768},{512,256}},interactionChain);
+            {{0,384},{815,180}},interactionChain);
         headBelt.space=headSpace;
+        pose.position={0,headHudLayout.skillsY,-nativehud::VitalsDistance};
+        motionQuad(headSkills,pose,nativehud::SkillsWidth*headHudLayout.skillsScale,nativehud::SkillsHeight*headHudLayout.skillsScale,
+            {{0,160},{814,180}},interactionChain);
+        headSkills.space=headSpace;
     }
 #endif
     const bool interactionVisible=layer&&!panelMode&&interactionInput.active&&interactionChain;
@@ -2917,8 +2927,14 @@ bool DioramaSkyboxRays(float out[18]) {
 void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
 void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
 bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
-void ConfigureHeadHud(float vitalsY,float xpY,float beltY,float vitalsX,float vitalsScale,float xpScale,float beltScale) {
-    std::lock_guard lock(mutex);headHudLayout=nativehud::Layout(vitalsY,xpY,beltY,vitalsX,vitalsScale,xpScale,beltScale);
+void ObserveHudPad(unsigned slot,bool connected,bool active,uint8_t leftTrigger) {
+    const int current=hudPadSlot.load();
+    if(connected&&(active||current==int(slot)||current<0)) {
+        hudPadSlot.store(int(slot));hudAlternate.store(leftTrigger>=128);hudPadAt.store(GetTickCount64());
+    } else if(!connected&&current==int(slot)) {hudPadSlot.store(-1);hudAlternate.store(false);}
+}
+void ConfigureHeadHud(float vitalsY,float xpY,float beltY,float vitalsX,float vitalsScale,float xpScale,float beltScale,float beltX,float skillsY,float skillsScale) {
+    std::lock_guard lock(mutex);headHudLayout=nativehud::Layout(vitalsY,xpY,beltY,vitalsX,vitalsScale,xpScale,beltScale,beltX,skillsY,skillsScale);
 }
 void ConfigureSpatialUi(float tilt,float arc,float width,float height) {
     std::lock_guard lock(mutex);

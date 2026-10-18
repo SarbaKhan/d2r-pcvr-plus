@@ -152,6 +152,11 @@ void Capture(framevr::interaction::Snapshot& s) {
     s.vitalsKnown=s.health>=0&&s.maxHealth>0&&s.health<=s.maxHealth*2&&s.maxHealth<1000000&&
         s.mana>=0&&s.maxMana>=0&&s.mana<=std::max(1.f,s.maxMana)*2&&s.maxMana<1000000;
     reason=s.vitalsKnown?0:6;
+    // Native ItemStatCost IDs: stamina/maxstamina are fixed-point like life.
+    s.stamina=stat(player,10,0)/256.f;s.maxStamina=stat(player,11,0)/256.f;
+    s.staminaKnown=s.stamina>=0&&s.maxStamina>0&&s.maxStamina<1000000&&s.stamina<=s.maxStamina*2;
+    s.unspentStats=std::clamp(stat(player,4,0),0,10000);
+    s.unspentSkills=std::clamp(stat(player,5,0),0,10000);
     // ItemStatCost IDs verified against this game's own table: level=12,
     // experience=13. Experience rows contain one unsigned threshold per class
     // followed by ExpRatio; row 0 is MaxLvl, row 1 starts character level 1.
@@ -195,6 +200,22 @@ void Capture(framevr::interaction::Snapshot& s) {
     const int bank=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::ControllerBankRva))();
     if(bank!=0&&bank!=16)return;
     s.bindingBank=bank;
+    // Reuse the checked native button-to-slot resolver. RT is an analog action,
+    // not an XInput button bit; leave it unknown until its native resolver is audited.
+    constexpr int classicButtons[]={0x1000,0x4000,0x2000,0x8000,0x0200};
+    for(int group=0;group<2;++group)for(int i=0;i<5;++i) {
+        const int slot=reinterpret_cast<int(*)(int,bool)>(d2rsig::Addr(abi::ButtonSlotRva))(classicButtons[i],group!=0);
+        framevr::interaction::ControllerBinding binding;
+        if(!framevr::interaction::ReadControllerBinding(d2rsig::Addr(abi::ControllerTableRva),bank,slot,
+            [](uintptr_t p,auto& value){return Read(p,value);},binding))continue;
+        auto& skill=s.classicSkills[group*6+i];skill.id=binding.skill;skill.owner=binding.owner;skill.known=true;
+        if(skill.id==359) {
+            const auto scroll=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(abi::SkillRva))(player,219,-1);
+            int level=0;if(scroll&&!Read(scroll+0x48,level)){skill={};continue;}
+            skill.id=scroll&&level>0?219:220;
+        }
+        skill.available=skill.id>=0;
+    }
     unsigned usedSlots=0;
     for(int i=0;i<framevr::skills::Count;++i){
         const int slot=Slot(i);

@@ -870,7 +870,8 @@ void LoadSettings() {
     framevr::ConfigureHeadHud(IniF(L"head_hud",L"vitals_y_m",-.42f),
         IniF(L"head_hud",L"xp_y_m",.30f),IniF(L"head_hud",L"belt_y_m",-.42f),
         IniF(L"head_hud",L"vitals_x_m",-.30f),IniF(L"head_hud",L"vitals_scale",1.f),
-        IniF(L"head_hud",L"xp_scale",1.f),IniF(L"head_hud",L"belt_scale",1.f));
+        IniF(L"head_hud",L"xp_scale",1.f),IniF(L"head_hud",L"belt_scale",1.f),
+        IniF(L"head_hud",L"belt_x_m",.40f),IniF(L"head_hud",L"skills_y_m",-.42f),IniF(L"head_hud",L"skills_scale",1.f));
     framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
     framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f),IniF(L"diorama",L"width_m",1.5f));
     framevr::ConfigureSpatialUi(IniF(L"diorama",L"hud_tilt_deg",10.f),IniF(L"diorama",L"hud_arc_deg",103.f),
@@ -3602,6 +3603,9 @@ void PollClassicPad(DWORD idx,DWORD result,const XINPUT_STATE* state){
     const bool active=p.wButtons||p.bLeftTrigger>30||p.bRightTrigger>30||
         std::abs(int(p.sThumbLX))>8000||std::abs(int(p.sThumbLY))>8000||
         std::fabs(x)>g_set.padDeadzone.load()||std::fabs(y)>g_set.padDeadzone.load();
+    #ifdef D2RVR_NATIVE_OPENXR
+    if(NativeExternal())framevr::ObserveHudPad(idx,result==ERROR_SUCCESS&&state,active,p.bLeftTrigger);
+#endif
     AcquireSRWLockExclusive(&g_classicPadLock);
     if(!allowed)g_classicPad.Reset();
     else g_classicPad.Poll(int(idx),result==ERROR_SUCCESS&&state,x,y,active,ClassicPadContext(),gamestate::MenuEpoch(),GetTickCount64());

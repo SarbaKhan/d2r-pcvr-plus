@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <filesystem>
 static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width,UINT height) {
     wchar_t file[1024]{};MultiByteToWideChar(CP_UTF8,0,path,-1,file,1024);
     const HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
@@ -30,6 +31,36 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--head-hud-check")) {
+        const auto root=std::filesystem::temp_directory_path()/("pcvr-hud-fixture-"+std::to_string(GetCurrentProcessId()));
+        std::filesystem::create_directories(root/"HUD");
+        std::filesystem::create_directories(root/"d2r_vr_icons");
+        icons::Directory((root/"d2r_vr_icons").wstring());
+        std::vector<uint8_t> bg(64*16*4,40),fill(64*16*4,255);
+        for(size_t i=3;i<bg.size();i+=4)bg[i]=255;
+        for(const char* name:{"ExpbarBackground.png","SkillBackground.png","BeltStaminaBackground.png"})
+            if(!SavePng((root/"HUD"/name).string().c_str(),bg,64,16))return 80;
+        if(!SavePng((root/"HUD"/"ExpBar.png").string().c_str(),fill,64,16))return 81;
+        for(const char* key:{"hud_xp","hud_fill","hud_skills","hud_belt"})icons::Get(key);
+        if(!icons::Wait(5000))return 82;
+        Snapshot s;s.session=1;s.vitalsKnown=true;s.health=50;s.maxHealth=100;s.mana=30;s.maxMana=60;
+        s.experience={1,99,0,0,100,true};
+        const auto old=Paint(s,{},-1),empty=PaintHead(s,false);
+        s.experience.current=50;const auto half=PaintHead(s,false);
+        s.experience.current=99;const auto full=PaintHead(s,false);
+        if(empty.size()!=1024*1024*4||half.size()!=empty.size()||full.size()!=empty.size())return 83;
+        int halfChanges=0,fullChanges=0;
+        for(int y=0;y<1024;++y)for(int x=0;x<1024;++x){const int i=(y*1024+x)*4;
+            if(x>=512&&y>=768&&y<982&&std::memcmp(&old[i],&full[i],4))return 84;
+            const bool h=std::memcmp(&empty[i],&half[i],4),f=std::memcmp(&empty[i],&full[i],4);
+            if((h||f)&&(y<20||y>=32||x<8||x>=1016))return 85;
+            halfChanges+=h;fullChanges+=f;
+        }
+        if(halfChanges<=0||fullChanges<=halfChanges)return 86;
+        if(!SavePng(argv[1],full,1024,1024))return 87;
+        icons::Shutdown();std::filesystem::remove_all(root);
+        std::puts("Custom HUD: external PNGs, XP clipping and unchanged life/mana crop passed");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--compass-check")) {
         using namespace framevr;
         const auto atlas=compass::Paint();if(atlas.size()!=compass::Width*compass::Height*4)return 60;

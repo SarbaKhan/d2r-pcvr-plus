@@ -188,6 +188,10 @@ struct Snapshot {
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
     wrist::Experience experience;
+    std::array<Skill,12> classicSkills{}; // two six-button groups; unknown entries stay empty
+    float stamina=0,maxStamina=0;
+    bool staminaKnown=false;
+    int unspentStats=0,unspentSkills=0;
     navigation::Location location;
     bool actionKnown=false;
     uint32_t actionMode=0;

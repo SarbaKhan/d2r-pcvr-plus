@@ -27,7 +27,11 @@ The same Windows DLL is used on Windows and Linux through Proton.
 2. Locate your game folder, then {destination}.
 3. Move the existing DLL outside the plugins directory for rollback.
 4. Copy the enclosed DLL to the same path, replacing that one file only.
-5. Launch using your existing shortcut.
+5. Extract your own HUD.zip into the plugins directory. It must contain:
+   HUD/ExpbarBackground.png, HUD/ExpBar.png,
+   HUD/SkillBackground.png, HUD/BeltStaminaBackground.png.
+   These local game-derived/custom textures are not included in this artifact.
+6. Launch using your existing shortcut.
 
 Keep your existing configuration, shaders, launchers, dependencies and saves.
 Do not install this alongside an older global d2rl-vrcam.dll installation.
@@ -42,16 +46,25 @@ xp_y_m=0.30
 xp_scale=1.0
 belt_y_m=-0.42
 belt_scale=1.0
+belt_x_m=0.40
+skills_y_m=-0.42
+skills_scale=1.0
 Y: negative = lower; positive = higher. X: negative = left; positive = right.
 Positions are metres from view centre, range -0.8..0.8.
 Scale: 1.0 = current size, 0.5 = half, 1.5 = 150%, range 0.25..3.
-Scaling preserves proportions and panel centre. XP/belt stay horizontally centred.
+Scaling preserves proportions and panel centre. XP/skills stay horizontally centred; belt has its own X position.
 Restart after editing.
 
 Changes:
 - Configurable F1/F2 life/mana height, now lower by default.
-- Top-centred XP/level panel and bottom-centred 2D belt icons/counts.
-- Native potion icons use the existing local cache, with labelled 2D fallback.
+- Custom XP/notification panel at the top; six skill cells at bottom centre.
+- Belt/stamina panel on the right, item icons only (no names/counts).
+- Native skill/item images use the existing local cache.
+- Provisional Xbox-style legends are drawn, not extracted native glyphs.
+- RT skill remains empty until its native analog binding reader is verified.
+- Level-up uses a provisional + while unspent skill/stat points remain.
+- Native notification art, quest notification state and idle run/walk indicator
+  still require native-reader/asset validation; this is an incomplete test build.
 - Hide the original HUDPanel in all native VR perspectives using the F3 path.
 - Retire completed GPU uploads in external views to keep refreshing the HUD.
 - F4: remove the curved rim HUD; keep floating menus and NPC dialogues.

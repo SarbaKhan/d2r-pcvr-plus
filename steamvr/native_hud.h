@@ -23,14 +23,16 @@ constexpr float VitalsWidth=.40f,VitalsHeight=VitalsWidth*214.f/512.f;
 struct HeadLayout {
     float vitalsY=VitalsY,xpY=.30f,beltY=VitalsY;
     float vitalsX=VitalsX,vitalsScale=1.f,xpScale=1.f,beltScale=1.f;
+    float beltX=.40f,skillsY=VitalsY,skillsScale=1.f;
 };
-inline HeadLayout Layout(float vitals,float xp,float belt,float x=VitalsX,float vs=1.f,float xs=1.f,float bs=1.f){
+inline HeadLayout Layout(float vitals,float xp,float belt,float x=VitalsX,float vs=1.f,float xs=1.f,float bs=1.f,float bx=.40f,float sy=VitalsY,float ss=1.f){
     const auto safe=[](float v,float fallback){return std::isfinite(v)?std::clamp(v,-.8f,.8f):fallback;};
     const auto scale=[](float v){return std::isfinite(v)?std::clamp(v,.25f,3.f):1.f;};
-    return {safe(vitals,VitalsY),safe(xp,.30f),safe(belt,VitalsY),safe(x,VitalsX),scale(vs),scale(xs),scale(bs)};
+    return {safe(vitals,VitalsY),safe(xp,.30f),safe(belt,VitalsY),safe(x,VitalsX),scale(vs),scale(xs),scale(bs),safe(bx,.40f),safe(sy,VitalsY),scale(ss)};
 }
-constexpr float XpWidth=.50f,XpHeight=XpWidth*40.f/428.f;
-constexpr float BeltWidth=.20f,BeltHeight=BeltWidth*.5f;
+constexpr float XpWidth=.75f,XpHeight=XpWidth*132.f/1024.f;
+constexpr float BeltWidth=.32f,BeltHeight=BeltWidth*180.f/815.f;
+constexpr float SkillsWidth=.20f,SkillsHeight=SkillsWidth*180.f/814.f;
 
 // The native HUD update assumes ExpFlashLeft/ExpFlashRight exist. A hidden
 // controller HUD may lack them (observed null +0x170 during combat).

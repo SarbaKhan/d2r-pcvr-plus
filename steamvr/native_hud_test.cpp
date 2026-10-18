@@ -19,7 +19,9 @@ int main(){
     const auto limits=Layout(-9,9,std::numeric_limits<float>::quiet_NaN());
     assert(limits.vitalsY==-.8f&&limits.xpY==.8f&&limits.beltY==VitalsY);
     assert(Layout(std::numeric_limits<float>::infinity(),.1f,-.2f).vitalsY==VitalsY);
-    assert(BeltWidth/2<=-VitalsX-VitalsWidth/2+.0001f); // separate life and belt panels
+    assert(defaults.beltX-BeltWidth/2>0); // belt stays on the right
+    const auto newLayout=Layout(0,0,0,0,1,1,1,9,-9,99);
+    assert(newLayout.beltX==.8f&&newLayout.skillsY==-.8f&&newLayout.skillsScale==3);
     assert(XpWidth>0&&XpHeight>0&&BeltHeight>0);
     struct Upload {uint64_t fence;};
     std::vector<Upload> uploads{{10},{20},{30}};

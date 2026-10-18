@@ -433,6 +433,82 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     }
     SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
 }
+// Custom classic HUD: retain the proven vitals crop, replace only external-view
+// atlas regions. All assets decode on the icon worker; no file I/O in XR submit.
+std::vector<uint8_t> PaintHead(const Snapshot& s,bool alternate) {
+    auto out=Paint(s,{},-1);
+    if(out.size()!=1024*1024*4)return {};
+    std::fill(out.begin(),out.begin()+1024*768*4,0);
+    auto blend=[&](int x,int y,const uint8_t* p){
+        if(x<0||x>=1024||y<0||y>=768)return;
+        auto* d=&out[(y*1024+x)*4];const float a=p[3]/255.f,b=d[3]/255.f,alpha=a+b*(1-a);
+        if(alpha<=0)return;
+        for(int c=0;c<3;++c)d[c]=uint8_t(std::clamp((p[c]*a+d[c]*b*(1-a))/alpha,0.f,255.f));
+        d[3]=uint8_t(alpha*255+.5f);
+    };
+    auto blit=[&](std::shared_ptr<const icons::Image> im,int x,int y,int w,int h,double fraction=1.,bool fit=false){
+        if(!im||!im->width||!im->height||w<=0||h<=0)return;
+        if(fit){const float k=std::min(float(w)/im->width,float(h)/im->height);const int nw=int(im->width*k),nh=int(im->height*k);x+=(w-nw)/2;y+=(h-nh)/2;w=nw;h=nh;}
+        for(int j=0;j<h;++j)for(int i=0;i<int(w*std::clamp(fraction,0.,1.));++i)
+            blend(x+i,y+j,&im->rgba[((uint64_t(j)*im->height/h)*im->width+uint64_t(i)*im->width/w)*4]);
+    };
+    // Text is only used for button legends, never for item names or quantities.
+    auto label=[&](const char* text,int x,int y,int w,int h,COLORREF color){
+        BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=w;
+        info.bmiHeader.biHeight=-h;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+        void* pixels=nullptr;auto dc=CreateCompatibleDC(nullptr);auto bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);
+        if(!dc||!bitmap||!pixels){if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);return;}
+        auto old=SelectObject(dc,bitmap);std::memset(pixels,0,w*h*4);
+        auto font=CreateFontA(h-3,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,"Arial");
+        auto was=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(255,255,255));
+        RECT box{0,0,w,h};DrawTextA(dc,text,-1,&box,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);GdiFlush();
+        for(int j=0;j<h;++j)for(int i=0;i<w;++i){const auto alpha=static_cast<uint8_t*>(pixels)[(j*w+i)*4];
+            const uint8_t p[]={GetRValue(color),GetGValue(color),GetBValue(color),alpha};blend(x+i,y+j,p);}
+        SelectObject(dc,was);DeleteObject(font);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+    };
+    auto fill=[&](int x,int y,int w,int h,uint8_t r,uint8_t g,uint8_t b){const uint8_t p[]={r,g,b,255};for(int j=0;j<h;++j)for(int i=0;i<w;++i)blend(x+i,y+j,p);};
+    auto xp=icons::Get("hud_xp");blit(xp,0,0,1024,132);
+    if(xp&&s.experience.Valid()) {
+        // Preserve the ten decorative dividers: clip the adapted fill to each
+        // opening rather than stretching a short portion of the texture.
+        auto bar=icons::Get("hud_fill");
+        if(bar)for(int y=0;y<12;++y)for(int x=0;x<int(1008*s.experience.Progress());++x){
+            const float sourceX=15+x*1876.f/1008;
+            constexpr int openings[][2]={{17,173},{185,365},{378,557},{570,749},{762,941},{954,1133},{1146,1325},{1338,1517},{1530,1709},{1722,1889}};
+            bool inside=false;for(const auto& range:openings)inside|=sourceX>=range[0]&&sourceX<range[1];
+            if(inside)blend(8+x,20+y,&bar->rgba[((uint64_t(y)*bar->height/12)*bar->width+uint64_t(x)*bar->width/1008)*4]);
+        }
+    }
+    if(xp&&(s.unspentStats>0||s.unspentSkills>0)) {
+        // Neutral provisional notification until native LevelUpButton art is supplied.
+        label("+",477,48,70,56,RGB(236,197,84));
+    }
+    if(auto art=icons::Get("hud_skills")) {
+        blit(art,0,160,814,151);
+        constexpr const char* names[]={"A","X","B","Y","RB","RT"};
+        constexpr COLORREF colors[]={RGB(50,235,50),RGB(40,160,255),RGB(245,55,45),RGB(240,220,40),RGB(230,230,230),RGB(230,230,230)};
+        for(int i=0;i<6;++i){const int x=10+i*132;const auto& skill=s.classicSkills[(alternate?6:0)+i];
+            if(skill.known&&skill.id>=0)blit(icons::Get("s"+std::to_string(skill.id)),x+7,172,110,110,1,true);
+            label(names[i],x+27,286,70,28,colors[i]);
+        }
+        label(alternate?"LT +":"LT",0,315,70,25,RGB(230,230,230));
+    }
+    if(auto art=icons::Get("hud_belt")) {
+        blit(art,0,384,815,153);
+        // Native controller HUD columns: left, up, down, right.
+        for(int i=0;i<4;++i){const auto& belt=s.belt[i];const int x=9+i*132;
+            if(belt.known&&belt.count)blit(icons::Get(belt.Next()),x+15,400,96,105,1,true);
+            const int cx=x+60,cy=533;
+            fill(cx-6,cy-18,12,36,70,70,70);fill(cx-18,cy-6,36,12,70,70,70);
+            const int dx[]={-12,0,0,12},dy[]={0,-12,12,0};
+            fill(cx+dx[i]-5,cy+dy[i]-5,10,10,239,181,45);
+        }
+        if(s.staminaKnown)fill(577,439,int(205*std::clamp(s.stamina/s.maxStamina,0.f,1.f)),28,150,150,150);
+        label("LS",639,501,70,29,RGB(230,230,230));
+    }
+    return out;
+}
+
 std::vector<uint8_t> BloodArt(int width,int height) {
     return width>0&&height>0?DecodeArt(L"D2RVR_BLOOD_VISOR",UINT(width),UINT(height)):std::vector<uint8_t>{};
 }

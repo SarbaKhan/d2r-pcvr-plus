@@ -115,6 +115,8 @@ void Publish(Snapshot s) {
     s.revision=snapshot.revision;
     bool changed=s.session!=snapshot.session||s.activeSet!=snapshot.activeSet||s.equipmentKnown!=snapshot.equipmentKnown||
                  s.sets!=snapshot.sets||s.beltKnown!=snapshot.beltKnown||s.skills!=snapshot.skills||
+                 s.classicSkills!=snapshot.classicSkills||s.stamina!=snapshot.stamina||s.maxStamina!=snapshot.maxStamina||
+                 s.staminaKnown!=snapshot.staminaKnown||s.unspentStats!=snapshot.unspentStats||s.unspentSkills!=snapshot.unspentSkills||
                  s.catalog!=snapshot.catalog||s.skillCount!=snapshot.skillCount||s.bindingBank!=snapshot.bindingBank||s.bindingsEditable!=snapshot.bindingsEditable||
                  s.vitalsKnown!=snapshot.vitalsKnown||int(s.health)!=int(snapshot.health)||int(s.mana)!=int(snapshot.mana)||
                  s.maxHealth!=snapshot.maxHealth||s.maxMana!=snapshot.maxMana||s.experience!=snapshot.experience||s.location!=snapshot.location||

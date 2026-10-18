@@ -20,14 +20,14 @@ std::wstring directory;
 std::deque<std::string> pending;
 std::unordered_map<std::string,std::shared_ptr<const Image>> cache;
 std::atomic<uint64_t> revision{0};
-std::shared_ptr<const Image> Decode(IWICImagingFactory* wic,const std::filesystem::path& path) {
+std::shared_ptr<const Image> Decode(IWICImagingFactory* wic,const std::filesystem::path& path,unsigned maximum=160) {
     IWICBitmapDecoder* decoder=nullptr;IWICBitmapFrameDecode* frame=nullptr;
     IWICBitmapScaler* scaler=nullptr;IWICFormatConverter* converter=nullptr;
     auto result=std::make_shared<Image>();UINT w=0,h=0;
     if(wic&&SUCCEEDED(wic->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder))&&
        SUCCEEDED(decoder->GetFrame(0,&frame))&&SUCCEEDED(frame->GetSize(&w,&h))&&w&&h&&w<=8192&&h<=8192&&
        SUCCEEDED(wic->CreateBitmapScaler(&scaler))) {
-        const float scale=std::min(1.f,160.f/std::max(w,h));
+        const float scale=std::min(1.f,float(maximum)/std::max(w,h));
         result->width=std::max(1u,unsigned(w*scale));result->height=std::max(1u,unsigned(h*scale));
         if(SUCCEEDED(scaler->Initialize(frame,result->width,result->height,WICBitmapInterpolationModeFant))&&
            SUCCEEDED(wic->CreateFormatConverter(&converter))&&
@@ -59,7 +59,14 @@ void Run(std::wstring location) {
         {std::unique_lock lock(mutex);wake.wait(lock,[]{return stop||!pending.empty();});if(stop)break;
          key=std::move(pending.front());pending.pop_front();busy=true;}
         std::shared_ptr<const Image> image;
-        try {auto it=files.find(key);if(it!=files.end())image=Decode(wic,std::filesystem::path(location)/it->second);}catch(...){}
+        try {
+            static const std::unordered_map<std::string,std::string> hud={
+                {"hud_xp","ExpbarBackground.png"},{"hud_fill","ExpBar.png"},
+                {"hud_skills","SkillBackground.png"},{"hud_belt","BeltStaminaBackground.png"}};
+            if(auto h=hud.find(key);h!=hud.end())
+                image=Decode(wic,std::filesystem::path(location).parent_path()/L"HUD"/h->second,2048);
+            else {auto it=files.find(key);if(it!=files.end())image=Decode(wic,std::filesystem::path(location)/it->second);}
+        }catch(...){}
         {std::lock_guard lock(mutex);cache[key]=std::move(image);++revision;busy=false;finished.notify_all();}
     }
     if(wic)wic->Release();if(SUCCEEDED(co))CoUninitialize();
