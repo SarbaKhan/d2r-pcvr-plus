@@ -206,6 +206,7 @@ uint64_t interactionPaintKey=~0ull;
 uint64_t interactionRequestedKey=~0ull,interactionPaintRequest=0;
 interaction::PaintContext interactionPaintContext{},interactionRequestedContext{};
 bool interactionPaintValid=false;
+nativehud::HeadLayout headHudLayout;
 uint64_t headVitalsSession=0,headVitalsAt=0,headVitalsRequestedAt=0;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
@@ -1333,7 +1334,10 @@ void PaintHeadVitals() {
     if(!fresh){headVitalsSession=0;return;}
     const interaction::Output neutral{};
     const auto context=interaction::Context(snapshot,neutral,true,controllerLabels);
-    const uint64_t key=uint64_t(snapshot.revision)<<32;
+    // Queue native belt icons asynchronously, including when F3 was never used.
+    for(const auto& belt:snapshot.belt)if(belt.known&&belt.count)interaction::icons::Get(belt.Next());
+    const uint64_t key=(uint64_t(snapshot.revision)<<32)^
+        (interaction::icons::Revision()*0x9e3779b97f4a7c15ull);
     // Unchanged values can keep their image, but only while readings remain fresh.
     if(interactionPaintValid&&key==interactionPaintKey&&context==interactionPaintContext) {
         headVitalsSession=snapshot.session;headVitalsAt=snapshot.at;return;
@@ -2405,15 +2409,24 @@ void EndPair() {
     };
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     XrCompositionLayerQuad headVitals{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad headXp{XR_TYPE_COMPOSITION_LAYER_QUAD},headBelt{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(nativehud::HeadVitalsVisible(externalMode,layer&&valid&&state==XR_SESSION_STATE_FOCUSED,
         inWorld&&inWorld(),panelMode||spatialMode||settingsModel.open||bodyCalibration.Active())&&
         headSpace&&interactionChain&&interactionPaintValid&&
         nativehud::VitalsCurrent(headVitalsSession,gamestate::LocalPlayer(),headVitalsAt,GetTickCount64())) {
         XrPosef pose{};pose.orientation.w=1;
-        pose.position={nativehud::VitalsX,nativehud::VitalsY,-nativehud::VitalsDistance};
+        pose.position={nativehud::VitalsX,headHudLayout.vitalsY,-nativehud::VitalsDistance};
         motionQuad(headVitals,pose,nativehud::VitalsWidth,nativehud::VitalsHeight,
             {{512,768},{512,214}},interactionChain); // orbs + labels, without the wrist XP strip
         headVitals.space=headSpace;
+        pose.position={0,headHudLayout.xpY,-nativehud::VitalsDistance};
+        motionQuad(headXp,pose,nativehud::XpWidth,nativehud::XpHeight,
+            {{554,982},{428,40}},interactionChain);
+        headXp.space=headSpace;
+        pose.position={0,headHudLayout.beltY,-nativehud::VitalsDistance};
+        motionQuad(headBelt,pose,nativehud::BeltWidth,nativehud::BeltHeight,
+            {{0,768},{512,256}},interactionChain);
+        headBelt.space=headSpace;
     }
 #endif
     const bool interactionVisible=layer&&!panelMode&&interactionInput.active&&interactionChain;
@@ -2904,6 +2917,9 @@ bool DioramaSkyboxRays(float out[18]) {
 void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
 void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
 bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
+void ConfigureHeadHud(float vitalsY,float xpY,float beltY) {
+    std::lock_guard lock(mutex);headHudLayout=nativehud::Layout(vitalsY,xpY,beltY);
+}
 void ConfigureSpatialUi(float tilt,float arc,float width,float height) {
     std::lock_guard lock(mutex);
     // Legacy rim settings remain accepted, but the rim HUD is retired.

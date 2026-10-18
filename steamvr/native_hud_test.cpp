@@ -2,10 +2,18 @@
 #include "callback_ticket.h"
 #include <cassert>
 #include <vector>
+#include <limits>
 #include <cstdio>
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    const auto defaults=Layout(-.42f,.30f,-.42f);
+    assert(defaults.vitalsY==-.42f&&defaults.xpY==.30f&&defaults.beltY==-.42f);
+    const auto limits=Layout(-9,9,std::numeric_limits<float>::quiet_NaN());
+    assert(limits.vitalsY==-.8f&&limits.xpY==.8f&&limits.beltY==VitalsY);
+    assert(Layout(std::numeric_limits<float>::infinity(),.1f,-.2f).vitalsY==VitalsY);
+    assert(BeltWidth/2<=-VitalsX-VitalsWidth/2+.0001f); // separate life and belt panels
+    assert(XpWidth>0&&XpHeight>0&&BeltHeight>0);
     struct Upload {uint64_t fence;};
     std::vector<Upload> uploads{{10},{20},{30}};
     RetireUploads(uploads,9);assert(uploads.size()==3);

@@ -11,7 +11,7 @@ Its legacy arc/tilt settings are accepted but no longer affect an active HUD.
 
 F1/F2 reuse the F3 wrist atlas artwork and game statistics. A single transparent
 quad is submitted in OpenXR VIEW space, visible to both eyes. Its centre is
-0.30 m left and 0.32 m below the viewing centre at 1.10 m distance; width is
+0.30 m left and 0.42 m below the viewing centre at 1.10 m distance; width is
 0.40 m. These are physical dimensions, independent of desktop/render resolution,
 aspect ratio and Diorama scale. The wrist XP strip is excluded from this first
 life/mana panel. F4 has no replacement HUD yet. F3's hand display is retained.
@@ -39,3 +39,30 @@ verify the game's HUDPanel hierarchy or actual headset comfort.
 
 GPU upload retirement runs before the external-view input return, so F1/F2
 atlas refreshes cannot exhaust the three-upload queue after movement starts.
+
+## Configurable height and additional panels
+
+Append this section to the existing `d2r_pcvr.ini` beside the DLL. Do not replace
+an existing configuration with the repository template. Restart after editing.
+
+```ini
+[head_hud]
+vitals_y_m=-0.42
+xp_y_m=0.30
+belt_y_m=-0.42
+```
+
+Values are metres from the view centre, at the same 1.10 m viewing distance.
+More negative lowers a panel; more positive raises it. Accepted range -0.8 to
++0.8 m; extreme settings may leave the comfortable field of view. Defaults work
+without adding this section. The XP strip is centred above; the four belt
+columns are centred below. F1/F2 only; F3, F4 and Flat are unchanged.
+
+The XP panel reuses the wrist level/progress display. Belt items use native 2D
+icons from the existing local `d2r_vr_icons` cache and show type/count. Missing
+icons retain the upstream labelled 2D fallback; no 3D models are rendered here.
+Icon loading is asynchronous and completing an icon load triggers a repaint.
+No Blizzard assets are bundled. The native game still handles belt shortcuts.
+
+Validate XP gains and level-up, all four belt columns, potion consumption/refill,
+icon appearance without first entering F3, and independent height changes.

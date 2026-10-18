@@ -867,6 +867,8 @@ void LoadSettings() {
     if (g_flatSession) LoadFlatBindings();
 #if D2RVR_EXPERIMENTAL_PERSPECTIVES
     if(!g_flatSession)LoadFlatBindings();
+    framevr::ConfigureHeadHud(IniF(L"head_hud",L"vitals_y_m",-.42f),
+        IniF(L"head_hud",L"xp_y_m",.30f),IniF(L"head_hud",L"belt_y_m",-.42f));
     framevr::ConfigureDioramaPassthrough(IniB(L"diorama",L"passthrough",true));
     framevr::ConfigureDioramaPlacement(IniF(L"diorama",L"height_m",.74f),IniF(L"diorama",L"floor_offset_m",0.f),IniF(L"diorama",L"width_m",1.5f));
     framevr::ConfigureSpatialUi(IniF(L"diorama",L"hud_tilt_deg",10.f),IniF(L"diorama",L"hud_arc_deg",103.f),

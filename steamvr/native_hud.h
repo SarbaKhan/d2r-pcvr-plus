@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <algorithm>
+#include <cmath>
 namespace framevr::nativehud {
 // Retain GPU resources until their fence completes, in every VR perspective.
 template<class Uploads>void RetireUploads(Uploads& uploads,uint64_t completed){
@@ -17,8 +18,18 @@ constexpr bool VitalsCurrent(uint64_t paintedSession,uint64_t session,uint64_t a
 }
 // Metres in XR VIEW space: left/below the centre, at a comfortable fixed depth.
 // Independent of game resolution, aspect ratio and Diorama scale.
-constexpr float VitalsX=-.30f,VitalsY=-.32f,VitalsDistance=1.1f;
+constexpr float VitalsX=-.30f,VitalsY=-.42f,VitalsDistance=1.1f;
 constexpr float VitalsWidth=.40f,VitalsHeight=VitalsWidth*214.f/512.f;
+struct HeadLayout {
+    float vitalsY=VitalsY,xpY=.30f,beltY=VitalsY;
+};
+inline HeadLayout Layout(float vitals,float xp,float belt){
+    const auto safe=[](float v,float fallback){return std::isfinite(v)?std::clamp(v,-.8f,.8f):fallback;};
+    return {safe(vitals,VitalsY),safe(xp,.30f),safe(belt,VitalsY)};
+}
+constexpr float XpWidth=.50f,XpHeight=XpWidth*40.f/428.f;
+constexpr float BeltWidth=.20f,BeltHeight=BeltWidth*.5f;
+
 // The native HUD update assumes ExpFlashLeft/ExpFlashRight exist. A hidden
 // controller HUD may lack them (observed null +0x170 during combat).
 // Defer that presentation update until the layout is ready.

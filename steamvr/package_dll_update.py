@@ -29,14 +29,23 @@ The same Windows DLL is used on Windows and Linux through Proton.
 4. Copy the enclosed DLL to the same path, replacing that one file only.
 5. Launch using your existing shortcut.
 
-Do not change INI files, shaders, launchers, dependencies or saves.
+Keep your existing configuration, shaders, launchers, dependencies and saves.
 Do not install this alongside an older global d2rl-vrcam.dll installation.
 To roll back: close the game and restore the previous DLL at the same path.
 
+Optional: append to your existing d2r_pcvr.ini (defaults already apply):
+[head_hud]
+vitals_y_m=-0.42
+xp_y_m=0.30
+belt_y_m=-0.42
+Negative = lower; positive = higher, metres from view centre. Restart after editing.
+
 Changes:
+- Configurable F1/F2 life/mana height, now lower by default.
+- Top-centred XP/level panel and bottom-centred 2D belt icons/counts.
+- Native potion icons use the existing local cache, with labelled 2D fallback.
 - Hide the original HUDPanel in all native VR perspectives using the F3 path.
-- F1/F2: life/mana panel moved down 7 cm; retire GPU uploads in external views
-  so repeated refreshes no longer fill the queue and hide the panel.
+- Retire completed GPU uploads in external views to keep refreshing the HUD.
 - F4: remove the curved rim HUD; keep floating menus and NPC dialogues.
 - Retain the already-tested skybox preview (existing shader/image required).
 
