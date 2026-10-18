@@ -2415,16 +2415,16 @@ void EndPair() {
         headSpace&&interactionChain&&interactionPaintValid&&
         nativehud::VitalsCurrent(headVitalsSession,gamestate::LocalPlayer(),headVitalsAt,GetTickCount64())) {
         XrPosef pose{};pose.orientation.w=1;
-        pose.position={nativehud::VitalsX,headHudLayout.vitalsY,-nativehud::VitalsDistance};
-        motionQuad(headVitals,pose,nativehud::VitalsWidth,nativehud::VitalsHeight,
+        pose.position={headHudLayout.vitalsX,headHudLayout.vitalsY,-nativehud::VitalsDistance};
+        motionQuad(headVitals,pose,nativehud::VitalsWidth*headHudLayout.vitalsScale,nativehud::VitalsHeight*headHudLayout.vitalsScale,
             {{512,768},{512,214}},interactionChain); // orbs + labels, without the wrist XP strip
         headVitals.space=headSpace;
         pose.position={0,headHudLayout.xpY,-nativehud::VitalsDistance};
-        motionQuad(headXp,pose,nativehud::XpWidth,nativehud::XpHeight,
+        motionQuad(headXp,pose,nativehud::XpWidth*headHudLayout.xpScale,nativehud::XpHeight*headHudLayout.xpScale,
             {{554,982},{428,40}},interactionChain);
         headXp.space=headSpace;
         pose.position={0,headHudLayout.beltY,-nativehud::VitalsDistance};
-        motionQuad(headBelt,pose,nativehud::BeltWidth,nativehud::BeltHeight,
+        motionQuad(headBelt,pose,nativehud::BeltWidth*headHudLayout.beltScale,nativehud::BeltHeight*headHudLayout.beltScale,
             {{0,768},{512,256}},interactionChain);
         headBelt.space=headSpace;
     }
@@ -2917,8 +2917,8 @@ bool DioramaSkyboxRays(float out[18]) {
 void ConfigureDioramaPassthrough(bool requested){mrRequested.store(requested);}
 void DioramaShaderReady(bool ready){mrShaderReady.store(ready);}
 bool DioramaPassthroughActive(){std::lock_guard lock(mutex);return mrPair;}
-void ConfigureHeadHud(float vitalsY,float xpY,float beltY) {
-    std::lock_guard lock(mutex);headHudLayout=nativehud::Layout(vitalsY,xpY,beltY);
+void ConfigureHeadHud(float vitalsY,float xpY,float beltY,float vitalsX,float vitalsScale,float xpScale,float beltScale) {
+    std::lock_guard lock(mutex);headHudLayout=nativehud::Layout(vitalsY,xpY,beltY,vitalsX,vitalsScale,xpScale,beltScale);
 }
 void ConfigureSpatialUi(float tilt,float arc,float width,float height) {
     std::lock_guard lock(mutex);

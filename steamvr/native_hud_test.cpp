@@ -9,6 +9,13 @@ using namespace framevr::nativehud;
 int main(){
     const auto defaults=Layout(-.42f,.30f,-.42f);
     assert(defaults.vitalsY==-.42f&&defaults.xpY==.30f&&defaults.beltY==-.42f);
+    assert(defaults.vitalsX==VitalsX&&defaults.vitalsScale==1&&defaults.xpScale==1&&defaults.beltScale==1);
+    const auto custom=Layout(-.5f,.4f,-.3f,-.4f,1.5f,.5f,2.f);
+    assert(custom.vitalsX==-.4f&&custom.vitalsY==-.5f&&custom.xpY==.4f&&custom.beltY==-.3f);
+    assert(custom.vitalsScale==1.5f&&custom.xpScale==.5f&&custom.beltScale==2.f);
+    const auto bounded=Layout(0,0,0,9,0,9,std::numeric_limits<float>::infinity());
+    assert(bounded.vitalsX==.8f&&bounded.vitalsScale==.25f&&bounded.xpScale==3&&bounded.beltScale==1);
+    assert(Layout(0,0,0,std::numeric_limits<float>::quiet_NaN()).vitalsX==VitalsX);
     const auto limits=Layout(-9,9,std::numeric_limits<float>::quiet_NaN());
     assert(limits.vitalsY==-.8f&&limits.xpY==.8f&&limits.beltY==VitalsY);
     assert(Layout(std::numeric_limits<float>::infinity(),.1f,-.2f).vitalsY==VitalsY);

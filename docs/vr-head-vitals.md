@@ -47,9 +47,13 @@ an existing configuration with the repository template. Restart after editing.
 
 ```ini
 [head_hud]
+vitals_x_m=-0.30
 vitals_y_m=-0.42
+vitals_scale=1.0
 xp_y_m=0.30
+xp_scale=1.0
 belt_y_m=-0.42
+belt_scale=1.0
 ```
 
 Values are metres from the view centre, at the same 1.10 m viewing distance.
@@ -66,3 +70,14 @@ No Blizzard assets are bundled. The native game still handles belt shortcuts.
 
 Validate XP gains and level-up, all four belt columns, potion consumption/refill,
 icon appearance without first entering F3, and independent height changes.
+
+### Size and horizontal placement
+
+`vitals_x_m` moves life/mana left (negative) or right (positive), range -0.8 to
++0.8 metres. XP and belt remain horizontally centred. `vitals_scale`, `xp_scale`
+and `belt_scale` independently multiply both dimensions about each panel centre:
+1.0 keeps the current size, 0.5 halves it, 1.5 enlarges it to 150%. Range 0.25 to
+3.0; invalid non-finite values fall back to defaults. Scaling does not move the
+centre, change depth or affect another panel. Large sizes/offsets can overlap
+or exceed the field of view; choose comfortable values in the headset.
+Existing INIs without these keys retain their previous size and horizontal position.

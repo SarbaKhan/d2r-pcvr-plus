@@ -35,10 +35,18 @@ To roll back: close the game and restore the previous DLL at the same path.
 
 Optional: append to your existing d2r_pcvr.ini (defaults already apply):
 [head_hud]
+vitals_x_m=-0.30
 vitals_y_m=-0.42
+vitals_scale=1.0
 xp_y_m=0.30
+xp_scale=1.0
 belt_y_m=-0.42
-Negative = lower; positive = higher, metres from view centre. Restart after editing.
+belt_scale=1.0
+Y: negative = lower; positive = higher. X: negative = left; positive = right.
+Positions are metres from view centre, range -0.8..0.8.
+Scale: 1.0 = current size, 0.5 = half, 1.5 = 150%, range 0.25..3.
+Scaling preserves proportions and panel centre. XP/belt stay horizontally centred.
+Restart after editing.
 
 Changes:
 - Configurable F1/F2 life/mana height, now lower by default.

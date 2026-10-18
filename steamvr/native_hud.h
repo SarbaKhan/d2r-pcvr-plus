@@ -22,10 +22,12 @@ constexpr float VitalsX=-.30f,VitalsY=-.42f,VitalsDistance=1.1f;
 constexpr float VitalsWidth=.40f,VitalsHeight=VitalsWidth*214.f/512.f;
 struct HeadLayout {
     float vitalsY=VitalsY,xpY=.30f,beltY=VitalsY;
+    float vitalsX=VitalsX,vitalsScale=1.f,xpScale=1.f,beltScale=1.f;
 };
-inline HeadLayout Layout(float vitals,float xp,float belt){
+inline HeadLayout Layout(float vitals,float xp,float belt,float x=VitalsX,float vs=1.f,float xs=1.f,float bs=1.f){
     const auto safe=[](float v,float fallback){return std::isfinite(v)?std::clamp(v,-.8f,.8f):fallback;};
-    return {safe(vitals,VitalsY),safe(xp,.30f),safe(belt,VitalsY)};
+    const auto scale=[](float v){return std::isfinite(v)?std::clamp(v,.25f,3.f):1.f;};
+    return {safe(vitals,VitalsY),safe(xp,.30f),safe(belt,VitalsY),safe(x,VitalsX),scale(vs),scale(xs),scale(bs)};
 }
 constexpr float XpWidth=.50f,XpHeight=XpWidth*40.f/428.f;
 constexpr float BeltWidth=.20f,BeltHeight=BeltWidth*.5f;
