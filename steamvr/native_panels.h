@@ -26,6 +26,11 @@ inline bool OpaqueBackground(std::string_view name) {
 inline bool BlockWorldEffects(bool menuOpen,bool spatialMenuReady,bool opaqueMenuOpen) {
     return menuOpen&&(!spatialMenuReady||opaqueMenuOpen);
 }
+// Flat dialogue overlays keep their world without requiring OpenXR UI capture.
+// An opaque menu takes precedence during speech-to-shop transitions.
+inline bool FlatBlockWorldEffects(bool menuOpen,bool dialogueOnly,bool opaqueMenuOpen) {
+    return menuOpen&&(!dialogueOnly||opaqueMenuOpen);
+}
 // Persistent HUD roots are not modal. Speech can outlive NpcDialogPanel.
 inline bool Modal(std::string_view name) {
     if(name==TabbedMenu||name=="ControllerOverlay")return true;

@@ -9,6 +9,17 @@
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    // Flat never needs XR UI capture to retain the scene behind dialogue.
+    using framevr::panels::FlatBlockWorldEffects;
+    assert(!FlatBlockWorldEffects(false,false,false)); // ordinary gameplay
+    assert(!FlatBlockWorldEffects(true,true,false)); // choices / spoken text
+    assert(FlatBlockWorldEffects(true,true,true)); // shop wins over stale dialogue
+    assert(FlatBlockWorldEffects(true,false,true)); // inventory / vendor
+    assert(FlatBlockWorldEffects(true,false,false)); // other menus unchanged
+    assert(!FlatBlockWorldEffects(false,true,true)); // stale flags after closing
+    assert(framevr::panels::BlockWorldEffects(true,false,false)); // VR fallback unchanged
+    assert(!framevr::panels::BlockWorldEffects(true,true,false)); // VR dialogue unchanged
+
     const auto defaults=Layout(VitalsY,XpY,VitalsY);
     assert(defaults.vitalsY==-.50f&&defaults.xpY==.55f&&defaults.beltY==-.50f);
     assert(defaults.vitalsX==VitalsX&&defaults.vitalsScale==1&&defaults.xpScale==1&&defaults.beltScale==1);
