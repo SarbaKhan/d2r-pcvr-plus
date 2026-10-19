@@ -49,7 +49,8 @@ void SetCallbacks(ViewFn view, ProjFn proj);
 // current scene matrices, bypassing inline reconstruction of a flat frustum.
 void SetStereoLabels(bool on);
 // Temporary, bounded Flat mouse-picking diagnostics. Never changes a pick.
-void SetFlatPickTrace(bool on);
+// 0 off, 1 mouse, 2 native gamepad; independent trace budgets.
+void SetFlatPickTrace(unsigned input);
 // Show ordinary monsters' health/name plates in native VR (default false).
 void SetOrdinaryMobBars(bool show);
 // Trial: paint the monster health panel after current-eye tooltip updates.
