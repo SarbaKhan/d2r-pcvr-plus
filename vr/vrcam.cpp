@@ -4193,7 +4193,17 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
         g_set.flatClickShoot.load() && KeyMoveMode() && ShooterActive()) {
         const int idx = ((ClientIndexFn)d2rsig::Addr(RVA_CLIENT_INDEX))(unit);
-        if (idx >= 0 && idx < 8 && !((HoverUnitFn)d2rsig::Addr(RVA_HOVER_UNIT))(idx)) {
+        void* target=idx>=0&&idx<8?((HoverUnitFn)d2rsig::Addr(RVA_HOVER_UNIT))(idx):nullptr;
+        if(g_flatSession&&!Overhead()&&!ClassicControllerUI()) {
+            static std::atomic<unsigned> lines{0};static std::atomic<ULONGLONG> at{0};
+            const auto now=GetTickCount64();auto last=at.load();
+            if(lines.load()<40&&now-last>=250&&at.compare_exchange_strong(last,now)&&lines.fetch_add(1)<40) {
+                uint32_t h[3]{};const bool known=target&&SafeRead(h,target,sizeof h);
+                LogF("Flat pick click: ms=%llu mode=%s type=%d grid=%d,%d target=%d known=%d unit_type=%u class=%u id=%u",
+                    (unsigned long long)now,ThirdPerson()?"third":"first",type,x,y,int(target!=nullptr),int(known),h[0],h[1],h[2]);
+            }
+        }
+        if (idx >= 0 && idx < 8 && !target) {
             flags |= 1;
             static ULONGLONG lastLog = 0;
             if (const ULONGLONG now = GetTickCount64(); now - lastLog >= 2000) {
@@ -4738,6 +4748,7 @@ bool g_dragging = false;
 POINT g_dragLast{};
 
 void MouseTick() {
+    d2rcam::SetFlatPickTrace(g_flatSession&&GameFocused()&&ShooterActive()&&!Overhead()&&!ClassicControllerUI());
 #ifdef D2RVR_NATIVE_OPENXR
     if(!g_flatSession){g_dragging=false;return;}
 #endif
