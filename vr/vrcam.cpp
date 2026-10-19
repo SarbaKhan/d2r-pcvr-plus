@@ -3600,6 +3600,15 @@ void DioramaPlacementTick(){
 void PollClassicPad(DWORD idx,DWORD result,const XINPUT_STATE* state){
     const bool allowed=ClassicPadAllowed();
     const auto p=(result==ERROR_SUCCESS&&state)?state->Gamepad:XINPUT_GAMEPAD{};
+    // Raw physical A edges, before camera/movement translation. Read-only.
+    if(g_flatSession&&idx<4) {
+        static std::atomic<bool> down[4]{};static std::atomic<unsigned> lines{0};
+        const bool pressed=allowed&&(p.wButtons&XINPUT_GAMEPAD_A)!=0;
+        const bool before=down[idx].exchange(pressed);
+        if(allowed&&pressed!=before&&lines.fetch_add(1)<80)
+            LogF("Flat pick pad A: ms=%llu view=%s index=%u down=%d",(unsigned long long)GetTickCount64(),
+                ThirdPerson()?"F2":"F1",unsigned(idx),int(pressed));
+    }
     const float x=p.sThumbRX/32767.f,y=p.sThumbRY/32767.f;
     const bool active=p.wButtons||p.bLeftTrigger>30||p.bRightTrigger>30||
         std::abs(int(p.sThumbLX))>8000||std::abs(int(p.sThumbLY))>8000||
@@ -3855,6 +3864,21 @@ uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
     static thread_local bool inside = false;
     const uintptr_t r = OrigInteractTarget(mgr, player);
     if (inside) return r;
+    // Observe the exact native return BEFORE the existing VR helper's optional
+    // secondary query. Never substitute the helper target for controller evidence.
+    if(g_flatSession&&GameFocused()&&g_enabled.load()&&g_inWorld.load()&&!Overhead()&&
+       !gamestate::MenuOpen()&&ClassicControllerUI()) {
+        static std::atomic<unsigned> lines{0};static std::atomic<ULONGLONG> at{0};
+        const auto now=GetTickCount64();auto last=at.load();
+        if(lines.load()<240&&now-last>=250&&at.compare_exchange_strong(last,now)&&lines.fetch_add(1)<240) {
+            uint32_t h[3]{};uintptr_t path=0;uint16_t p[4]{};
+            const bool known=r&&SafeRead(h,(const void*)r,sizeof h);
+            const bool position=known&&h[0]==1&&SafeRead(&path,(const void*)(r+0x38),sizeof path)&&path&&SafeRead(p,(const void*)path,sizeof p);
+            LogF("Flat pick controller: ms=%llu view=%s player=%u target=%d known=%d unit_type=%u class=%u id=%u pos_known=%d worldXZ=%.3f,%.3f",
+                (unsigned long long)now,ThirdPerson()?"F2":"F1",player,int(r!=0),int(known),h[0],h[1],h[2],int(position),
+                position?2*(p[1]+p[0]/65536.f):0.f,position?2*(p[3]+p[2]/65536.f):0.f);
+        }
+    }
     uintptr_t t = r;
     uint8_t* flag = (uint8_t*)d2rsig::Addr(RVA_INTERACT_ON_ATTACK);
     uint8_t f = 1;
@@ -4193,7 +4217,17 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
         g_set.flatClickShoot.load() && KeyMoveMode() && ShooterActive()) {
         const int idx = ((ClientIndexFn)d2rsig::Addr(RVA_CLIENT_INDEX))(unit);
-        if (idx >= 0 && idx < 8 && !((HoverUnitFn)d2rsig::Addr(RVA_HOVER_UNIT))(idx)) {
+        void* target=idx>=0&&idx<8?((HoverUnitFn)d2rsig::Addr(RVA_HOVER_UNIT))(idx):nullptr;
+        if(g_flatSession&&!Overhead()&&!ClassicControllerUI()) {
+            static std::atomic<unsigned> lines{0};static std::atomic<ULONGLONG> at{0};
+            const auto now=GetTickCount64();auto last=at.load();
+            if(lines.load()<40&&now-last>=250&&at.compare_exchange_strong(last,now)&&lines.fetch_add(1)<40) {
+                uint32_t h[3]{};const bool known=target&&SafeRead(h,target,sizeof h);
+                LogF("Flat pick click: ms=%llu mode=%s type=%d grid=%d,%d target=%d known=%d unit_type=%u class=%u id=%u",
+                    (unsigned long long)now,ThirdPerson()?"third":"first",type,x,y,int(target!=nullptr),int(known),h[0],h[1],h[2]);
+            }
+        }
+        if (idx >= 0 && idx < 8 && !target) {
             flags |= 1;
             static ULONGLONG lastLog = 0;
             if (const ULONGLONG now = GetTickCount64(); now - lastLog >= 2000) {
@@ -4738,6 +4772,14 @@ bool g_dragging = false;
 POINT g_dragLast{};
 
 void MouseTick() {
+    const unsigned traceInput=g_flatSession&&GameFocused()&&g_enabled.load()&&g_inWorld.load()&&
+        !Overhead()&&!gamestate::MenuOpen()&&!ChatOpen()?(ClassicControllerUI()?2:ShooterActive()?1:0):0;
+    d2rcam::SetFlatPickTrace(traceInput);
+    static unsigned traceContext=0,traceContexts=0;
+    const unsigned context=traceInput?10*traceInput+(ThirdPerson()?2:1):0;
+    if(context!=traceContext){traceContext=context;if(traceContexts++<80)
+        LogF("Flat pick context: ms=%llu input=%s view=%s",(unsigned long long)GetTickCount64(),
+            traceInput==2?"pad":traceInput==1?"mouse":"off",ThirdPerson()?"F2":"F1");}
 #ifdef D2RVR_NATIVE_OPENXR
     if(!g_flatSession){g_dragging=false;return;}
 #endif

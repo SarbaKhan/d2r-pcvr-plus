@@ -56,6 +56,8 @@ Scaling preserves proportions and panel centre. XP/skills stay horizontally cent
 Restart after editing.
 
 Changes:
+- Diagnostic build: bounded Flat mouse/gamepad targeting comparison (including native pad targets and A edges).
+- NPC selection behavior is unchanged; this is NOT a targeting fix yet.
 - Flat NPC choices and spoken dialogue retain sky, fog and ceiling effects.
 - Shops and other menus keep their previous effect policy; VR is unchanged.
 - Configurable F2/F3/F4 life/mana height, now lower by default.

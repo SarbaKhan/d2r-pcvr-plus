@@ -102,6 +102,20 @@ std::atomic<ScreenRayFn> g_screenRayFn{nullptr};
 #endif
 std::atomic<ULONGLONG> g_lastSync { 0 };
 
+// Diagnostic-only. Independent input/channel budgets prevent a mouse pass
+// from consuming the subsequent controller pass. No pointers are cached.
+std::atomic<unsigned> g_flatPickTrace{0};
+std::atomic<unsigned> g_flatTraceLines[3][3]{};
+std::atomic<ULONGLONG> g_flatTraceAt[3][3]{};
+unsigned FlatTraceSlot(unsigned channel) {
+    const unsigned input=g_flatPickTrace.load();
+    if(input<1||input>2||g_flatTraceLines[input][channel].load()>=240)return 0;
+    const auto now=GetTickCount64();auto last=g_flatTraceAt[input][channel].load();
+    if(now-last<250||!g_flatTraceAt[input][channel].compare_exchange_strong(last,now))return 0;
+    return g_flatTraceLines[input][channel].fetch_add(1)<240?input:0;
+}
+const char* FlatTraceInput(unsigned input){return input==2?"pad":"mouse";}
+
 // ---- Per-frame snapshot ----------------------------------------------------
 // Written only by the frame sync (game main thread), read by the hooks and
 // PickRay from any thread. A ring of slots: a reader holding a slot would have
@@ -420,9 +434,16 @@ void __fastcall HookScreenToRay(void* cam, const float* px, float* origin, float
 	}
 	const float vpW = At<float>(cam, camf::ViewportW);
 	const float vpH = At<float>(cam, camf::ViewportH);
-	if (!m4::RayThrough(f.invView, f.proj, vpW, vpH, px[0], px[1], origin, dir)) {
-		original(cam, px, origin, dir);
-	}
+	const bool matrixRay=m4::RayThrough(f.invView, f.proj, vpW, vpH, px[0], px[1], origin, dir);
+	if (!matrixRay) original(cam, px, origin, dir);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(const auto input=FlatTraceSlot(0)) {
+        char line[320];std::snprintf(line,sizeof line,
+            "Flat pick ray: input=%s ms=%llu caller=%llx matrix=%d screen=%.1f,%.1f viewport=%.0f,%.0f origin=%.3f,%.3f,%.3f direction=%.5f,%.5f,%.5f",
+            FlatTraceInput(input),(unsigned long long)GetTickCount64(),(unsigned long long)ret,int(matrixRay),px[0],px[1],vpW,vpH,
+            origin[0],origin[1],origin[2],dir[0],dir[1],dir[2]);framevr::logging::Write(line);
+    }
+#endif
 }
 
 void __fastcall HookReleaseCamera(void* cam) {
@@ -516,6 +537,22 @@ bool __fastcall HookUnitToScreen(void* context,void* unit,float* out,uint8_t abo
     t_labelAnchor=anchor.previous;
     const Frame& f=Current();
 #ifdef D2RVR_NATIVE_OPENXR
+    // Observe the game's own label anchors only; no guessed hit box or selection.
+    if(g_flatPickTrace.load()&&unit&&out&&f.cam&&anchor.count&&anchor.cam==f.cam) {
+        uint32_t header[3]{};uintptr_t data=0,row=0;uint16_t rowId=0;uint32_t flags=0;
+        const auto read=[](uintptr_t p,auto& v){return p>=0x10000&&framevr::ReadMemory(&v,reinterpret_cast<void*>(p),sizeof v);};
+        const auto u=reinterpret_cast<uintptr_t>(unit);
+        if(read(u,header)&&header[0]==1&&read(u+0x10,data)&&read(data,row)&&read(row,rowId)&&rowId==header[1]&&
+           read(row+0x3c,flags)&&(flags&((1u<<8)|(1u<<9)))) {
+          if(const auto input=FlatTraceSlot(1)) {
+            char line[400];std::snprintf(line,sizeof line,
+                "Flat pick NPC: input=%s ms=%llu caller=%llx class=%u id=%u above=%u shown=%d anchors=%u first=%.3f,%.3f,%.3f last=%.3f,%.3f,%.3f nativeXY=%.1f,%.1f",
+                FlatTraceInput(input),(unsigned long long)GetTickCount64(),(unsigned long long)(reinterpret_cast<uintptr_t>(_ReturnAddress())-g_base),
+                header[1],header[2],unsigned(above),int(shown),anchor.count,anchor.first[0],anchor.first[1],anchor.first[2],
+                anchor.last[0],anchor.last[1],anchor.last[2],out[0],out[1]);framevr::logging::Write(line);
+          }
+        }
+    }
     const int traceEye=g_traceLabelEye.load(std::memory_order_relaxed);
     if(traceEye>=0&&out&&g_traceLabelCount.fetch_add(1)<32) {
         char line[600];std::snprintf(line,sizeof line,"Frame label trace: eye %d caller %llx unit %p above %u shown %d anchors %u head %.3f %.3f %.3f base %.3f %.3f %.3f nativeXY %.2f %.2f viewport %.0f %.0f camera %d override %d %d",
@@ -644,6 +681,22 @@ bool Install(const D2RL::PluginContext* ctx) {
 }
 
 void SetEnabled(bool on) { g_enabled.store(on); }
+void SetFlatPickTrace(unsigned input){
+    g_flatPickTrace.store(input<=2?input:0);
+#ifdef D2RVR_NATIVE_OPENXR
+    // Observe the visual centre independently of native ScreenToRay calls:
+    // the controller selector need not call that mouse-only entry at all.
+    const Frame& f=Current();float origin[3],dir[3];
+    if(input&&f.cam&&f.ourView&&f.ourProj&&m4::RayThrough(f.invView,f.proj,2,2,1,1,origin,dir)) {
+        if(const auto source=FlatTraceSlot(2)) {
+            char line[240];std::snprintf(line,sizeof line,
+                "Flat pick centre: input=%s ms=%llu origin=%.3f,%.3f,%.3f direction=%.5f,%.5f,%.5f",
+                FlatTraceInput(source),(unsigned long long)GetTickCount64(),origin[0],origin[1],origin[2],dir[0],dir[1],dir[2]);
+            framevr::logging::Write(line);
+        }
+    }
+#endif
+}
 void SetStereoLabels(bool on){g_stereoLabels.store(on);}
 void SetOrdinaryMobBars(bool show){g_showOrdinaryMobBars.store(show);}
 void SetMonsterDrawOrder(bool on){g_monsterDrawOrder.store(on);}
